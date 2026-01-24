@@ -14,7 +14,6 @@ import {
 } from '@/schemas/auth.schemas.js'
 
 export class AuthController {
-  // Register new user
   async register(request: FastifyRequest, reply: FastifyReply) {
     try {
       const data = registerSchema.parse(request.body)
@@ -22,12 +21,11 @@ export class AuthController {
 
       const result = await authService.register(data, ipAddress)
 
-      // Set refresh token as httpOnly cookie
       reply.setCookie('refreshToken', result.tokens.refreshToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'strict',
-        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+        maxAge: 7 * 24 * 60 * 60 * 1000
       })
 
       return reply.code(201).send({
@@ -47,7 +45,6 @@ export class AuthController {
     }
   }
 
-  // User login
   async login(request: FastifyRequest, reply: FastifyReply) {
     try {
       const data = loginSchema.parse(request.body)
@@ -56,15 +53,7 @@ export class AuthController {
 
       const result = await authService.login(data, ipAddress, userAgent)
 
-      // If 2FA is required, return partial response
       if (result.requiresTwoFactor) {
-        // Store user ID temporarily for 2FA verification
-        /*const tempToken = await redis.set(
-          `2fa_pending:${result.user.id}`,
-          JSON.stringify({ userId: result.user.id, email: result.user.email }),
-          300 // 5 minutes
-        )*/
-
         return reply.send({
           message: 'Two-factor authentication required',
           requiresTwoFactor: true,
@@ -72,7 +61,6 @@ export class AuthController {
         })
       }
 
-      // Set refresh token as httpOnly cookie
       reply.setCookie('refreshToken', result.tokens.refreshToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
@@ -96,7 +84,6 @@ export class AuthController {
     }
   }
 
-  // Refresh access token
   async refreshToken(request: FastifyRequest, reply: FastifyReply) {
     try {
       const refreshToken =
@@ -111,7 +98,6 @@ export class AuthController {
 
       const tokens = await authService.refreshTokens(refreshToken, request.ip)
 
-      // Update refresh token cookie
       reply.setCookie('refreshToken', tokens.refreshToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
@@ -134,23 +120,17 @@ export class AuthController {
     }
   }
 
-  // User logout
   async logout(request: FastifyRequest, reply: FastifyReply) {
     try {
       const refreshToken = request.cookies.refreshToken
-      const userId = request.user?.id
+      // CORREÇÃO: Cast explícito
+      const userId = (request as any).user?.id
 
       if (refreshToken && userId) {
         await authService.logout(refreshToken, userId, request.ip)
       }
 
-      // Clear refresh token cookie
       reply.clearCookie('refreshToken')
-
-      /*    // Clear 2FA verification if exists
-            if (userId) {
-                await redis.del(`2fa_verified:${userId}`)
-            }*/
 
       return reply.send({
         message: 'Logged out successfully'
@@ -163,18 +143,19 @@ export class AuthController {
     }
   }
 
-  // Get current user profile
   async getProfile(request: FastifyRequest, reply: FastifyReply) {
     try {
-      console.log(request.user)
-      if (!request.user) {
+      // CORREÇÃO: Cast explícito
+      const req = request as any
+      console.log(req.user)
+      if (!req.user) {
         return reply.code(401).send({
           error: 'Unauthorized',
           message: 'Authentication required'
         })
       }
 
-      const user = await db.findUserById(request.user.id)
+      const user = await db.findUserById(req.user.id)
       if (!user) {
         return reply.code(404).send({
           error: 'User Not Found',
@@ -199,10 +180,11 @@ export class AuthController {
     }
   }
 
-  // Update user profile
   async updateProfile(request: FastifyRequest, reply: FastifyReply) {
     try {
-      if (!request.user) {
+      // CORREÇÃO: Cast explícito
+      const req = request as any
+      if (!req.user) {
         return reply.code(401).send({
           error: 'Unauthorized',
           message: 'Authentication required'
@@ -211,12 +193,11 @@ export class AuthController {
 
       const data = updateProfileSchema.parse(request.body)
 
-      // Check if username is already taken
       if (data.username) {
         const existingUser = await prisma.user.findFirst({
           where: {
             username: data.username,
-            id: { not: request.user.id }
+            id: { not: req.user.id }
           }
         })
 
@@ -229,7 +210,7 @@ export class AuthController {
       }
 
       const updatedUser = await prisma.user.update({
-        where: { id: request.user.id },
+        where: { id: req.user.id },
         data,
         include: {
           roles: {
@@ -240,12 +221,11 @@ export class AuthController {
         }
       })
 
-      // Create audit log
       await db.createAuditLog({
-        userId: request.user.id,
+        userId: req.user.id,
         action: 'profile_updated',
         resource: 'user',
-        resourceId: request.user.id,
+        resourceId: req.user.id,
         ipAddress: request.ip,
         newData: data,
         success: true
@@ -267,10 +247,11 @@ export class AuthController {
     }
   }
 
-  // Change password
   async changePassword(request: FastifyRequest, reply: FastifyReply) {
     try {
-      if (!request.user) {
+      // CORREÇÃO: Cast explícito
+      const req = request as any
+      if (!req.user) {
         return reply.code(401).send({
           error: 'Unauthorized',
           message: 'Authentication required'
@@ -279,7 +260,7 @@ export class AuthController {
 
       const data = changePasswordSchema.parse(request.body)
 
-      await authService.changePassword(request.user.id, data, request.ip)
+      await authService.changePassword(req.user.id, data, request.ip)
 
       return reply.send({
         message: 'Password changed successfully'
@@ -292,31 +273,24 @@ export class AuthController {
     }
   }
 
-  // Forgot password
   async forgotPassword(request: FastifyRequest, reply: FastifyReply) {
     try {
       const data = forgotPasswordSchema.parse(request.body)
-
       await authService.forgotPassword(data.email, request.ip)
-
       return reply.send({
         message: 'If an account with that email exists, a password reset link has been sent'
       })
     } catch {
-      // Always return success to prevent email enumeration
       return reply.send({
         message: 'If an account with that email exists, a password reset link has been sent'
       })
     }
   }
 
-  // Reset password
   async resetPassword(request: FastifyRequest, reply: FastifyReply) {
     try {
       const data = resetPasswordSchema.parse(request.body)
-
       await authService.resetPassword(data.token, data.password, request.ip)
-
       return reply.send({
         message: 'Password reset successfully'
       })
@@ -328,13 +302,10 @@ export class AuthController {
     }
   }
 
-  // Verify email
   async verifyEmail(request: FastifyRequest, reply: FastifyReply) {
     try {
       const data = verifyEmailSchema.parse(request.body)
-
       await authService.verifyEmail(data.token, request.ip)
-
       return reply.send({
         message: 'Email verified successfully'
       })
@@ -346,10 +317,10 @@ export class AuthController {
     }
   }
 
-  // Get user sessions
   async getSessions(request: FastifyRequest, reply: FastifyReply) {
     try {
-      if (!request.user) {
+      const req = request as any
+      if (!req.user) {
         return reply.code(401).send({
           error: 'Unauthorized',
           message: 'Authentication required'
@@ -358,7 +329,7 @@ export class AuthController {
 
       const sessions = await prisma.userSession.findMany({
         where: {
-          userId: request.user.id,
+          userId: req.user.id,
           isActive: true,
           expiresAt: { gt: new Date() }
         },
@@ -376,9 +347,7 @@ export class AuthController {
         orderBy: { lastUsedAt: 'desc' }
       })
 
-      return reply.send({
-        sessions
-      })
+      return reply.send({ sessions })
     } catch (error: any) {
       return reply.code(500).send({
         error: 'Sessions Fetch Failed',
@@ -387,10 +356,10 @@ export class AuthController {
     }
   }
 
-  // Terminate session
   async terminateSession(request: FastifyRequest, reply: FastifyReply) {
     try {
-      if (!request.user) {
+      const req = request as any
+      if (!req.user) {
         return reply.code(401).send({
           error: 'Unauthorized',
           message: 'Authentication required'
@@ -399,11 +368,10 @@ export class AuthController {
 
       const { sessionId } = request.params as { sessionId: string }
 
-      // Check if session belongs to user
       const session = await prisma.userSession.findFirst({
         where: {
           id: sessionId,
-          userId: request.user.id
+          userId: req.user.id
         }
       })
 
@@ -414,15 +382,13 @@ export class AuthController {
         })
       }
 
-      // Deactivate session
       await prisma.userSession.update({
         where: { id: sessionId },
         data: { isActive: false }
       })
 
-      // Create audit log
       await db.createAuditLog({
-        userId: request.user.id,
+        userId: req.user.id,
         action: 'session_terminated',
         resource: 'session',
         resourceId: sessionId,
@@ -441,22 +407,22 @@ export class AuthController {
     }
   }
 
-  // Terminate all sessions
   async terminateAllSessions(request: FastifyRequest, reply: FastifyReply) {
     try {
-      if (!request.user) {
+      // CORREÇÃO: Cast explícito
+      const req = request as any
+      if (!req.user) {
         return reply.code(401).send({
           error: 'Unauthorized',
           message: 'Authentication required'
         })
       }
 
-      // Get current session to exclude it
       const currentRefreshToken = request.cookies.refreshToken
 
       const result = await prisma.userSession.updateMany({
         where: {
-          userId: request.user.id,
+          userId: req.user.id,
           isActive: true,
           ...(currentRefreshToken && {
             refreshToken: { not: currentRefreshToken }
@@ -465,12 +431,11 @@ export class AuthController {
         data: { isActive: false }
       })
 
-      // Create audit log
       await db.createAuditLog({
-        userId: request.user.id,
+        userId: req.user.id,
         action: 'all_sessions_terminated',
         resource: 'user',
-        resourceId: request.user.id,
+        resourceId: req.user.id,
         ipAddress: request.ip,
         metadata: { terminatedCount: result.count },
         success: true

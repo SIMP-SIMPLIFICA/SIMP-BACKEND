@@ -1,63 +1,25 @@
-import { logger } from './logger.js'
-//import { redisClient } from './redis.js'
-import { db, prisma } from './database.js'
-import { AppServer } from '@/types/server'
+import { FastifyInstance } from 'fastify'
+import { db } from '@/utils/database.js'
+import { redisClient } from '@/utils/redis.js'
+import { logger } from '@/utils/logger.js'
 
-export function gracefulShutdown(server: AppServer) {
-  const gracefulShutdownHandler = async (signal: string) => {
+export const gracefulShutdown = (app: FastifyInstance, signal: string = 'SIGTERM') => {
+  return async () => {
     logger.info(`Received ${signal}, starting graceful shutdown...`)
 
-    const shutdownTimeout = setTimeout(() => {
-      logger.error('Graceful shutdown timeout, forcing exit')
-      process.exit(1)
-    }, 30000) // 30 seconds timeout
-
     try {
-      // 1. Stop accepting new requests
-      logger.info('Stopping server from accepting new requests...')
-      await server.close()
-
-      // 2. Close database connections
-      logger.info('Closing database connections...')
-      await prisma.$disconnect()
-
-      // 3. Close Redis connection
-      logger.info('Closing Redis connection...')
-      // await redisClient.quit()
-
-      // 4. Additional cleanup can go here
-      // - Close other database connections
-      // - Flush logs
-      // - Save in-memory data
-      // - Notify external services
+      await app.close()
       await db.disconnect()
+      
+      if (redisClient.isOpen) {
+        await redisClient.quit()
+      }
 
-      logger.info('✅ Graceful shutdown completed')
-      clearTimeout(shutdownTimeout)
+      logger.info('Graceful shutdown completed')
       process.exit(0)
     } catch (error) {
-      logger.error(error, 'Error during graceful shutdown')
-      clearTimeout(shutdownTimeout)
+      logger.error({ err: error }, `Error during graceful shutdown (${signal})`)
       process.exit(1)
     }
   }
-
-  const signals = ['SIGTERM', 'SIGINT', 'SIGUSR2'] as const
-
-  const handleGracefulShutdown = (signal: string) => {
-    gracefulShutdownHandler(signal)
-      .then(() => {
-        logger.info(`Graceful shutdown completed for ${signal}`)
-        process.exit(0)
-      })
-      .catch(error => {
-        logger.error(`Error during graceful shutdown (${signal}):`, error)
-        process.exit(1)
-      })
-  }
-
-  // Register all shutdown handlers
-  signals.forEach(signal => {
-    process.on(signal, () => handleGracefulShutdown(signal))
-  })
 }

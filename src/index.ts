@@ -5,8 +5,8 @@ import { gracefulShutdown } from '@/utils/graceful-shutdown.js'
 import { db } from '@/utils/database.js'
 import { AppServer } from '@/types/server'
 import * as crypto from 'node:crypto'
-import { registerRoutes } from './config/routes'
-import { registerPlugins } from './config/plugins'
+import { registerRoutes } from './config/routes.js'
+import { registerPlugins } from './config/plugins.js'
 
 const server: AppServer = Fastify({
   loggerInstance: logger,
@@ -22,40 +22,36 @@ async function start() {
   try {
     logger.info('🚀 Starting server...')
 
-    // Register plugins first
     logger.info('📦 Registering plugins...')
     await registerPlugins(server)
     logger.info('✅ Plugins registered successfully')
 
-    // Connect to database
     logger.info('🗄️ Connecting to database...')
     await db.connect()
     logger.info('✅ Database connected successfully')
 
-    // Register routes (this will set up detailed error handlers)
     logger.info('🛣️ Registering routes...')
     await registerRoutes(server)
     logger.info('✅ Routes registered successfully')
 
-    // Start server
-    const address = await server.listen({
+    await server.listen({
       port: config.server.port,
-      host: config.server.host
+      host: '0.0.0.0' 
     })
 
-    logger.info(`🚀 Server listening at ${address}`)
+    const serverUrl = `http://127.0.0.1:${config.server.port}`
+    logger.info(`🚀 Server listening at ${serverUrl}`)
 
     if (config.isDevelopment) {
-      logger.info(`📚 Swagger UI available at ${address}/documentation`)
-      logger.info(`🔍 Health check available at ${address}/health`)
-
-      // Print all registered routes
-      logger.info('📋 Registered routes:')
-      console.log(server.printRoutes())
+      logger.info(`📚 Swagger UI available at ${serverUrl}/documentation`)
+      logger.info(`🔍 Health check available at ${serverUrl}/health`)
     }
 
-    // Setup graceful shutdown
-    gracefulShutdown(server)
+    // 5. Setup graceful shutdown
+    const shutdown = gracefulShutdown(server)
+    process.on('SIGINT', shutdown)
+    process.on('SIGTERM', shutdown)
+
   } catch (error) {
     logger.error(error, 'Failed to start server')
     process.exit(1)

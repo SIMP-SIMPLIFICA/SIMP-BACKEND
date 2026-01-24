@@ -3,9 +3,9 @@ import { resolve } from 'path'
 
 export default defineConfig({
     test: {
-        globals: true,
+        globals: true, 
         environment: 'node',
-        setupFiles: ['./tests/setup.ts'],
+        setupFiles: [resolve(__dirname, './tests/setup.ts')],
         coverage: {
             provider: 'v8',
             reporter: ['text', 'json', 'html'],
@@ -38,7 +38,7 @@ export default defineConfig({
         poolOptions: {
             threads: {
                 singleThread: false,
-                maxThreads: 4,
+                maxThreads: 4, 
                 minThreads: 1
             }
         }

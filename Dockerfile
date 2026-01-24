@@ -74,4 +74,6 @@ EXPOSE 3000
 ENTRYPOINT ["/sbin/tini", "--"]
 
 # Start application
-CMD ["node", "--experimental-specifier-resolution=node", "dist/src/index.js"]
+ENV NODE_OPTIONS="--experimental-specifier-resolution=node"
+
+CMD ["node", "dist/src/index.js"]

@@ -74,4 +74,4 @@ EXPOSE 3000
 ENTRYPOINT ["/sbin/tini", "--"]
 
 # Start application
-CMD ["node", "dist/index.js"]
+CMD ["node", "dist/src/index.js"]

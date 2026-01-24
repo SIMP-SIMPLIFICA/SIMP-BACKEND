@@ -1,10 +1,10 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { JWTPayload, jwtVerify } from 'jose'
-
-import { config } from '@/config/config'
-import { db, prisma } from '@/utils/database'
+import { config } from '@/config/config.js'
+import { db, prisma } from '@/utils/database.js'
 import { redis } from '@/utils/redis.js'
-import { authLogger, logSecurity } from '@/utils/logger'
+import { authLogger, logSecurity } from '@/utils/logger.js'
+
 import { preHandlerHookHandler as PreHandlerHook } from 'fastify'
 
 // JWT verification utility

@@ -3,7 +3,7 @@ import { userRoutes } from '@/routes/user.routes.js'
 import { roleRoutes } from '@/routes/role.routes.js'
 import { AppServer } from '@/types/server'
 import { db } from '@/utils/database.js'
-import logger from '@/utils/logger'
+import { logger } from '@/utils/logger.js'
 
 export async function registerRoutes(server: AppServer) {
   server.setErrorHandler(async (error, request, reply) => {

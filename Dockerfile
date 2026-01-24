@@ -29,7 +29,7 @@ FROM base AS builder
 ENV NODE_ENV=production
 
 # Install dependencies
-RUN npm ci --only=production --ignore-scripts
+RUN npm ci --include=dev
 
 # Copy source code
 COPY . .

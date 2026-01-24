@@ -41,6 +41,17 @@ jobs:
     - name: Run Tests
       env:
         DATABASE_URL: "postgresql://postgres:password@localhost:5432/simp_test_db?schema=public"
-        JWT_ACCESS_SECRET: "test-secret"
-        JWT_REFRESH_SECRET: "test-refresh-secret"
+        JWT_ACCESS_SECRET: "12345678901234567890123456789012"
+        JWT_REFRESH_SECRET: "12345678901234567890123456789012"
+        SESSION_SECRET: "12345678901234567890123456789012"
+        REDIS_URL: "redis://localhost:6379"
+        SMTP_HOST: "smtp.example.com"
+        SMTP_PORT: "587"
+        SMTP_USER: "user"
+        SMTP_PASS: "pass"
+        SMTP_FROM: "no-reply@test.com"
+        SMTP_FROM_NAME: "Test"
+        APP_URL: "http://localhost:3000"
+        FRONTEND_URL: "http://localhost:5173"
+        ENABLE_EMAIL_VERIFICATION: "false"
       run: npm run test

@@ -8,12 +8,12 @@
     "allowJs": true,
     "checkJs": false,
     "outDir": "./dist",
-    "rootDir": "./",
+    "rootDir": ".",
     "removeComments": true,
-    "strict": false,    
-    "noImplicitAny": false,    
-    "strictNullChecks": false,  
-    "noImplicitReturns": false, 
+    "strict": false,
+    "noImplicitAny": false,
+    "strictNullChecks": false,
+    "noImplicitReturns": false,
     "noFallthroughCasesInSwitch": false,
     "noUncheckedIndexedAccess": false,
     "exactOptionalPropertyTypes": false,
@@ -36,12 +36,12 @@
   },
   "include": [
     "src/**/*",
-    "prisma/seeds/**/*",
-    "tests/**/*"
+    "prisma/seeds/**/*"
   ],
   "exclude": [
     "node_modules",
     "dist",
+    "tests",
     "**/*.test.ts",
     "**/*.spec.ts"
   ],

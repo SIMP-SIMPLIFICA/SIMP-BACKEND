@@ -2,7 +2,7 @@ import { authRoutes } from '@/routes/auth.routes.js'
 import { userRoutes } from '@/routes/user.routes.js'
 import { roleRoutes } from '@/routes/role.routes.js'
 import { AppServer } from '@/types/server'
-import { db } from '@/utils/database'
+import { db } from '@/utils/database.js'
 import logger from '@/utils/logger'
 
 export async function registerRoutes(server: AppServer) {

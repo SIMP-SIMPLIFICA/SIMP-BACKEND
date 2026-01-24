@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
-import { roleController } from '@/controllers/role.controller'
-import { authMiddleware } from '@/middleware/auth.middleware'
+import { roleController } from '@/controllers/role.controller.js'
+import { authMiddleware } from '@/middleware/auth.middleware.js'
 
 export function roleRoutes(server: FastifyInstance) {
   // Get list of roles

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
-import { userController } from '@/controllers/user.controller'
-import { authMiddleware } from '@/middleware/auth.middleware'
+import { userController } from '@/controllers/user.controller.js'
+import { authMiddleware } from '@/middleware/auth.middleware.js'
 
 export function userRoutes(server: FastifyInstance) {
   // Get list of users (Admin/Moderator only)

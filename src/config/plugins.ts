@@ -12,7 +12,7 @@ import jwt from '@fastify/jwt'
 
 import { config } from './config.js'
 import { AppServer } from '@/types/server.js'
-import { db } from '@/utils/database'
+import { db } from '@/utils/database.js'
 
 //import { redisClient } from '@/utils/redis.js'
 

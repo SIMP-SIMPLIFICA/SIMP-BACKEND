@@ -10,6 +10,7 @@ datasource db {
 
 model User {
   id                   String        @id @default(nanoid())
+  grantNotes           GrantNote[]
   email                String        @unique
   username             String?       @unique
   firstName            String?
@@ -141,4 +142,46 @@ model Setting {
   updatedAt   DateTime @updatedAt
 
   @@map("settings")
+}
+
+// Adicione isso no final do arquivo schema.prisma
+
+model Grant { // "Grant" é o termo técnico para Convênio/Repasse
+  id              String    @id @default(uuid())
+  externalId      String    @unique // ID ou Número do convênio no Gov
+  numeroConvenio  String?   // Número legível (ex: 892345/2023)
+  objeto          String    @db.Text // Descrição do que é
+  valorGlobal     Decimal   @db.Decimal(15, 2)
+  valorRepasse    Decimal   @db.Decimal(15, 2)
+  valorContrapartida Decimal @db.Decimal(15, 2)
+  
+  dataInicio      DateTime?
+  dataFim         DateTime?
+  
+  situacao        String    // "Em Execução", "Prestação de Contas", etc.
+  orgaoConcedente String?   // Quem deu o dinheiro (Ministério X)
+  
+  lastSyncAt      DateTime  @default(now()) // Quando atualizamos por último
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  notes           GrantNote[]
+
+  @@map("grants")
+}
+
+model GrantNote {
+  id        String   @id @default(uuid())
+  content   String   @db.Text
+  
+  grantId   String
+  grant     Grant    @relation(fields: [grantId], references: [id], onDelete: Cascade)
+  
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("grant_notes")
 }

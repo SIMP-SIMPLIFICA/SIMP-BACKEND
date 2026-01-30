@@ -8,6 +8,9 @@ import * as crypto from 'node:crypto'
 import { registerRoutes } from './config/routes.js'
 import { registerPlugins } from './config/plugins.js'
 
+// Importação das novas rotas de Convênios
+import { grantRoutes } from './routes/grant.routes.js'
+
 const server: AppServer = Fastify({
   loggerInstance: logger,
   trustProxy: true,
@@ -30,9 +33,14 @@ async function start() {
     await db.connect()
     logger.info('✅ Database connected successfully')
 
-    logger.info('🛣️ Registering routes...')
+    logger.info('🛣️ Registering standard routes...')
     await registerRoutes(server)
-    logger.info('✅ Routes registered successfully')
+    
+    // --- AQUI ESTÁ A ADIÇÃO: REGISTRO DAS ROTAS DE CONVÊNIOS ---
+    logger.info('💰 Registering Grant (Transferegov) routes...')
+    await server.register(grantRoutes, { prefix: '/api/v1/grants' })
+    
+    logger.info('✅ All Routes registered successfully')
 
     await server.listen({
       port: config.server.port,

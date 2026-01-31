@@ -36,7 +36,7 @@ async function start() {
 
     await server.listen({
       port: config.server.port,
-      host: '0.0.0.0' 
+      host: '0.0.0.0'
     })
 
     const serverUrl = `http://127.0.0.1:${config.server.port}`
@@ -47,7 +47,6 @@ async function start() {
       logger.info(`🔍 Health check available at ${serverUrl}/health`)
     }
 
-    // 5. Setup graceful shutdown
     const shutdown = gracefulShutdown(server)
     process.on('SIGINT', shutdown)
     process.on('SIGTERM', shutdown)
@@ -58,7 +57,6 @@ async function start() {
   }
 }
 
-// Handle uncaught exceptions
 process.on('uncaughtException', error => {
   logger.fatal(error, 'Uncaught exception')
   process.exit(1)

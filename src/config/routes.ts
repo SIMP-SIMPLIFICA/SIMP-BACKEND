@@ -1,6 +1,10 @@
 import { authRoutes } from '@/routes/auth.routes.js'
 import { userRoutes } from '@/routes/user.routes.js'
 import { roleRoutes } from '@/routes/role.routes.js'
+// --- NOVOS IMPORTS ADICIONADOS ---
+import { workspaceRoutes } from '@/routes/workspace.routes.js'
+import { taskRoutes } from '@/routes/task.routes.js'
+// ---------------------------------
 import { AppServer } from '@/types/server'
 import { db } from '@/utils/database.js'
 import { logger } from '@/utils/logger.js'
@@ -121,7 +125,7 @@ export async function registerRoutes(server: AppServer) {
     }
   })
 
-  // api/v1 routes
+  // --- API V1 ROUTES (Auth, User, Role) ---
   await server.register(
     async server => {
       await server.register(authRoutes, {
@@ -158,6 +162,8 @@ export async function registerRoutes(server: AppServer) {
                       auth: { type: 'string' },
                       users: { type: 'string' },
                       roles: { type: 'string' },
+                      workspaces: { type: 'string' }, // Add documentation
+                      tasks: { type: 'string' },      // Add documentation
                       admin: { type: 'string' },
                       documentation: { type: 'string' },
                       health: { type: 'string' }
@@ -181,6 +187,8 @@ export async function registerRoutes(server: AppServer) {
               auth: '/api/v1/auth',
               users: '/api/v1/users',
               roles: '/api/v1/roles',
+              workspaces: '/workspaces', // Atualizado
+              tasks: '/workspaces/:id/tasks', // Atualizado
               admin: '/api/v1/admin',
               documentation: '/documentation',
               health: '/health'
@@ -195,7 +203,9 @@ export async function registerRoutes(server: AppServer) {
               'Audit Logging',
               'Rate Limiting',
               'Real-time Security Monitoring',
-              'Comprehensive Admin Dashboard'
+              'Comprehensive Admin Dashboard',
+              'Workspace Management', // Novo
+              'Task Tracking & Kanban' // Novo
             ]
           }
 
@@ -206,6 +216,19 @@ export async function registerRoutes(server: AppServer) {
     { prefix: '/api/v1' }
   )
 
+  // --- NOVAS ROTAS (Registradas na raiz para compatibilidade com logs) ---
+  
+  // Rota: http://localhost:3000/workspaces
+  await server.register(workspaceRoutes, { 
+    prefix: '/workspaces',
+    logLevel: 'info'
+  })
+
+  // Rotas de Tasks (paths definidos internamente)
+  await server.register(taskRoutes, {
+    logLevel: 'info'
+  })
+
   server.get('/test', async (request, reply) => {
     logger.info('Test endpoint hit')
     return reply.send({ message: 'Test endpoint working', timestamp: new Date().toISOString() })
@@ -213,6 +236,8 @@ export async function registerRoutes(server: AppServer) {
 
   server.ready(() => {
     logger.info('All routes registered successfully')
+    // Log extra para confirmar registro das novas rotas
+    logger.info('✅ Workspaces and Tasks routes active')
   })
 }
 
@@ -232,5 +257,14 @@ export const routeSummary = {
   '/api/v1/roles': {
     description: 'Role and permission management (Admin access required)',
     endpoints: ['GET /', 'GET /:id', 'POST /', 'PUT /:id', 'DELETE /:id']
+  },
+  // Documentação adicionada
+  '/workspaces': {
+    description: 'Workspace management',
+    endpoints: ['GET /', 'POST /', 'GET /:id', 'PUT /:id', 'DELETE /:id']
+  },
+  '/tasks': {
+    description: 'Task management',
+    endpoints: ['GET /workspaces/:id/tasks', 'POST /workspaces/:id/tasks', 'GET /tasks/:id']
   }
 }

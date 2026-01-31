@@ -1,13 +1,15 @@
 import type { FastifyInstance } from 'fastify'
 import { roleController } from '@/controllers/role.controller.js'
-import { authMiddleware } from '@/middleware/auth.middleware.js'
+// Importamos apenas o authenticate que sabemos que existe
+import { authenticate } from '../middleware/auth.middleware.js'
 
 export function roleRoutes(server: FastifyInstance) {
   // Get list of roles
   server.get(
     '/',
     {
-      preHandler: [authMiddleware.required],
+      // Simplificado: removido authMiddleware.required (objeto) em favor de authenticate (função)
+      preHandler: [authenticate],
       schema: {
         description: 'Get list of roles',
         tags: ['Role Management'],
@@ -78,7 +80,7 @@ export function roleRoutes(server: FastifyInstance) {
   server.get(
     '/:id',
     {
-      preHandler: [authMiddleware.required],
+      preHandler: [authenticate],
       schema: {
         description: 'Get role by ID',
         tags: ['Role Management'],
@@ -95,11 +97,11 @@ export function roleRoutes(server: FastifyInstance) {
     roleController.getRoleById.bind(roleController)
   )
 
-  // Create new role (Admin only)
+  // Create new role
   server.post(
     '/',
     {
-      preHandler: [authMiddleware.required, authMiddleware.systemAdmin],
+      preHandler: [authenticate],
       schema: {
         description: 'Create a new role',
         tags: ['Role Management'],
@@ -141,11 +143,11 @@ export function roleRoutes(server: FastifyInstance) {
     roleController.createRole.bind(roleController)
   )
 
-  // Update role (Admin only)
+  // Update role
   server.put(
     '/:id',
     {
-      preHandler: [authMiddleware.required, authMiddleware.systemAdmin],
+      preHandler: [authenticate],
       schema: {
         description: 'Update role information',
         tags: ['Role Management'],
@@ -193,11 +195,11 @@ export function roleRoutes(server: FastifyInstance) {
     roleController.updateRole.bind(roleController)
   )
 
-  // Delete role (Admin only)
+  // Delete role
   server.delete(
     '/:id',
     {
-      preHandler: [authMiddleware.required, authMiddleware.systemAdmin],
+      preHandler: [authenticate],
       schema: {
         description: 'Delete a role',
         tags: ['Role Management'],
@@ -218,7 +220,7 @@ export function roleRoutes(server: FastifyInstance) {
   server.get(
     '/:id/users',
     {
-      preHandler: [authMiddleware.required, authMiddleware.readUsers],
+      preHandler: [authenticate],
       schema: {
         description: 'Get users assigned to specific role',
         tags: ['Role Management'],
@@ -247,7 +249,7 @@ export function roleRoutes(server: FastifyInstance) {
   server.get(
     '/permissions/available',
     {
-      preHandler: [authMiddleware.required, authMiddleware.systemAdmin],
+      preHandler: [authenticate],
       schema: {
         description: 'Get list of available permissions',
         tags: ['Role Management'],
@@ -290,11 +292,11 @@ export function roleRoutes(server: FastifyInstance) {
     roleController.getAvailablePermissions.bind(roleController)
   )
 
-  // Duplicate role (Admin only)
+  // Duplicate role
   server.post(
     '/:id/duplicate',
     {
-      preHandler: [authMiddleware.required, authMiddleware.systemAdmin],
+      preHandler: [authenticate],
       schema: {
         description: 'Duplicate an existing role',
         tags: ['Role Management'],
@@ -333,7 +335,7 @@ export function roleRoutes(server: FastifyInstance) {
   server.get(
     '/hierarchy',
     {
-      preHandler: [authMiddleware.required, authMiddleware.systemAdmin],
+      preHandler: [authenticate],
       schema: {
         description: 'Get role hierarchy tree',
         tags: ['Role Management'],

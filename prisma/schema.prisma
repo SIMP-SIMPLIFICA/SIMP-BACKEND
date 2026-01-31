@@ -8,6 +8,8 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// --- MODELOS DE AUTENTICAÇÃO E SISTEMA (EXISTENTES) ---
+
 model User {
   id                   String        @id @default(nanoid())
   email                String        @unique
@@ -29,9 +31,19 @@ model User {
   preferences          Json?
   createdAt            DateTime      @default(now())
   updatedAt            DateTime      @updatedAt
+  
+  // Relações existentes
   auditLogs            AuditLog[]
   roles                UserRole[]
   sessions             UserSession[]
+
+  // --- NOVAS RELAÇÕES (WORKSPACES & TASKS) ---
+  workspaceMemberships WorkspaceMember[]
+  createdTasks         Task[]            @relation("TaskCreator")
+  assignedTasks        TaskAssignee[]
+  taskNotes            TaskNote[]
+  taskHistory          TaskHistory[]
+  notifications        Notification[]
 
   @@map("users")
 }
@@ -49,6 +61,7 @@ model Role {
   metadata    Json?
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
+  
   parent      Role?      @relation("RoleHierarchy", fields: [parentId], references: [id])
   children    Role[]     @relation("RoleHierarchy")
   users       UserRole[]
@@ -64,6 +77,7 @@ model UserRole {
   assignedBy String?
   assignedAt DateTime  @default(now())
   metadata   Json?
+  
   role       Role      @relation(fields: [roleId], references: [id], onDelete: Cascade)
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -86,6 +100,7 @@ model UserSession {
   location     Json?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+  
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("user_sessions")
@@ -107,6 +122,7 @@ model AuditLog {
   success      Boolean
   errorMessage String?
   createdAt    DateTime @default(now())
+  
   user         User?    @relation(fields: [userId], references: [id])
 
   @@index([userId])
@@ -141,4 +157,148 @@ model Setting {
   updatedAt   DateTime @updatedAt
 
   @@map("settings")
+}
+
+// --- NOVOS MODELOS DE GESTÃO (WORKSPACES E TASKS) ---
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  IN_REVIEW
+  DONE
+  CANCELED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+model Workspace {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  slug        String   @unique // Para URLs amigáveis
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relações
+  members     WorkspaceMember[]
+  tasks       Task[]
+}
+
+model WorkspaceMember {
+  id          String        @id @default(uuid())
+  workspaceId String
+  userId      String        
+  role        WorkspaceRole @default(MEMBER)
+  joinedAt    DateTime      @default(now())
+
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+}
+
+model Task {
+  id          String       @id @default(uuid())
+  code        Int          @default(autoincrement()) // Ex: T-1, T-2 (Visual)
+  title       String
+  description String?
+  status      TaskStatus   @default(TODO)
+  priority    TaskPriority @default(MEDIUM)
+  dueDate     DateTime?
+  
+  workspaceId String
+  creatorId   String       // ID do usuário que criou
+  
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  creator     User         @relation("TaskCreator", fields: [creatorId], references: [id])
+
+  assignees   TaskAssignee[]
+  checklist   ChecklistItem[]
+  attachments TaskAttachment[]
+  notes       TaskNote[]
+  history     TaskHistory[]
+}
+
+model TaskAssignee {
+  taskId String
+  userId String
+  
+  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, userId])
+}
+
+model ChecklistItem {
+  id        String  @id @default(uuid())
+  title     String
+  isDone    Boolean @default(false)
+  taskId    String
+  
+  task      Task    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+}
+
+model TaskAttachment {
+  id         String   @id @default(uuid())
+  fileName   String
+  fileUrl    String
+  fileType   String
+  fileSize   Int
+  uploadedAt DateTime @default(now())
+  taskId     String
+  uploaderId String
+
+  task       Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+}
+
+model TaskNote {
+  id        String   @id @default(uuid())
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  taskId    String
+  authorId  String
+
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author    User     @relation(fields: [authorId], references: [id])
+}
+
+model TaskHistory {
+  id        String   @id @default(uuid())
+  action    String   // Ex: "Mudou status para FEITO"
+  metadata  Json?    // Dados antigos/novos
+  createdAt DateTime @default(now())
+  taskId    String
+  userId    String
+
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  title     String
+  message   String
+  userId    String   // Destinatário
+  read      Boolean  @default(false)
+  type      String   // Ex: TASK_ASSIGNED, MENTION
+  link      String?  // Link para o recurso
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

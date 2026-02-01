@@ -5,17 +5,14 @@ import { authenticate } from '../middleware/auth.middleware.js';
 const workspaceController = new WorkspaceController();
 
 export async function workspaceRoutes(app: FastifyInstance) {
-  // Protege todas as rotas
   app.addHook('preHandler', authenticate);
 
-  // Rotas Básicas
-  app.post('/', workspaceController.create);       // Criação
-  app.get('/', workspaceController.list);          // Listagem
-  app.get('/:id', workspaceController.getById);    // Detalhes
+  app.post('/', workspaceController.create);
+  app.get('/', workspaceController.list);
+  app.get('/:id', workspaceController.getById);
 
-  // Membros
-  app.post('/:id/members', workspaceController.addMember); // Adicionar membro
+  app.post('/:id/members', workspaceController.addMember);
+  app.delete('/:id/members/:userId', workspaceController.removeMember);
 
-  // Exclusão
-  app.delete('/:id', workspaceController.delete);  // Deletar workspace
+  app.delete('/:id', workspaceController.delete);
 }

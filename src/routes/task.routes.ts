@@ -11,6 +11,9 @@ export async function taskRoutes(app: FastifyInstance) {
   app.post('/workspaces/:workspaceId/tasks', taskController.create);
   app.get('/workspaces/:workspaceId/tasks', taskController.list);
 
+  // Rota para listar usuários atribuíveis (NOVA)
+  app.get('/workspaces/:workspaceId/assignable-users', taskController.listAssignableUsers);
+
   // Rotas diretas de Task
   app.get('/tasks/:id', taskController.details);
   app.put('/tasks/:id', taskController.update);
@@ -22,15 +25,11 @@ export async function taskRoutes(app: FastifyInstance) {
   app.put('/checklist/:itemId', taskController.updateChecklistItem);
   app.post('/tasks/:id/notes', taskController.addNote);
 
-  // Anexos (Upload & Delete)
+  // Anexos
   app.post('/tasks/:id/attachments', taskController.uploadAttachment);
   app.delete('/attachments/:attachmentId', taskController.deleteAttachment);
 
-  // --- NOVAS ROTAS: ASSIGNEES ---
-  // Rota auxiliar para popular o Select de membros
-  app.get('/users/assignable', taskController.listAssignableUsers);
-  
-  // Adicionar e Remover Membros
+  // --- ASSIGNEES (MEMBROS DA TAREFA) - ESTAVAM FALTANDO ---
   app.post('/tasks/:id/assignees', taskController.addAssignee);
   app.delete('/tasks/:id/assignees/:userId', taskController.removeAssignee);
 }

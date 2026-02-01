@@ -51,7 +51,6 @@ export class TaskController {
     const tasks = await prisma.task.findMany({
       where: { workspaceId },
       include: {
-        // ATUALIZADO: Incluindo lastName e email
         assignees: { 
           include: { 
             user: { 
@@ -77,7 +76,6 @@ export class TaskController {
     const task = await prisma.task.findUnique({
       where: { id },
       include: {
-        // ATUALIZADO: Incluindo lastName e email
         assignees: { 
           include: { 
             user: { 
@@ -200,24 +198,19 @@ export class TaskController {
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const userId = (request.user as any).id;
     
-    // 1. Processar arquivo
     const data = await request.file();
     if (!data) return reply.status(400).send({ message: 'Nenhum arquivo enviado' });
 
-    // 2. Criar diretório
     const uploadDir = join(process.cwd(), 'uploads');
     if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
-    // 3. Gerar nome único e seguro
     const fileExt = path.extname(data.filename);
     const uniqueName = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${fileExt}`;
     const uploadPath = join(uploadDir, uniqueName);
 
-    // 4. Salvar arquivo
     await pipeline(data.file, createWriteStream(uploadPath));
     const stats = fs.statSync(uploadPath);
 
-    // 5. Salvar no Banco
     const attachment = await prisma.taskAttachment.create({
         data: {
             taskId: id,
@@ -229,7 +222,6 @@ export class TaskController {
         }
     });
 
-    // 6. Histórico
     await prisma.taskHistory.create({
         data: { taskId: id, userId, action: `Anexou o arquivo: "${data.filename}"` }
     });
@@ -260,59 +252,79 @@ export class TaskController {
     return reply.status(204).send();
   }
 
-  // --- ASSIGNEES (MEMBROS) ---
+  // --- ASSIGNEES (MEMBROS DA TAREFA) ---
 
   async listAssignableUsers(request: FastifyRequest, reply: FastifyReply) {
-    const users = await prisma.user.findMany({
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        email: true,
-        avatar: true
+    const { workspaceId } = z.object({ workspaceId: z.string() }).parse(request.params);
+    
+    const members = await prisma.workspaceMember.findMany({
+      where: { workspaceId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            avatar: true
+          }
+        }
       },
-      orderBy: { firstName: 'asc' }
+      orderBy: { user: { firstName: 'asc' } }
     });
+
+    const users = members.map(m => m.user);
     return reply.send(users);
   }
 
   async addAssignee(request: FastifyRequest, reply: FastifyReply) {
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const { userId } = z.object({ userId: z.string() }).parse(request.body);
+    const requesterId = (request.user as any).id;
 
-    // 1. Verificar se já existe
+    // 1. Buscar Task e Workspace
+    const task = await prisma.task.findUnique({
+        where: { id },
+        include: { workspace: { include: { members: true } } }
+    });
+
+    if (!task) return reply.status(404).send({ message: 'Task not found' });
+
+    // 2. Permissões: Permitir que MEMBROS também atribuam tarefas
+    const isCreator = task.creatorId === requesterId;
+    const requesterMember = task.workspace.members.find(m => m.userId === requesterId);
+    
+    const canAssign = isCreator || 
+                      requesterMember?.role === 'ADMIN' || 
+                      requesterMember?.role === 'OWNER' || 
+                      requesterMember?.role === 'MEMBER'; 
+
+    if (!canAssign) {
+        return reply.status(403).send({ message: 'Permissão negada.' });
+    }
+
+    // 3. Validação
+    const targetInWorkspace = task.workspace.members.some(m => m.userId === userId);
+    if (!targetInWorkspace) {
+        return reply.status(400).send({ message: 'Usuário não pertence ao workspace.' });
+    }
+
     const existing = await prisma.taskAssignee.findUnique({
       where: { taskId_userId: { taskId: id, userId } }
     });
 
-    if (existing) {
-      return reply.status(409).send({ message: 'Usuário já está atribuído a esta tarefa.' });
-    }
+    if (existing) return reply.status(409).send({ message: 'Já atribuído.' });
 
-    // 2. Criar atribuição (ATUALIZADO: Inclui lastName e email para retorno imediato)
+    // 4. Criar
     const assignee = await prisma.taskAssignee.create({
       data: { taskId: id, userId },
       include: { 
-        user: { 
-          select: { 
-            id: true, 
-            firstName: true, 
-            lastName: true, 
-            email: true, 
-            avatar: true 
-          } 
-        } 
+        user: { select: { id: true, firstName: true, lastName: true, avatar: true } } 
       }
     });
 
-    // 3. Histórico
-    const actorId = (request.user as any).id;
     await prisma.taskHistory.create({
-      data: {
-        taskId: id,
-        userId: actorId,
-        action: `Adicionou um membro`
-      }
+      data: { taskId: id, userId: requesterId, action: `Adicionou um responsável` }
     });
 
     return reply.status(201).send(assignee);
@@ -320,7 +332,27 @@ export class TaskController {
 
   async removeAssignee(request: FastifyRequest, reply: FastifyReply) {
     const { id, userId } = z.object({ id: z.string(), userId: z.string() }).parse(request.params);
-    const actorId = (request.user as any).id;
+    const requesterId = (request.user as any).id;
+
+    const task = await prisma.task.findUnique({
+        where: { id },
+        include: { workspace: { include: { members: true } } }
+    });
+
+    if (!task) return reply.status(404).send({ message: 'Task not found' });
+
+    const isCreator = task.creatorId === requesterId;
+    const requesterMember = task.workspace.members.find(m => m.userId === requesterId);
+    
+    // Permitir que MEMBROS removam (fluxo colaborativo)
+    const canRemove = isCreator || 
+                      requesterMember?.role === 'ADMIN' || 
+                      requesterMember?.role === 'OWNER' ||
+                      requesterMember?.role === 'MEMBER';
+
+    if (!canRemove) {
+        return reply.status(403).send({ message: 'Permissão negada.' });
+    }
 
     try {
       await prisma.taskAssignee.delete({
@@ -328,11 +360,7 @@ export class TaskController {
       });
       
       await prisma.taskHistory.create({
-        data: {
-          taskId: id,
-          userId: actorId,
-          action: `Removeu um membro`
-        }
+        data: { taskId: id, userId: requesterId, action: `Removeu um responsável` }
       });
       
     } catch (error) {

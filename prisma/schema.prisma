@@ -8,8 +8,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// --- MODELOS DE AUTENTICAÇÃO E SISTEMA (EXISTENTES) ---
-
 model User {
   id                   String        @id @default(nanoid())
   email                String        @unique
@@ -32,12 +30,10 @@ model User {
   createdAt            DateTime      @default(now())
   updatedAt            DateTime      @updatedAt
   
-  // Relações existentes
   auditLogs            AuditLog[]
   roles                UserRole[]
   sessions             UserSession[]
 
-  // --- NOVAS RELAÇÕES (WORKSPACES & TASKS) ---
   workspaceMemberships WorkspaceMember[]
   createdTasks         Task[]            @relation("TaskCreator")
   assignedTasks        TaskAssignee[]
@@ -77,7 +73,6 @@ model UserRole {
   assignedBy String?
   assignedAt DateTime  @default(now())
   metadata   Json?
-  
   role       Role      @relation(fields: [roleId], references: [id], onDelete: Cascade)
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -159,8 +154,6 @@ model Setting {
   @@map("settings")
 }
 
-// --- NOVOS MODELOS DE GESTÃO (WORKSPACES E TASKS) ---
-
 enum TaskStatus {
   TODO
   IN_PROGRESS
@@ -187,11 +180,10 @@ model Workspace {
   id          String   @id @default(uuid())
   name        String
   description String?
-  slug        String   @unique // Para URLs amigáveis
+  slug        String   @unique
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  // Relações
   members     WorkspaceMember[]
   tasks       Task[]
 }
@@ -211,15 +203,14 @@ model WorkspaceMember {
 
 model Task {
   id          String       @id @default(uuid())
-  code        Int          @default(autoincrement()) // Ex: T-1, T-2 (Visual)
+  code        Int          @default(autoincrement())
   title       String
   description String?
   status      TaskStatus   @default(TODO)
   priority    TaskPriority @default(MEDIUM)
   dueDate     DateTime?
-  
   workspaceId String
-  creatorId   String       // ID do usuário que criou
+  creatorId   String       
   
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
@@ -280,8 +271,8 @@ model TaskNote {
 
 model TaskHistory {
   id        String   @id @default(uuid())
-  action    String   // Ex: "Mudou status para FEITO"
-  metadata  Json?    // Dados antigos/novos
+  action    String   
+  metadata  Json?
   createdAt DateTime @default(now())
   taskId    String
   userId    String
@@ -294,10 +285,10 @@ model Notification {
   id        String   @id @default(uuid())
   title     String
   message   String
-  userId    String   // Destinatário
+  userId    String   
   read      Boolean  @default(false)
-  type      String   // Ex: TASK_ASSIGNED, MENTION
-  link      String?  // Link para o recurso
+  type      String   
+  link      String?
   createdAt DateTime @default(now())
 
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)

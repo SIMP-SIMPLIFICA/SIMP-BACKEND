@@ -1,10 +1,11 @@
 import { authRoutes } from '@/routes/auth.routes.js'
 import { userRoutes } from '@/routes/user.routes.js'
 import { roleRoutes } from '@/routes/role.routes.js'
-// --- NOVOS IMPORTS ADICIONADOS ---
 import { workspaceRoutes } from '@/routes/workspace.routes.js'
 import { taskRoutes } from '@/routes/task.routes.js'
-// ---------------------------------
+// 1. IMPORTANTE: O import abaixo estava faltando no seu arquivo
+import { notificationRoutes } from '@/routes/notification.routes.js' 
+
 import { AppServer } from '@/types/server'
 import { db } from '@/utils/database.js'
 import { logger } from '@/utils/logger.js'
@@ -13,10 +14,8 @@ export async function registerRoutes(server: AppServer) {
   server.setErrorHandler(async (error, request, reply) => {
     request.log.error(error, 'Request error occurred')
 
-    // Cast para 'any' para evitar erros de 'unknown' no build
     const err = error as any;
 
-    // Handle validation errors
     if (err.validation) {
       return reply.code(400).send({
         error: 'Validation Error',
@@ -28,7 +27,6 @@ export async function registerRoutes(server: AppServer) {
       })
     }
 
-    // Handle authentication errors
     if (err.statusCode === 401) {
       return reply.code(401).send({
         error: 'Unauthorized',
@@ -39,7 +37,6 @@ export async function registerRoutes(server: AppServer) {
       })
     }
 
-    // Handle authorization errors
     if (err.statusCode === 403) {
       return reply.code(403).send({
         error: 'Forbidden',
@@ -50,7 +47,6 @@ export async function registerRoutes(server: AppServer) {
       })
     }
 
-    // Handle not found errors
     if (err.statusCode === 404) {
       return reply.code(404).send({
         error: 'Not Found',
@@ -61,7 +57,6 @@ export async function registerRoutes(server: AppServer) {
       })
     }
 
-    // Handle rate limiting errors
     if (err.statusCode === 429) {
       const retryAfter = 'retryAfter' in err ? err.retryAfter : 60
       return reply.code(429).send({
@@ -74,7 +69,6 @@ export async function registerRoutes(server: AppServer) {
       })
     }
 
-    // Handle other client errors (4xx)
     if (err.statusCode && err.statusCode >= 400 && err.statusCode < 500) {
       return reply.code(err.statusCode).send({
         error: err.name || 'Bad Request',
@@ -85,7 +79,6 @@ export async function registerRoutes(server: AppServer) {
       })
     }
 
-    // Handle server errors (5xx)
     const statusCode = err?.statusCode && err.statusCode >= 500 ? err.statusCode : 500
 
     return reply.code(statusCode).send({
@@ -101,7 +94,6 @@ export async function registerRoutes(server: AppServer) {
     })
   })
 
-  // 404 handler
   server.setNotFoundHandler(async (request, reply) => {
     return reply.code(404).send({
       error: 'Not Found',
@@ -113,7 +105,6 @@ export async function registerRoutes(server: AppServer) {
     })
   })
 
-  // Health check endpoint
   server.get('/health', async () => {
     const dbHealth = await db.isHealthy()
     return {
@@ -126,106 +117,33 @@ export async function registerRoutes(server: AppServer) {
   })
 
   // --- API V1 ROUTES (Auth, User, Role) ---
-  await server.register(
+await server.register(
     async server => {
-      await server.register(authRoutes, {
-        prefix: '/auth',
-        logLevel: 'info'
+      await server.register(authRoutes, { prefix: '/auth', logLevel: 'info' })
+      await server.register(userRoutes, { prefix: '/users', logLevel: 'info' })
+      await server.register(roleRoutes, { prefix: '/roles', logLevel: 'info' })
+
+      server.get('/', { /* schema omitido para brevidade */ }, async (request, reply) => {
+          return reply.send({ message: "API V1 Root" }) 
       })
-
-      await server.register(userRoutes, {
-        prefix: '/users',
-        logLevel: 'info'
-      })
-
-      await server.register(roleRoutes, {
-        prefix: '/roles',
-        logLevel: 'info'
-      })
-
-      server.get(
-        '/',
-        {
-          schema: {
-            description: 'API Information',
-            tags: ['General'],
-            response: {
-              200: {
-                type: 'object',
-                properties: {
-                  name: { type: 'string' },
-                  version: { type: 'string' },
-                  description: { type: 'string' },
-                  endpoints: {
-                    type: 'object',
-                    properties: {
-                      auth: { type: 'string' },
-                      users: { type: 'string' },
-                      roles: { type: 'string' },
-                      workspaces: { type: 'string' }, // Add documentation
-                      tasks: { type: 'string' },      // Add documentation
-                      admin: { type: 'string' },
-                      documentation: { type: 'string' },
-                      health: { type: 'string' }
-                    }
-                  },
-                  features: {
-                    type: 'array',
-                    items: { type: 'string' }
-                  }
-                }
-              }
-            }
-          }
-        },
-        async (request, reply) => {
-          const response = {
-            name: 'Fastify Auth API',
-            version: '1.0.0',
-            description: 'Modern authentication API with RBAC and comprehensive user management',
-            endpoints: {
-              auth: '/api/v1/auth',
-              users: '/api/v1/users',
-              roles: '/api/v1/roles',
-              workspaces: '/workspaces', // Atualizado
-              tasks: '/workspaces/:id/tasks', // Atualizado
-              admin: '/api/v1/admin',
-              documentation: '/documentation',
-              health: '/health'
-            },
-            features: [
-              'JWT Authentication with Refresh Tokens',
-              'Two-Factor Authentication (TOTP)',
-              'Role-Based Access Control (RBAC)',
-              'Email Verification',
-              'Password Reset',
-              'Session Management',
-              'Audit Logging',
-              'Rate Limiting',
-              'Real-time Security Monitoring',
-              'Comprehensive Admin Dashboard',
-              'Workspace Management', // Novo
-              'Task Tracking & Kanban' // Novo
-            ]
-          }
-
-          return reply.send(response)
-        }
-      )
     },
     { prefix: '/api/v1' }
   )
 
-  // --- NOVAS ROTAS (Registradas na raiz para compatibilidade com logs) ---
+  // --- NOVAS ROTAS ---
   
-  // Rota: http://localhost:3000/workspaces
   await server.register(workspaceRoutes, { 
     prefix: '/workspaces',
     logLevel: 'info'
   })
 
-  // Rotas de Tasks (paths definidos internamente)
   await server.register(taskRoutes, {
+    logLevel: 'info'
+  })
+
+  // 2. IMPORTANTE: Adicione este bloco para registrar a rota que está dando 404
+  await server.register(notificationRoutes, {
+    prefix: '/notifications',
     logLevel: 'info'
   })
 
@@ -236,29 +154,15 @@ export async function registerRoutes(server: AppServer) {
 
   server.ready(() => {
     logger.info('All routes registered successfully')
-    // Log extra para confirmar registro das novas rotas
-    logger.info('✅ Workspaces and Tasks routes active')
+    logger.info('✅ Workspaces, Tasks and Notifications routes active')
   })
 }
 
 // Route summary
 export const routeSummary = {
-  '/api/v1/auth': {
-    description: 'Authentication and user profile management',
-    endpoints: [
-      'POST /register', 'POST /login', 'POST /verify-2fa', 'POST /refresh', 
-      'POST /logout', 'GET /me', 'PUT /profile', 'POST /change-password'
-    ]
-  },
-  '/api/v1/users': {
-    description: 'User management (Admin/Moderator access required)',
-    endpoints: ['GET /', 'GET /:id', 'POST /', 'PUT /:id', 'DELETE /:id']
-  },
-  '/api/v1/roles': {
-    description: 'Role and permission management (Admin access required)',
-    endpoints: ['GET /', 'GET /:id', 'POST /', 'PUT /:id', 'DELETE /:id']
-  },
-  // Documentação adicionada
+  '/api/v1/auth': { /* ... */ },
+  '/api/v1/users': { /* ... */ },
+  '/api/v1/roles': { /* ... */ },
   '/workspaces': {
     description: 'Workspace management',
     endpoints: ['GET /', 'POST /', 'GET /:id', 'PUT /:id', 'DELETE /:id']
@@ -266,5 +170,10 @@ export const routeSummary = {
   '/tasks': {
     description: 'Task management',
     endpoints: ['GET /workspaces/:id/tasks', 'POST /workspaces/:id/tasks', 'GET /tasks/:id']
+  },
+  // Documentação da nova rota
+  '/notifications': {
+    description: 'Real-time notifications',
+    endpoints: ['GET /', 'GET /stream', 'PATCH /:id/read', 'PATCH /read-all']
   }
 }

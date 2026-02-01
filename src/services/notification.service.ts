@@ -1,39 +1,55 @@
-import { prisma } from '../lib/prisma';
+import { prisma } from '../lib/prisma.js';
+import { FastifyReply } from 'fastify';
+import { EventEmitter } from 'events';
 
-export class NotificationService {
-  
-  /**
-   * Cria uma notificação no banco de dados
-   */
-  static async notify(data: {
-    userId: string;
-    title: string;
-    message: string;
-    type: string;
-    link?: string;
-  }) {
-    try {
-      const notification = await prisma.notification.create({
-        data: {
-          userId: data.userId,
-          title: data.title,
-          message: data.message,
-          type: data.type,
-          link: data.link
-        }
-      });
-      
-      // Futuro: Aqui entra o disparo de WebSocket/Socket.io
-      return notification;
-    } catch (error) {
-      console.error("Erro ao criar notificação:", error);
+class NotificationService extends EventEmitter {
+  private clients: Map<string, FastifyReply[]> = new Map();
+
+  addClient(userId: string, reply: FastifyReply) {
+    if (!this.clients.has(userId)) {
+      this.clients.set(userId, []);
+    }
+    this.clients.get(userId)?.push(reply);
+
+    reply.raw.on('close', () => {
+      this.removeClient(userId, reply);
+    });
+  }
+
+  removeClient(userId: string, reply: FastifyReply) {
+    const userClients = this.clients.get(userId);
+    if (userClients) {
+      this.clients.set(userId, userClients.filter(c => c !== reply));
     }
   }
 
-  static async markAsRead(notificationId: string) {
-    return prisma.notification.update({
-      where: { id: notificationId },
-      data: { read: true }
+  async notify(data: { userId: string; title: string; message: string; type: string; link?: string }) {
+    // 1. Salvar no Banco
+    const notification = await prisma.notification.create({
+      data: {
+        userId: data.userId,
+        title: data.title,
+        message: data.message,
+        type: data.type,
+        link: data.link,
+        read: false
+      }
     });
+
+    // 2. Enviar Real-time (se o usuário estiver online)
+    const userClients = this.clients.get(data.userId);
+    if (userClients && userClients.length > 0) {
+      const payload = `data: ${JSON.stringify(notification)}\n\n`;
+      userClients.forEach(client => client.raw.write(payload));
+    }
+
+    return notification;
+  }
+
+  // Helper para notificar múltiplos usuários
+  async notifyMany(userIds: string[], data: { title: string; message: string; type: string; link?: string }) {
+    return Promise.all(userIds.map(id => this.notify({ ...data, userId: id })));
   }
 }
+
+export const notificationService = new NotificationService();

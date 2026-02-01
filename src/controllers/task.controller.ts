@@ -14,7 +14,7 @@ export class TaskController {
   async create(request: FastifyRequest, reply: FastifyReply) {
     const { workspaceId } = z.object({ workspaceId: z.string() }).parse(request.params);
     const data = createTaskSchema.parse(request.body);
-    const userId = request.user.id; 
+    const userId = (request.user as any).id; 
 
     const member = await prisma.workspaceMember.findUnique({
       where: { workspaceId_userId: { workspaceId, userId } }
@@ -51,7 +51,20 @@ export class TaskController {
     const tasks = await prisma.task.findMany({
       where: { workspaceId },
       include: {
-        assignees: { include: { user: { select: { id: true, firstName: true, avatar: true } } } },
+        // ATUALIZADO: Incluindo lastName e email
+        assignees: { 
+          include: { 
+            user: { 
+              select: { 
+                id: true, 
+                firstName: true, 
+                lastName: true, 
+                email: true, 
+                avatar: true 
+              } 
+            } 
+          } 
+        },
         _count: { select: { checklist: true, notes: true, attachments: true } }
       },
       orderBy: { createdAt: 'desc' }
@@ -64,7 +77,20 @@ export class TaskController {
     const task = await prisma.task.findUnique({
       where: { id },
       include: {
-        assignees: { include: { user: { select: { id: true, firstName: true, avatar: true } } } },
+        // ATUALIZADO: Incluindo lastName e email
+        assignees: { 
+          include: { 
+            user: { 
+              select: { 
+                id: true, 
+                firstName: true, 
+                lastName: true, 
+                email: true, 
+                avatar: true 
+              } 
+            } 
+          } 
+        },
         checklist: { orderBy: { id: 'asc' } },
         notes: { include: { author: { select: { id: true, firstName: true, avatar: true } } }, orderBy: { createdAt: 'desc' } },
         history: { include: { user: { select: { id: true, firstName: true } } }, orderBy: { createdAt: 'desc' } },
@@ -79,7 +105,7 @@ export class TaskController {
   async update(request: FastifyRequest, reply: FastifyReply) {
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const data = updateTaskSchema.parse(request.body);
-    const userId = request.user.id;
+    const userId = (request.user as any).id;
 
     let historyAction = 'Atualizou a tarefa';
     if (data.priority) historyAction = `Alterou a prioridade para ${data.priority}`;
@@ -105,7 +131,7 @@ export class TaskController {
   async addChecklistItem(request: FastifyRequest, reply: FastifyReply) {
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const { title } = createChecklistItemSchema.parse(request.body);
-    const userId = request.user.id;
+    const userId = (request.user as any).id;
 
     const item = await prisma.checklistItem.create({ data: { taskId: id, title } });
     await prisma.taskHistory.create({
@@ -117,7 +143,7 @@ export class TaskController {
   async updateChecklistItem(request: FastifyRequest, reply: FastifyReply) {
     const { itemId } = z.object({ itemId: z.string() }).parse(request.params);
     const data = updateChecklistItemSchema.parse(request.body);
-    const userId = request.user.id;
+    const userId = (request.user as any).id;
 
     const item = await prisma.checklistItem.findUnique({ where: { id: itemId } });
     if (!item) return reply.status(404).send();
@@ -138,7 +164,7 @@ export class TaskController {
   async addNote(request: FastifyRequest, reply: FastifyReply) {
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const { content } = z.object({ content: z.string().min(1) }).parse(request.body);
-    const userId = request.user.id;
+    const userId = (request.user as any).id;
 
     const note = await prisma.taskNote.create({
       data: { taskId: id, content, authorId: userId },
@@ -151,7 +177,7 @@ export class TaskController {
   async toggleStatus(request: FastifyRequest, reply: FastifyReply) {
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const { status } = z.object({ status: z.enum(['TODO', 'IN_PROGRESS', 'IN_REVIEW', 'DONE', 'CANCELED']) }).parse(request.body);
-    const userId = request.user.id;
+    const userId = (request.user as any).id;
 
     const task = await prisma.task.update({
       where: { id },
@@ -169,10 +195,10 @@ export class TaskController {
     return reply.status(204).send(); 
   }
 
-  // --- UPLOAD ROBUSTO (NOVO) ---
+  // --- UPLOAD DE ANEXOS ---
   async uploadAttachment(request: FastifyRequest, reply: FastifyReply) {
     const { id } = z.object({ id: z.string() }).parse(request.params);
-    const userId = request.user.id;
+    const userId = (request.user as any).id;
     
     // 1. Processar arquivo
     const data = await request.file();
@@ -196,10 +222,10 @@ export class TaskController {
         data: {
             taskId: id,
             uploaderId: userId,
-            fileName: data.filename, // Nome original para exibição
+            fileName: data.filename,
             fileType: data.mimetype,
             fileSize: stats.size,
-            fileUrl: uniqueName // Nome físico para URL
+            fileUrl: uniqueName
         }
     });
 
@@ -213,14 +239,13 @@ export class TaskController {
 
   async deleteAttachment(request: FastifyRequest, reply: FastifyReply) {
     const { attachmentId } = z.object({ attachmentId: z.string() }).parse(request.params);
-    const userId = request.user.id;
+    const userId = (request.user as any).id;
 
     const attachment = await prisma.taskAttachment.findUnique({ where: { id: attachmentId } });
     if (!attachment) return reply.status(404).send();
 
     await prisma.taskAttachment.delete({ where: { id: attachmentId } });
 
-    // Tentar apagar arquivo físico
     try {
         const filePath = join(process.cwd(), 'uploads', attachment.fileUrl);
         if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
@@ -231,6 +256,88 @@ export class TaskController {
     await prisma.taskHistory.create({
         data: { taskId: attachment.taskId, userId, action: `Removeu o anexo: "${attachment.fileName}"` }
     });
+
+    return reply.status(204).send();
+  }
+
+  // --- ASSIGNEES (MEMBROS) ---
+
+  async listAssignableUsers(request: FastifyRequest, reply: FastifyReply) {
+    const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        avatar: true
+      },
+      orderBy: { firstName: 'asc' }
+    });
+    return reply.send(users);
+  }
+
+  async addAssignee(request: FastifyRequest, reply: FastifyReply) {
+    const { id } = z.object({ id: z.string() }).parse(request.params);
+    const { userId } = z.object({ userId: z.string() }).parse(request.body);
+
+    // 1. Verificar se já existe
+    const existing = await prisma.taskAssignee.findUnique({
+      where: { taskId_userId: { taskId: id, userId } }
+    });
+
+    if (existing) {
+      return reply.status(409).send({ message: 'Usuário já está atribuído a esta tarefa.' });
+    }
+
+    // 2. Criar atribuição (ATUALIZADO: Inclui lastName e email para retorno imediato)
+    const assignee = await prisma.taskAssignee.create({
+      data: { taskId: id, userId },
+      include: { 
+        user: { 
+          select: { 
+            id: true, 
+            firstName: true, 
+            lastName: true, 
+            email: true, 
+            avatar: true 
+          } 
+        } 
+      }
+    });
+
+    // 3. Histórico
+    const actorId = (request.user as any).id;
+    await prisma.taskHistory.create({
+      data: {
+        taskId: id,
+        userId: actorId,
+        action: `Adicionou um membro`
+      }
+    });
+
+    return reply.status(201).send(assignee);
+  }
+
+  async removeAssignee(request: FastifyRequest, reply: FastifyReply) {
+    const { id, userId } = z.object({ id: z.string(), userId: z.string() }).parse(request.params);
+    const actorId = (request.user as any).id;
+
+    try {
+      await prisma.taskAssignee.delete({
+        where: { taskId_userId: { taskId: id, userId } }
+      });
+      
+      await prisma.taskHistory.create({
+        data: {
+          taskId: id,
+          userId: actorId,
+          action: `Removeu um membro`
+        }
+      });
+      
+    } catch (error) {
+       return reply.status(404).send({ message: 'Membro não encontrado nesta tarefa' });
+    }
 
     return reply.status(204).send();
   }

@@ -5,8 +5,6 @@ import { authenticate } from '../middleware/auth.middleware.js';
 const taskController = new TaskController();
 
 export async function taskRoutes(app: FastifyInstance) {
-  // --- REMOVI O CÓDIGO DE STATIC DAQUI POIS JÁ ESTÁ NO PLUGINS.TS ---
-
   app.addHook('preHandler', authenticate);
 
   // Rotas de Tasks ligadas ao Workspace
@@ -27,4 +25,12 @@ export async function taskRoutes(app: FastifyInstance) {
   // Anexos (Upload & Delete)
   app.post('/tasks/:id/attachments', taskController.uploadAttachment);
   app.delete('/attachments/:attachmentId', taskController.deleteAttachment);
+
+  // --- NOVAS ROTAS: ASSIGNEES ---
+  // Rota auxiliar para popular o Select de membros
+  app.get('/users/assignable', taskController.listAssignableUsers);
+  
+  // Adicionar e Remover Membros
+  app.post('/tasks/:id/assignees', taskController.addAssignee);
+  app.delete('/tasks/:id/assignees/:userId', taskController.removeAssignee);
 }

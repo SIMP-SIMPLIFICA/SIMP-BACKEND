@@ -1,6 +1,12 @@
 import { FastifyRequest, FastifyReply } from 'fastify'
 
 export async function authenticate(request: FastifyRequest, reply: FastifyReply) {
+  // 0. Ignorar requisições OPTIONS (Preflight do CORS)
+  // O navegador envia isso antes do POST do arquivo. Se bloquearmos aqui, o upload nunca acontece.
+  if (request.method === 'OPTIONS') {
+    return
+  }
+
   try {
     let token: string | null = null
 
@@ -10,10 +16,13 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
       token = authHeader.substring(7)
     }
 
-    // 2. Tenta pegar do Cookie (Essencial para uploads e sessão)
+    // 2. Tenta pegar do Cookie
     if (!token && request.cookies?.token) {
       token = request.cookies.token
     }
+
+    // DEBUG: Descomente se o erro persistir para ver o que está chegando
+    // console.log(`[AUTH] Method: ${request.method} | Path: ${request.url} | Token Found: ${!!token}`)
 
     if (!token) {
       return reply.code(401).send({
@@ -25,14 +34,11 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
     // Verifica o token
     await request.jwtVerify()
 
-    // --- CORREÇÃO DO ERRO 500 (Abas Sumidas) ---
-    // O token JWT geralmente traz o ID no campo 'sub'.
-    // Aqui garantimos que request.user.id exista para os controllers usarem.
+    // Correção do user.id (mantida do seu código original)
     const user = request.user as any
     if (user && user.sub && !user.id) {
       user.id = user.sub
     }
-    // -------------------------------------------
     
   } catch (err) {
     return reply.code(401).send({
@@ -43,5 +49,4 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
   }
 }
 
-// Exportação dupla para garantir compatibilidade com rotas antigas
 export { authenticate as authMiddleware }

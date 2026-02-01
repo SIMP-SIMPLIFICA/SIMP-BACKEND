@@ -1,30 +1,35 @@
-import { FastifyInstance } from 'fastify';
-import { TaskController } from '../controllers/task.controller.js';
-import { authenticate } from '../middleware/auth.middleware.js';
+import { FastifyInstance } from 'fastify'
+import { TaskController } from '../controllers/task.controller.js'
+import { authMiddleware } from '../middleware/auth.middleware.js'
 
-const taskController = new TaskController();
+const taskController = new TaskController()
 
 export async function taskRoutes(app: FastifyInstance) {
-  // --- REMOVI O CÓDIGO DE STATIC DAQUI POIS JÁ ESTÁ NO PLUGINS.TS ---
+  app.addHook('preHandler', authMiddleware)
 
-  app.addHook('preHandler', authenticate);
+  // NOTA: As rotas de criar/listar por workspace foram movidas para workspace.routes.ts
+  // para respeitar a URL /workspaces/:id/tasks chamada pelo frontend.
 
-  // Rotas de Tasks ligadas ao Workspace
-  app.post('/workspaces/:workspaceId/tasks', taskController.create);
-  app.get('/workspaces/:workspaceId/tasks', taskController.list);
-
-  // Rotas diretas de Task
-  app.get('/tasks/:id', taskController.details);
-  app.put('/tasks/:id', taskController.update);
-  app.delete('/tasks/:id', taskController.delete);
-  app.patch('/tasks/:id/status', taskController.toggleStatus);
+  // --- Rotas Diretas da Tarefa (Prefixo /tasks herdado do config) ---
   
-  // Checklist e Notas
-  app.post('/tasks/:id/checklist', taskController.addChecklistItem);
-  app.put('/checklist/:itemId', taskController.updateChecklistItem);
-  app.post('/tasks/:id/notes', taskController.addNote);
+  // Detalhes (GET /tasks/:id)
+  app.get('/:id', taskController.details)
+  
+  // Atualizações
+  app.put('/:id', taskController.update)
+  app.delete('/:id', taskController.delete)
+  app.patch('/:id/status', taskController.toggleStatus)
 
-  // Anexos (Upload & Delete)
-  app.post('/tasks/:id/attachments', taskController.uploadAttachment);
-  app.delete('/attachments/:attachmentId', taskController.deleteAttachment);
+  // Sub-recursos (Checklist, Notas)
+  app.post('/:id/checklist', taskController.addChecklistItem)
+  app.put('/checklist/:itemId', taskController.updateChecklistItem)
+  app.post('/:id/notes', taskController.addNote)
+  
+  // Anexos
+  app.post('/:id/attachments', taskController.uploadAttachment)
+  app.delete('/attachments/:attachmentId', taskController.deleteAttachment)
+
+  // Membros (Assignees)
+  app.post('/:id/assignees', taskController.addAssignee)
+  app.delete('/:id/assignees/:userId', taskController.removeAssignee)
 }

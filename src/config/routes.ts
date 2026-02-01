@@ -3,14 +3,14 @@ import { userRoutes } from '@/routes/user.routes.js'
 import { roleRoutes } from '@/routes/role.routes.js'
 import { workspaceRoutes } from '@/routes/workspace.routes.js'
 import { taskRoutes } from '@/routes/task.routes.js'
-// 1. IMPORTANTE: O import abaixo estava faltando no seu arquivo
-import { notificationRoutes } from '@/routes/notification.routes.js' 
+import { notificationRoutes } from '@/routes/notification.routes.js' // Rota de notificações adicionada
 
 import { AppServer } from '@/types/server'
 import { db } from '@/utils/database.js'
 import { logger } from '@/utils/logger.js'
 
 export async function registerRoutes(server: AppServer) {
+  // --- ERROR HANDLER GLOBAL ---
   server.setErrorHandler(async (error, request, reply) => {
     request.log.error(error, 'Request error occurred')
 
@@ -94,6 +94,7 @@ export async function registerRoutes(server: AppServer) {
     })
   })
 
+  // --- NOT FOUND HANDLER ---
   server.setNotFoundHandler(async (request, reply) => {
     return reply.code(404).send({
       error: 'Not Found',
@@ -105,6 +106,7 @@ export async function registerRoutes(server: AppServer) {
     })
   })
 
+  // --- HEALTH CHECK ---
   server.get('/health', async () => {
     const dbHealth = await db.isHealthy()
     return {
@@ -117,36 +119,41 @@ export async function registerRoutes(server: AppServer) {
   })
 
   // --- API V1 ROUTES (Auth, User, Role) ---
-await server.register(
+  await server.register(
     async server => {
       await server.register(authRoutes, { prefix: '/auth', logLevel: 'info' })
       await server.register(userRoutes, { prefix: '/users', logLevel: 'info' })
       await server.register(roleRoutes, { prefix: '/roles', logLevel: 'info' })
 
-      server.get('/', { /* schema omitido para brevidade */ }, async (request, reply) => {
+      server.get('/', { /* schema omitido */ }, async (request, reply) => {
           return reply.send({ message: "API V1 Root" }) 
       })
     },
     { prefix: '/api/v1' }
   )
 
-  // --- NOVAS ROTAS ---
+  // --- ROTAS PRINCIPAIS (ROOT LEVEL) ---
   
+  // 1. Workspaces (Gera /workspaces/...)
   await server.register(workspaceRoutes, { 
     prefix: '/workspaces',
     logLevel: 'info'
   })
 
+  // 2. Tasks (Gera /tasks/...)
+  // Importante: O prefixo é necessário para que a rota GET /tasks/:id funcione corretamente
   await server.register(taskRoutes, {
+    prefix: '/tasks',
     logLevel: 'info'
   })
 
-  // 2. IMPORTANTE: Adicione este bloco para registrar a rota que está dando 404
+  // 3. Notifications (Gera /notifications/...)
   await server.register(notificationRoutes, {
     prefix: '/notifications',
     logLevel: 'info'
   })
 
+  // --- TEST ENDPOINT ---
   server.get('/test', async (request, reply) => {
     logger.info('Test endpoint hit')
     return reply.send({ message: 'Test endpoint working', timestamp: new Date().toISOString() })
@@ -154,26 +161,27 @@ await server.register(
 
   server.ready(() => {
     logger.info('All routes registered successfully')
-    logger.info('✅ Workspaces, Tasks and Notifications routes active')
+    logger.info('✅ Workspaces mounted at /workspaces')
+    logger.info('✅ Tasks mounted at /tasks')
+    logger.info('✅ Notifications mounted at /notifications')
   })
 }
 
-// Route summary
+// Route summary para documentação/debug
 export const routeSummary = {
-  '/api/v1/auth': { /* ... */ },
-  '/api/v1/users': { /* ... */ },
-  '/api/v1/roles': { /* ... */ },
+  '/api/v1/auth': { description: 'Authentication routes' },
+  '/api/v1/users': { description: 'User management' },
+  '/api/v1/roles': { description: 'RBAC management' },
   '/workspaces': {
     description: 'Workspace management',
-    endpoints: ['GET /', 'POST /', 'GET /:id', 'PUT /:id', 'DELETE /:id']
+    endpoints: ['GET /', 'POST /', 'GET /:id', 'POST /:id/members', 'GET /:id/assignable-users']
   },
   '/tasks': {
     description: 'Task management',
-    endpoints: ['GET /workspaces/:id/tasks', 'POST /workspaces/:id/tasks', 'GET /tasks/:id']
+    endpoints: ['GET /:id (Details)', 'PUT /:id', 'POST /:id/checklist', 'POST /:id/assignees']
   },
-  // Documentação da nova rota
   '/notifications': {
     description: 'Real-time notifications',
-    endpoints: ['GET /', 'GET /stream', 'PATCH /:id/read', 'PATCH /read-all']
+    endpoints: ['GET /', 'GET /stream', 'PATCH /:id/read']
   }
 }

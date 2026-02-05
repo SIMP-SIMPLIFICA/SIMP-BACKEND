@@ -50,6 +50,22 @@ async function seedRoles() {
       isSystem: true
     },
     {
+      name: 'communication',
+      displayName: 'Communication',
+      description: 'Manages communication documents and protocols',
+      color: '#0ea5e9',
+      permissions: ['documents:manage', 'documents:create', 'documents:read'],
+      isSystem: true
+    },
+    {
+      name: 'secretary',
+      displayName: 'Secretary',
+      description: 'Administrative support role',
+      color: '#d946ef',
+      permissions: ['documents:create', 'documents:read'],
+      isSystem: true
+    },
+    {
       name: 'user',
       displayName: 'User',
       description: 'Standard user with basic permissions',

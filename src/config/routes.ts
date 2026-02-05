@@ -3,7 +3,8 @@ import { userRoutes } from '@/routes/user.routes.js'
 import { roleRoutes } from '@/routes/role.routes.js'
 import { workspaceRoutes } from '@/routes/workspace.routes.js'
 import { taskRoutes } from '@/routes/task.routes.js'
-import { notificationRoutes } from '@/routes/notification.routes.js' // Rota de notificações adicionada
+import { notificationRoutes } from '@/routes/notification.routes.js'
+import { communicationRoutes } from '@/routes/communication.routes.js' // Nova rota
 
 import { AppServer } from '@/types/server'
 import { db } from '@/utils/database.js'
@@ -124,6 +125,9 @@ export async function registerRoutes(server: AppServer) {
       await server.register(authRoutes, { prefix: '/auth', logLevel: 'info' })
       await server.register(userRoutes, { prefix: '/users', logLevel: 'info' })
       await server.register(roleRoutes, { prefix: '/roles', logLevel: 'info' })
+      
+      // Módulo de Comunicação
+      await server.register(communicationRoutes, { prefix: '/communication', logLevel: 'info' })
 
       server.get('/', { /* schema omitido */ }, async (request, reply) => {
           return reply.send({ message: "API V1 Root" }) 
@@ -134,20 +138,16 @@ export async function registerRoutes(server: AppServer) {
 
   // --- ROTAS PRINCIPAIS (ROOT LEVEL) ---
   
-  // 1. Workspaces (Gera /workspaces/...)
   await server.register(workspaceRoutes, { 
     prefix: '/workspaces',
     logLevel: 'info'
   })
 
-  // 2. Tasks (Gera /tasks/...)
-  // Importante: O prefixo é necessário para que a rota GET /tasks/:id funcione corretamente
   await server.register(taskRoutes, {
     prefix: '/tasks',
     logLevel: 'info'
   })
 
-  // 3. Notifications (Gera /notifications/...)
   await server.register(notificationRoutes, {
     prefix: '/notifications',
     logLevel: 'info'
@@ -164,14 +164,15 @@ export async function registerRoutes(server: AppServer) {
     logger.info('✅ Workspaces mounted at /workspaces')
     logger.info('✅ Tasks mounted at /tasks')
     logger.info('✅ Notifications mounted at /notifications')
+    logger.info('✅ Communication mounted at /api/v1/communication')
   })
 }
 
-// Route summary para documentação/debug
 export const routeSummary = {
   '/api/v1/auth': { description: 'Authentication routes' },
   '/api/v1/users': { description: 'User management' },
   '/api/v1/roles': { description: 'RBAC management' },
+  '/api/v1/communication': { description: 'Protocolo e Comunicação' },
   '/workspaces': {
     description: 'Workspace management',
     endpoints: ['GET /', 'POST /', 'GET /:id', 'POST /:id/members', 'GET /:id/assignable-users']

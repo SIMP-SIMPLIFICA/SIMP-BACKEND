@@ -5,7 +5,62 @@ import { createRoleSchema, paginationSchema, updateRoleSchema } from '@/schemas/
 import { z } from 'zod'
 
 const AVAILABLE_PERMISSIONS = {
-  users: { displayName: 'User Management', permissions: [{ key: 'users:read', description: 'View users', level: 'read' }] }
+  users: {
+    displayName: 'Gestão de Usuários',
+    permissions: [
+      { key: 'users:read', description: 'Visualizar listagem de usuários', level: 'read' },
+      { key: 'users:write', description: 'Criar e editar usuários', level: 'write' },
+      { key: 'users:delete', description: 'Excluir usuários', level: 'delete' },
+      { key: 'users:manage', description: 'Controle total de usuários (inclui reset de senha)', level: 'admin' }
+    ]
+  },
+  roles: {
+    displayName: 'Gestão de Perfis (Roles)',
+    permissions: [
+      { key: 'roles:read', description: 'Visualizar perfis de acesso', level: 'read' },
+      { key: 'roles:write', description: 'Criar e editar perfis', level: 'write' },
+      { key: 'roles:delete', description: 'Excluir perfis', level: 'delete' },
+      { key: 'roles:manage', description: 'Gerenciar permissões avançadas', level: 'admin' }
+    ]
+  },
+  finance: {
+    displayName: 'Módulo Financeiro',
+    permissions: [
+      { key: 'finance:read', description: 'Visualizar relatórios financeiros', level: 'read' },
+      { key: 'finance:write', description: 'Lançar despesas e receitas', level: 'write' },
+      { key: 'finance:approve', description: 'Aprovar transações', level: 'admin' },
+      { key: 'finance:export', description: 'Exportar dados financeiros', level: 'read' }
+    ]
+  },
+  settings: {
+    displayName: 'Configurações do Sistema',
+    permissions: [
+      { key: 'settings:read', description: 'Ver configurações globais', level: 'read' },
+      { key: 'settings:write', description: 'Alterar configurações globais', level: 'write' },
+      { key: 'system:admin', description: 'Acesso de Super Administrador', level: 'admin' },
+      { key: 'audit:read', description: 'Acessar logs de auditoria', level: 'read' },
+      { key: 'audit:export', description: 'Baixar logs de auditoria', level: 'read' }
+    ]
+  },
+  communication: {
+    displayName: 'Comunicação e Protocolo',
+    permissions: [
+      { key: 'documents:read', description: 'Visualizar documentos e processos', level: 'read' },
+      { key: 'documents:create', description: 'Criar novos documentos (Memorandos, Ofícios)', level: 'write' },
+      { key: 'documents:manage', description: 'Gerenciar todos os documentos (Editar/Excluir)', level: 'admin' },
+      { key: 'documents:sign', description: 'Assinar documentos digitalmente', level: 'write' },
+      { key: 'documents:send', description: 'Enviar documentos (Protocolar)', level: 'write' }
+    ]
+  },
+  security: {
+    displayName: 'Segurança & Sessões',
+    permissions: [
+      { key: 'sessions:view', description: 'Ver sessões ativas', level: 'read' },
+      { key: 'sessions:manage', description: 'Derrubar sessões de usuários', level: 'admin' },
+      { key: 'backup:create', description: 'Gerar backup manual', level: 'admin' },
+      { key: 'backup:restore', description: 'Restaurar sistema', level: 'admin' }
+    ]
+  }
 }
 
 export class RoleController {
@@ -58,7 +113,7 @@ export class RoleController {
       const paginatedResult = db.paginate(roles, query.page, query.limit, total)
 
       await db.createAuditLog({
-        userId: (request as any).user?.id, 
+        userId: (request as any).user?.id,
         action: 'roles_listed',
         resource: 'role',
         ipAddress: request.ip,
@@ -97,7 +152,7 @@ export class RoleController {
       }
 
       await db.createAuditLog({
-        userId: (request as any).user?.id, 
+        userId: (request as any).user?.id,
         action: 'role_viewed',
         resource: 'role',
         resourceId: id,
@@ -143,7 +198,7 @@ export class RoleController {
       })
 
       await db.createAuditLog({
-        userId: (request as any).user?.id, 
+        userId: (request as any).user?.id,
         action: 'role_created',
         resource: 'role',
         resourceId: role.id,
@@ -212,7 +267,7 @@ export class RoleController {
       await prisma.role.delete({ where: { id } })
 
       await db.createAuditLog({
-        userId: (request as any).user?.id, 
+        userId: (request as any).user?.id,
         action: 'role_deleted',
         resource: 'role',
         resourceId: id,
@@ -263,8 +318,16 @@ export class RoleController {
   }
 
   async getAvailablePermissions(request: FastifyRequest, reply: FastifyReply) {
-    // Implementação simplificada para economizar espaço, mantenha a lógica original se necessário
-    return reply.send({ permissions: [], categories: [] })
+    try {
+      // Retorna as permissões formatadas para o frontend
+      return reply.send({
+        permissions: AVAILABLE_PERMISSIONS,
+        categories: Object.keys(AVAILABLE_PERMISSIONS)
+      })
+    } catch (error: any) {
+      authLogger.error(error, 'Failed to get available permissions')
+      return reply.code(500).send({ error: 'Permissions Fetch Failed', message: error.message })
+    }
   }
 
   async duplicateRole(request: FastifyRequest, reply: FastifyReply) {
@@ -306,21 +369,21 @@ export class RoleController {
 
   async getRoleHierarchy(request: FastifyRequest, reply: FastifyReply) {
     try {
-        const roles = await prisma.role.findMany({
-            where: { isActive: true },
-            select: { id: true, name: true, displayName: true, parentId: true },
-            orderBy: { name: 'asc' }
-        })
-        const buildHierarchy = (parentId: string | null = null, level = 0): any[] => {
-            return roles.filter(role => role.parentId === parentId).map(role => ({
-                id: role.id, name: role.name, displayName: role.displayName, level,
-                children: buildHierarchy(role.id, level + 1)
-            }))
-        }
-        return reply.send({ hierarchy: buildHierarchy() })
+      const roles = await prisma.role.findMany({
+        where: { isActive: true },
+        select: { id: true, name: true, displayName: true, parentId: true },
+        orderBy: { name: 'asc' }
+      })
+      const buildHierarchy = (parentId: string | null = null, level = 0): any[] => {
+        return roles.filter(role => role.parentId === parentId).map(role => ({
+          id: role.id, name: role.name, displayName: role.displayName, level,
+          children: buildHierarchy(role.id, level + 1)
+        }))
+      }
+      return reply.send({ hierarchy: buildHierarchy() })
     } catch (error: any) {
-        authLogger.error(error, 'Failed to get role hierarchy')
-        return reply.code(500).send({ error: 'Hierarchy Fetch Failed', message: error.message })
+      authLogger.error(error, 'Failed to get role hierarchy')
+      return reply.code(500).send({ error: 'Hierarchy Fetch Failed', message: error.message })
     }
   }
 }

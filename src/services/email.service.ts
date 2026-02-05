@@ -26,13 +26,16 @@ class EmailService {
       auth:
         config.email.user && config.email.pass
           ? {
-              user: config.email.user,
-              pass: config.email.pass
-            }
+            user: config.email.user,
+            pass: config.email.pass
+          }
           : undefined,
       ...(config.isDevelopment && {
-        ignoreTLS: true,
-        requireTLS: false
+        // ignoreTLS: true, // REMOVIDO: Isso impede o upgrade para TLS (STARTTLS)
+        requireTLS: false,
+        tls: {
+          rejectUnauthorized: false
+        }
       })
     })
 

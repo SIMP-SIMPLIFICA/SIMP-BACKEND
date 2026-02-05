@@ -1,0 +1,7 @@
+🚀 Starting Verification: Document Tracking & Signatures
+🔑 Logging in as Admin (Sender)...
+🔑 Logging in as User (Recipient)...
+
+❌ VERIFICATION FAILED: Error: Auth Me failed: {"error":"Unauthorized","message":"Falha na autenticação","details":{"code":"FST_JWT_AUTHORIZATION_TOKEN_INVALID","name":"FastifyError","statusCode":401,"message":"Authorization token is invalid: The token is malformed."}}
+    at main (D:\PROJECTS\SIMP-BACKEND\scripts\verify_tracking.ts:37:37)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)

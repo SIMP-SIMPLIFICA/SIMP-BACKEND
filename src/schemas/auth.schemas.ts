@@ -88,6 +88,7 @@ export const updateProfileSchema = z.object({
     )
     .optional(),
   avatar: z.string().url('Invalid avatar URL').optional(),
+  jobTitle: z.string().max(100, 'Job title must be less than 100 characters').optional(),
   preferences: z.record(z.any()).optional(),
   metadata: z.record(z.any()).optional()
 })

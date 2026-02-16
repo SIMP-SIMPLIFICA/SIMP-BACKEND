@@ -6,17 +6,7 @@ import { createDocumentSchema, updateDocumentSchema, documentIdSchema } from '@/
 export async function communicationRoutes(app: FastifyInstance) {
   const controller = new CommunicationController()
 
-  // Configuração manual do Zod
-  app.setValidatorCompiler(({ schema }) => {
-    return (data) => {
-      const result = (schema as z.ZodType<any>).safeParse(data)
-      if (result.success) {
-        return { value: result.data }
-      } else {
-        return { error: result.error }
-      }
-    }
-  })
+  // Validator compiler is now set globally in plugins.ts
 
   // Middleware de autenticação
   app.addHook('onRequest', async (request, reply) => {
@@ -100,4 +90,24 @@ export async function communicationRoutes(app: FastifyInstance) {
       description: 'Gera protocolo e envia o documento'
     }
   }, controller.send.bind(controller))
+
+  app.post('/documents/:id/sign', {
+    schema: {
+      params: documentIdSchema,
+      tags: ['Communication'],
+      description: 'Assina o documento digitalmente'
+    }
+  }, controller.sign.bind(controller))
+
+  // GET (Download de Anexo)
+  app.get('/documents/:id/attachments/:attachmentId/download', {
+    schema: {
+      params: z.object({
+        id: z.string(),
+        attachmentId: z.string()
+      }),
+      tags: ['Communication'],
+      description: 'Download secure attachment'
+    }
+  }, controller.downloadAttachment.bind(controller))
 }

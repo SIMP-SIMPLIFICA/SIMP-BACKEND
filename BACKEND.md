@@ -1,6 +1,6 @@
 # File Tree: SIMP-BACKEND
 
-**Generated:** 2/1/2026, 10:40:45 PM
+**Generated:** 2/7/2026, 4:42:22 PM
 **Root Path:** `d:\PROJECTS\SIMP-BACKEND`
 
 ```
@@ -16,6 +16,12 @@
 │   ├── migrations
 │   │   ├── 20260131112718_init_full_schema
 │   │   │   └── migration.sql
+│   │   ├── 20260205005906_init_communication
+│   │   │   └── migration.sql
+│   │   ├── 20260205010615_add_updated_at_fix
+│   │   │   └── migration.sql
+│   │   ├── 20260205020827_add_document_number
+│   │   │   └── migration.sql
 │   │   └── migration_lock.toml
 │   ├── seeds
 │   │   ├── seed.d.ts
@@ -23,7 +29,15 @@
 │   │   └── seed.ts
 │   └── schema.prisma
 ├── scripts
-│   └── setup.sh
+│   ├── debug_audit.ts
+│   ├── setup.sh
+│   ├── test_audit_trail.ts
+│   ├── test_conn.ts
+│   ├── test_login.ts
+│   ├── test_verification_stamp.ts
+│   ├── verification_final.ts
+│   ├── verify_recipients_fix.ts
+│   └── verify_tracking.ts
 ├── src
 │   ├── config
 │   │   ├── config.ts
@@ -31,6 +45,7 @@
 │   │   └── routes.ts
 │   ├── controllers
 │   │   ├── auth.controller.ts
+│   │   ├── communication.controller.ts
 │   │   ├── notification.controller.ts
 │   │   ├── role.controller.ts
 │   │   ├── task.controller.ts
@@ -43,6 +58,7 @@
 │   ├── modules
 │   ├── routes
 │   │   ├── auth.routes.ts
+│   │   ├── communication.routes.ts
 │   │   ├── notification.routes.ts
 │   │   ├── role.routes.ts
 │   │   ├── task.routes.ts
@@ -50,12 +66,14 @@
 │   │   └── workspace.routes.ts
 │   ├── schemas
 │   │   ├── auth.schemas.ts
+│   │   ├── communication.schemas.ts
 │   │   ├── task.schemas.ts
 │   │   └── workspace.schemas.ts
 │   ├── services
 │   │   ├── auth.service.ts
 │   │   ├── email.service.ts
-│   │   └── notification.service.ts
+│   │   ├── notification.service.ts
+│   │   └── protocol.service.ts
 │   ├── test
 │   │   ├── auth_db.spec.ts
 │   │   └── example.spec.ts
@@ -84,6 +102,8 @@
 ├── package-lock.json
 ├── package.json
 ├── tsconfig.json
+├── verify_output.txt
+├── verify_output_2.txt
 └── vitest.config.ts
 ```
 

@@ -120,7 +120,7 @@ export class AuthService {
           password: hashedPassword,
           verifyToken,
           isActive: true,
-          isVerified: true 
+          isVerified: true
         },
         include: {
           roles: {
@@ -546,6 +546,46 @@ export class AuthService {
       )
     } catch (error) {
       authLogger.error(error, 'Email verification failed')
+      throw error
+    }
+  }
+
+  async updateProfile(userId: string, data: any, ipAddress: string) {
+    try {
+      const user = await prisma.user.findUnique({ where: { id: userId } })
+      if (!user) throw new Error('User not found')
+
+      // Check username uniqueness if changing
+      if (data.username && data.username !== user.username) {
+        const existing = await prisma.user.findUnique({ where: { username: data.username } })
+        if (existing) throw new Error('Username already taken')
+      }
+
+      const updatedUser = await prisma.user.update({
+        where: { id: userId },
+        data: {
+          firstName: data.firstName,
+          lastName: data.lastName,
+          username: data.username,
+          jobTitle: data.jobTitle,
+          avatar: data.avatar,
+          preferences: data.preferences ? { ...((user.preferences as object) || {}), ...data.preferences } : undefined
+        }
+      })
+
+      await db.createAuditLog({
+        userId,
+        action: 'user_profile_updated',
+        resource: 'user',
+        resourceId: userId,
+        ipAddress,
+        success: true,
+        newData: data
+      })
+
+      return updatedUser
+    } catch (error) {
+      authLogger.error(error, 'Profile update failed')
       throw error
     }
   }

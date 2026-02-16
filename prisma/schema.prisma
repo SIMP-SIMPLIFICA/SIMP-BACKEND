@@ -8,36 +8,33 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// --- MODELOS DE AUTENTICAÇÃO E SISTEMA (EXISTENTES) ---
-
 model User {
-  id                   String        @id @default(nanoid())
-  email                String        @unique
-  username             String?       @unique
+  id                   String    @id @default(nanoid())
+  email                String    @unique
+  username             String?   @unique
   firstName            String?
   lastName             String?
   avatar               String?
   password             String
-  isActive             Boolean       @default(false)
-  isVerified           Boolean       @default(false)
+  jobTitle             String?   @map("job_title")
+  isActive             Boolean   @default(false)
+  isVerified           Boolean   @default(false)
   verifyToken          String?
   passwordResetToken   String?
   passwordResetExpires DateTime?
   lastLoginAt          DateTime?
-  twoFactorEnabled     Boolean       @default(false)
+  twoFactorEnabled     Boolean   @default(false)
   twoFactorSecret      String?
   backupCodes          String[]
   metadata             Json?
   preferences          Json?
-  createdAt            DateTime      @default(now())
-  updatedAt            DateTime      @updatedAt
-  
-  // Relações existentes
-  auditLogs            AuditLog[]
-  roles                UserRole[]
-  sessions             UserSession[]
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
-  // --- WORKSPACES & TASKS ---
+  auditLogs AuditLog[]
+  roles     UserRole[]
+  sessions  UserSession[]
+
   workspaceMemberships WorkspaceMember[]
   createdTasks         Task[]            @relation("TaskCreator")
   assignedTasks        TaskAssignee[]
@@ -45,33 +42,33 @@ model User {
   taskHistory          TaskHistory[]
   notifications        Notification[]
 
-  // --- COMUNICAÇÃO (NOVAS RELAÇÕES) ---
-  createdDocuments     CommunicationDocument[] @relation("DocumentCreator")
-  documentRecipients   DocumentRecipient[]
-  documentSignatures   DocumentSignature[]
-  department           Department?             @relation(fields: [departmentId], references: [id])
-  departmentId         String?
+  createdDocuments   CommunicationDocument[] @relation("DocumentCreator")
+  documentRecipients DocumentRecipient[]
+  documentSignatures DocumentSignature[]
+
+  department   Department? @relation(fields: [departmentId], references: [id])
+  departmentId String?
 
   @@map("users")
 }
 
 model Role {
-  id          String     @id @default(nanoid())
-  name        String     @unique
+  id          String   @id @default(nanoid())
+  name        String   @unique
   displayName String
   description String?
   color       String?
   permissions Json
   parentId    String?
-  isSystem    Boolean    @default(false)
-  isActive    Boolean    @default(true)
+  isSystem    Boolean  @default(false)
+  isActive    Boolean  @default(true)
   metadata    Json?
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-  
-  parent      Role?      @relation("RoleHierarchy", fields: [parentId], references: [id])
-  children    Role[]     @relation("RoleHierarchy")
-  users       UserRole[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  parent   Role?      @relation("RoleHierarchy", fields: [parentId], references: [id])
+  children Role[]     @relation("RoleHierarchy")
+  users    UserRole[]
 
   @@map("roles")
 }
@@ -84,8 +81,9 @@ model UserRole {
   assignedBy String?
   assignedAt DateTime  @default(now())
   metadata   Json?
-  role       Role      @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, roleId])
   @@map("user_roles")
@@ -106,8 +104,8 @@ model UserSession {
   location     Json?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
-  
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("user_sessions")
 }
@@ -128,8 +126,8 @@ model AuditLog {
   success      Boolean
   errorMessage String?
   createdAt    DateTime @default(now())
-  
-  user         User?    @relation(fields: [userId], references: [id])
+
+  user User? @relation(fields: [userId], references: [id])
 
   @@index([userId])
   @@index([action])
@@ -168,18 +166,16 @@ model Setting {
 model Department {
   id          String   @id @default(nanoid())
   name        String
-  code        String   @unique // Ex: SEMUS, GAB
+  code        String   @unique
   description String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  users       User[]
-  documents   CommunicationDocument[]
+  users     User[]
+  documents CommunicationDocument[]
 
   @@map("departments")
 }
-
-// --- GESTÃO (WORKSPACES E TASKS) ---
 
 enum TaskStatus {
   TODO
@@ -211,19 +207,19 @@ model Workspace {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  members     WorkspaceMember[]
-  tasks       Task[]
+  members WorkspaceMember[]
+  tasks   Task[]
 }
 
 model WorkspaceMember {
   id          String        @id @default(uuid())
   workspaceId String
-  userId      String        
+  userId      String
   role        WorkspaceRole @default(MEMBER)
   joinedAt    DateTime      @default(now())
 
-  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([workspaceId, userId])
 }
@@ -237,13 +233,13 @@ model Task {
   priority    TaskPriority @default(MEDIUM)
   dueDate     DateTime?
   workspaceId String
-  creatorId   String       
-  
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  creatorId   String
 
-  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  creator     User         @relation("TaskCreator", fields: [creatorId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  creator   User      @relation("TaskCreator", fields: [creatorId], references: [id])
 
   assignees   TaskAssignee[]
   checklist   ChecklistItem[]
@@ -255,20 +251,20 @@ model Task {
 model TaskAssignee {
   taskId String
   userId String
-  
-  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([taskId, userId])
 }
 
 model ChecklistItem {
-  id        String  @id @default(uuid())
-  title     String
-  isDone    Boolean @default(false)
-  taskId    String
-  
-  task      Task    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  id     String  @id @default(uuid())
+  title  String
+  isDone Boolean @default(false)
+  taskId String
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
 }
 
 model TaskAttachment {
@@ -281,7 +277,7 @@ model TaskAttachment {
   taskId     String
   uploaderId String
 
-  task       Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
 }
 
 model TaskNote {
@@ -292,8 +288,8 @@ model TaskNote {
   taskId    String
   authorId  String
 
-  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  author    User     @relation(fields: [authorId], references: [id])
+  task   Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author User @relation(fields: [authorId], references: [id])
 }
 
 model TaskHistory {
@@ -304,8 +300,8 @@ model TaskHistory {
   taskId    String
   userId    String
 
-  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id])
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
 }
 
 model Notification {
@@ -318,10 +314,8 @@ model Notification {
   link      String?
   createdAt DateTime @default(now())
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
-
-// --- MÓDULO DE COMUNICAÇÃO (NOVO) ---
 
 enum DocumentStatus {
   DRAFT
@@ -349,74 +343,104 @@ model CommunicationDocument {
   documentNumber String?        @map("document_number")
   title          String         @db.VarChar(500)
   content        String         @db.Text
-  documentType   String         @map("document_type") // Memorando, Ofício, etc.
+  documentType   String         @map("document_type")
   status         DocumentStatus @default(DRAFT)
-  priority       TaskPriority   @default(MEDIUM) // Reutilizando enum de tasks ou criando novo se preferir
+  priority       TaskPriority   @default(MEDIUM)
 
-  // Rastreamento temporal
-  createdAt      DateTime       @default(now()) @map("created_at")
-  updatedAt      DateTime       @updatedAt @map("updated_at")
-  sentAt         DateTime?      @map("sent_at")
-  deliveredAt    DateTime?      @map("delivered_at")
-  readAt         DateTime?      @map("read_at")
-  signedAt       DateTime?      @map("signed_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  sentAt      DateTime? @map("sent_at")
+  deliveredAt DateTime? @map("delivered_at")
+  readAt      DateTime? @map("read_at")
+  signedAt    DateTime? @map("signed_at")
 
-  // Metadados de segurança
-  originalHash   String?        @map("original_hash") @db.VarChar(128)
-  currentHash    String?        @map("current_hash") @db.VarChar(128)
-  qrCodeHash     String?        @map("qr_code_hash") @db.VarChar(128)
+  originalHash String? @map("original_hash") @db.VarChar(128)
+  currentHash  String? @map("current_hash") @db.VarChar(128)
+  qrCodeHash   String? @map("qr_code_hash") @db.VarChar(128)
 
-  // Relacionamentos
-  createdBy      String         @map("created_by")
-  creator        User           @relation("DocumentCreator", fields: [createdBy], references: [id])
-  
-  departmentId   String?        @map("department_id")
-  department     Department?    @relation(fields: [departmentId], references: [id])
+  createdBy String @map("created_by")
+  creator   User   @relation("DocumentCreator", fields: [createdBy], references: [id])
 
-  recipients     DocumentRecipient[]
-  signatures     DocumentSignature[]
+  departmentId String?     @map("department_id")
+  department   Department? @relation(fields: [departmentId], references: [id])
+
+  recipients  DocumentRecipient[]
+  signatures  DocumentSignature[]
+  attachments CommunicationAttachment[]
+  metadata    Json?
+
+  protocol   Protocol? @relation(fields: [protocolId], references: [id])
+  protocolId String?   @unique @map("protocol_id")
+
+  pageCount Int? @default(1) @map("page_count")
 
   @@map("communication_documents")
 }
 
 model DocumentRecipient {
-  id             String         @id @default(nanoid())
-  documentId     String         @map("document_id")
-  userId         String         @map("user_id")
-  role           DocumentRole   @default(TO)
-  
-  canView        Boolean        @default(true) @map("can_view")
-  canSign        Boolean        @default(false) @map("can_sign")
-  
-  readAt         DateTime?      @map("read_at")
-  signedAt       DateTime?      @map("signed_at")
+  id         String       @id @default(nanoid())
+  documentId String       @map("document_id")
+  userId     String       @map("user_id")
+  role       DocumentRole @default(TO)
 
-  // Prova de leitura
-  readIp         String?        @map("read_ip") @db.VarChar(45)
-  readLocation   String?        @map("read_location") @db.VarChar(200)
-  readUserAgent  String?        @map("read_user_agent")
-  readDeviceId   String?        @map("read_device_id") @db.VarChar(100)
+  canView Boolean @default(true) @map("can_view")
+  canSign Boolean @default(false) @map("can_sign")
 
-  document       CommunicationDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  user           User                  @relation(fields: [userId], references: [id])
+  readAt   DateTime? @map("read_at")
+  signedAt DateTime? @map("signed_at")
+
+  readIp        String? @map("read_ip") @db.VarChar(45)
+  readLocation  String? @map("read_location") @db.VarChar(200)
+  readUserAgent String? @map("read_user_agent")
+  readDeviceId  String? @map("read_device_id") @db.VarChar(100)
+
+  document CommunicationDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user     User                  @relation(fields: [userId], references: [id])
 
   @@map("document_recipients")
 }
 
 model DocumentSignature {
-  id             String         @id @default(nanoid())
-  documentId     String         @map("document_id")
-  userId         String         @map("user_id")
-  signatureType  SignatureType  @map("signature_type")
+  id              String        @id @default(nanoid())
+  documentId      String        @map("document_id")
+  userId          String        @map("user_id")
+  signatureType   SignatureType @map("signature_type")
   certificateData Json?         @map("certificate_data")
-  
-  signedAt       DateTime       @default(now()) @map("signed_at")
-  ipAddress      String?        @map("ip_address") @db.VarChar(45)
-  validityUntil  DateTime?      @map("validity_until")
-  isValid        Boolean        @default(true) @map("is_valid")
 
-  document       CommunicationDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  user           User                  @relation(fields: [userId], references: [id])
+  signedAt      DateTime  @default(now()) @map("signed_at")
+  ipAddress     String?   @map("ip_address") @db.VarChar(45)
+  validityUntil DateTime? @map("validity_until")
+  isValid       Boolean   @default(true) @map("is_valid")
+  sealData      Json?     @map("seal_data")
+
+  document CommunicationDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user     User                  @relation(fields: [userId], references: [id])
 
   @@map("document_signatures")
+}
+
+model CommunicationAttachment {
+  id         String @id @default(nanoid())
+  documentId String @map("document_id")
+  fileName   String @map("file_name")
+  fileUrl    String @map("file_url")
+  fileType   String @map("file_type")
+  fileSize   Int    @map("file_size")
+
+  uploadedAt DateTime @default(now()) @map("uploaded_at")
+
+  document CommunicationDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@map("communication_attachments")
+}
+
+model Protocol {
+  id             String   @id @default(nanoid())
+  protocolNumber String   @unique @map("protocol_number")
+  year           Int
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  document CommunicationDocument?
+
+  @@map("protocols")
 }

@@ -11,12 +11,17 @@ import multipart from '@fastify/multipart'
 import jwt from '@fastify/jwt'
 import fastifyStatic from '@fastify/static'
 import { join } from 'node:path'
+import { jsonSchemaTransform, validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod'
 
 import { config } from './config.js'
 import { AppServer } from '@/types/server.js'
 import { db } from '@/utils/database.js'
 
 export async function registerPlugins(server: AppServer) {
+  // Set global validator and serializer compilers for Zod
+  server.setValidatorCompiler(validatorCompiler)
+  server.setSerializerCompiler(serializerCompiler)
+
   await server.register(helmet, { contentSecurityPolicy: false })
 
   await server.register(cors, {
@@ -55,8 +60,7 @@ export async function registerPlugins(server: AppServer) {
       private: config.jwt.accessSecret,
       public: config.jwt.accessSecret
     },
-    sign: { expiresIn: config.jwt.accessExpiresIn },
-    cookie: { cookieName: 'token', signed: false }
+    sign: { expiresIn: config.jwt.accessExpiresIn }
   })
 
   await server.register(cookie, {
@@ -78,7 +82,7 @@ export async function registerPlugins(server: AppServer) {
 
   await server.register(fastifyStatic, {
     root: join(process.cwd(), 'uploads'),
-    prefix: '/uploads/', 
+    prefix: '/uploads/',
     decorateReply: false
   })
 
@@ -89,6 +93,15 @@ export async function registerPlugins(server: AppServer) {
         info: { title: 'SIMP API', description: 'API Documentation', version: '1.0.0' },
         components: { securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' } } },
         security: [{ bearerAuth: [] }]
+      },
+      transform: (params) => {
+        try {
+          return jsonSchemaTransform(params)
+        } catch (error) {
+          // Se falhar (ex: schema JSON puro que o Zod transform não entende), retorna o schema original
+          // Isso corrige o erro "Cannot read properties of undefined (reading 'parent')"
+          return { schema: params.schema, url: params.url }
+        }
       }
     })
     await server.register(swaggerUi, {

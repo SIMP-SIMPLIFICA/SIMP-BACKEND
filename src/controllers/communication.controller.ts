@@ -2,15 +2,21 @@ import { FastifyReply, FastifyRequest } from 'fastify'
 import { prisma } from '@/lib/prisma'
 import { CreateDocumentInput, UpdateDocumentInput } from '@/schemas/communication.schemas'
 import { ProtocolService } from '@/services/protocol.service'
-// import { emailService } from '@/services/email.service' // REMOVIDO
 import { notificationService } from '@/services/notification.service'
 import crypto from 'node:crypto'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import { signatureService } from '@/services/signature.service'
+import { documentService } from '@/services/document.service'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 export class CommunicationController {
-  // HELPER PRIVADO: Extrai o ID do usuário de forma segura
   private getUserId(request: FastifyRequest): string {
     const user = request.user as any
-    // Tenta ler .id, se não existir, tenta .sub (padrão JWT)
     const userId = user.id || user.sub
 
     if (!userId) {
@@ -21,26 +27,34 @@ export class CommunicationController {
 
   async create(request: FastifyRequest<{ Body: CreateDocumentInput }>, reply: FastifyReply) {
     try {
-      // Recebendo documentNumber do corpo da requisição
-      const { title, documentNumber, content, documentType, priority, departmentId, recipients, sendEmailNotif } = request.body
+      const { title, documentNumber, content, documentType, priority, departmentId, recipients, attachments, metadata } = request.body as any
       const userId = this.getUserId(request)
 
       const document = await prisma.communicationDocument.create({
         data: {
           title,
-          documentNumber, // ATUALIZAÇÃO: Salvando o número oficial (ex: MEMORANDO Nº 01/2026)
-          content,
+          documentNumber,
+          content, // Mantém o texto corrido para busca simples
           documentType,
           priority,
           status: 'DRAFT',
           createdBy: userId,
           departmentId,
+          metadata: metadata || {}, // Salva o JSON com a lista de parágrafos estruturada
           recipients: {
-            create: recipients?.map(recipient => ({
+            create: recipients?.map((recipient: any) => ({
               userId: recipient.userId,
               role: recipient.role,
               canView: true,
               canSign: false
+            }))
+          },
+          attachments: {
+            create: attachments?.map((att: any) => ({
+              fileName: att.fileName,
+              fileUrl: att.fileUrl,
+              fileType: att.fileType,
+              fileSize: att.fileSize
             }))
           }
         },
@@ -57,15 +71,15 @@ export class CommunicationController {
                 }
               }
             }
-          }
+          },
+          attachments: true
         }
       })
 
-      // 3. (Novo) Enviar notificação in-app (substituindo e-mail)
       if (recipients && recipients.length > 0) {
         try {
-          const recipientIds = recipients.map(r => r.userId)
-          const distinctUserIds = [...new Set(recipientIds)]
+          const recipientIds = recipients.map((r: any) => r.userId)
+          const distinctUserIds = [...new Set(recipientIds)] as string[]
 
           await notificationService.notifyMany(distinctUserIds, {
             title: 'Nova Comunicação Recebida',
@@ -100,15 +114,13 @@ export class CommunicationController {
       include: {
         department: true,
         _count: {
-          select: { recipients: true }
+          select: { recipients: true, attachments: true }
         }
       }
     })
 
     return reply.send(drafts)
   }
-
-  // --- NOVOS MÉTODOS PARA LISTAGEM ---
 
   async listReceived(request: FastifyRequest, reply: FastifyReply) {
     const userId = this.getUserId(request)
@@ -121,7 +133,7 @@ export class CommunicationController {
           }
         },
         status: {
-          in: ['SENT', 'READ', 'SIGNED', 'ARCHIVED'] // Não mostrar drafts de outros
+          in: ['SENT', 'READ', 'SIGNED', 'ARCHIVED']
         }
       },
       orderBy: {
@@ -132,14 +144,26 @@ export class CommunicationController {
           select: { id: true, username: true, firstName: true, lastName: true }
         },
         department: true,
-        recipients: { // Include para saber status de leitura do próprio usuário
+        recipients: {
           where: { userId: userId },
           select: { readAt: true, signedAt: true }
         }
       }
     })
 
-    return reply.send(documents)
+    const docsWithStatus = documents.map(doc => {
+      const recipient = doc.recipients[0]
+      let userStatus = 'PENDING'
+      if (recipient?.signedAt) userStatus = 'SIGNED'
+      else if (recipient?.readAt) userStatus = 'READ'
+
+      return {
+        ...doc,
+        userStatus
+      }
+    })
+
+    return reply.send(docsWithStatus)
   }
 
   async listSent(request: FastifyRequest, reply: FastifyReply) {
@@ -157,16 +181,42 @@ export class CommunicationController {
       },
       include: {
         department: true,
+        recipients: {
+          include: {
+            user: {
+              select: { id: true, firstName: true, lastName: true, avatar: true }
+            }
+          }
+        },
         _count: {
           select: {
             recipients: true,
-            signatures: true
+            signatures: true,
+            attachments: true
           }
         }
       }
     })
 
-    return reply.send(documents)
+    const docsWithStatus = documents.map(doc => {
+      let aggregatedStatus = 'PENDING'
+
+      if (doc.recipients.length > 0) {
+        const allRead = doc.recipients.every(r => r.readAt)
+        const allSigned = doc.recipients.every(r => r.signedAt)
+
+        if (allSigned) aggregatedStatus = 'SIGNED'
+        else if (allRead) aggregatedStatus = 'READ'
+        else aggregatedStatus = 'WAITING'
+      }
+
+      return {
+        ...doc,
+        aggregatedStatus
+      }
+    })
+
+    return reply.send(docsWithStatus)
   }
 
   async getById(request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
@@ -177,13 +227,14 @@ export class CommunicationController {
       where: { id },
       include: {
         creator: {
-          select: { id: true, username: true, firstName: true, lastName: true }
+          select: { id: true, username: true, firstName: true, lastName: true, jobTitle: true }
         },
         department: true,
+        attachments: true,
         recipients: {
           include: {
             user: {
-              select: { id: true, username: true, firstName: true, lastName: true, avatar: true }
+              select: { id: true, username: true, firstName: true, lastName: true, avatar: true, jobTitle: true }
             }
           }
         },
@@ -201,7 +252,6 @@ export class CommunicationController {
       return reply.code(404).send({ message: 'Documento não encontrado' })
     }
 
-    // Validação de acesso: Criador ou Destinatário
     const isCreator = document.createdBy === userId
     const recipientRecord = document.recipients.find(r => r.userId === userId)
     const isRecipient = !!recipientRecord
@@ -210,13 +260,9 @@ export class CommunicationController {
       return reply.code(403).send({ message: 'Sem permissão para visualizar este documento' })
     }
 
-    // --- AUTO-ASSINATURA E LEITURA ---
     if (isRecipient && recipientRecord) {
-      const docWithSignatures = document as any
       const now = new Date()
-      let updated = false
 
-      // 1. Marca como LIDO se ainda não foi
       if (!recipientRecord.readAt) {
         await prisma.documentRecipient.update({
           where: { id: recipientRecord.id },
@@ -227,7 +273,6 @@ export class CommunicationController {
           }
         })
 
-        // Notifica leitura
         await notificationService.notify({
           userId: document.createdBy,
           title: 'Documento Visualizado',
@@ -235,111 +280,111 @@ export class CommunicationController {
           type: 'DOCUMENT_VIEWED',
           link: `/communication/${document.id}`
         })
-
-        updated = true
-      }
-
-      // 2. AUTO-ASSINATURA (Ao visualizar, assina automaticamente)
-      // Verifica se já assinou
-      const alreadySigned = docWithSignatures.signatures.some((s: any) => s.userId === userId)
-
-      if (!alreadySigned) {
-        // Cria assinatura
-        await prisma.documentSignature.create({
-          data: {
-            documentId: document.id,
-            userId: userId,
-            signatureType: 'DIGITAL', // Pode ser alterado conforme regra
-            ipAddress: request.ip,
-            signedAt: now,
-            isValid: true,
-            certificateData: {
-              userAgent: request.headers['user-agent'],
-              autoSigned: true
-            }
-          }
-        })
-
-        // Atualiza recipient com signedAt
-        await prisma.documentRecipient.update({
-          where: { id: recipientRecord.id },
-          data: { signedAt: now }
-        })
-
-        // Notifica assinatura
-        await notificationService.notify({
-          userId: document.createdBy,
-          title: 'Documento Assinado',
-          message: `${(request.user as any)?.username || 'Um usuário'} assinou o documento ${document.protocolNumber}`,
-          type: 'DOCUMENT_SIGNED',
-          link: `/communication/${document.id}`
-        })
-
-        updated = true
-      }
-
-      // Se houve atualizações, recarrega assinaturas para retornar atualizado
-      if (updated) {
-        const updatedSignatures = await prisma.documentSignature.findMany({
-          where: { documentId: id },
-          include: {
-            user: { select: { id: true, firstName: true, lastName: true } }
-          }
-        })
-        docWithSignatures.signatures = updatedSignatures
       }
     }
 
-    // --- DADOS DE VERIFICAÇÃO (STAMP) ---
     const verificationData = {
       protocol: document.protocolNumber,
       hash: document.originalHash,
-      // URL pública para validação (ajustar conforme domínio real)
       url: `${process.env.APP_URL || 'https://simp-system.com'}/verify/${document.originalHash || ''}`,
       timestamp: document.sentAt,
       valid: !!document.originalHash
     }
 
+    // AUDIT TRAIL
+    const auditTrail: any[] = []
+
+    if (document.createdAt) {
+      auditTrail.push({
+        event: 'CREATED',
+        timestamp: document.createdAt,
+        description: 'Documento criado',
+        user: document.creator
+      })
+    }
+
+    if (document.sentAt) {
+      auditTrail.push({
+        event: 'SENT',
+        timestamp: document.sentAt,
+        description: 'Documento protocolado e enviado',
+        user: document.creator
+      })
+    }
+
+    document.recipients.forEach((rec: any) => {
+      if (rec.readAt) {
+        auditTrail.push({
+          event: 'READ',
+          timestamp: rec.readAt,
+          description: 'Documento visualizado',
+          user: rec.user
+        })
+      }
+      if (rec.signedAt) {
+        auditTrail.push({
+          event: 'SIGNED',
+          timestamp: rec.signedAt,
+          description: 'Documento assinado digitalmente',
+          user: rec.user
+        })
+      }
+    })
+
+    auditTrail.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+
     return reply.send({
       ...document,
-      verification: verificationData
+      verification: verificationData,
+      auditTrail
     })
   }
 
   async update(request: FastifyRequest<{ Params: { id: string }, Body: UpdateDocumentInput }>, reply: FastifyReply) {
     const { id } = request.params
     const userId = this.getUserId(request)
-    const data = request.body
+    const data = request.body as any
 
     const existingDoc = await prisma.communicationDocument.findUnique({
       where: { id }
     })
 
-    if (!existingDoc) {
-      return reply.code(404).send({ message: 'Documento não encontrado' })
+    if (!existingDoc) return reply.code(404).send({ message: 'Documento não encontrado' })
+    if (existingDoc.createdBy !== userId) return reply.code(403).send({ message: 'Apenas o criador pode editar este rascunho' })
+    if (existingDoc.status !== 'DRAFT') return reply.code(400).send({ message: 'Apenas rascunhos podem ser editados' })
+
+    const { recipients, attachments, documentNumber, metadata, ...simpleData } = data
+
+    if (attachments) {
+      await prisma.communicationAttachment.deleteMany({ where: { documentId: id } })
     }
 
-    if (existingDoc.createdBy !== userId) {
-      return reply.code(403).send({ message: 'Apenas o criador pode editar este rascunho' })
+    if (recipients) {
+      await prisma.documentRecipient.deleteMany({ where: { documentId: id } })
     }
-
-    if (existingDoc.status !== 'DRAFT') {
-      return reply.code(400).send({ message: 'Apenas rascunhos podem ser editados' })
-    }
-
-    // Extrai documentNumber para garantir que ele seja atualizado
-    const { recipients, documentNumber, ...simpleData } = data
-
-    // Se houve alteração de recipients, precisamos tratar (remover/adicionar)
-    // Por simplificação no rascunho, poderiamos deletar e recriar, mas o prisma update aninhado é chato
-    // Vamos apenas atualizar os dados básicos por enquanto, assumindo que recipients não mudam no update simples ou tratando separado
-    // TODO: Implementar atualização completa de recipients se necessário
 
     const updatedDoc = await prisma.communicationDocument.update({
       where: { id },
       data: {
         ...simpleData,
-        documentNumber // Incluindo na query de update
+        documentNumber,
+        metadata: metadata || existingDoc.metadata || {},
+        recipients: recipients ? {
+          create: recipients.map((recipient: any) => ({
+            userId: recipient.userId,
+            role: recipient.role,
+            canView: true,
+            canSign: false
+          }))
+        } : undefined,
+        attachments: attachments ? {
+          create: attachments.map((att: any) => ({
+            fileName: att.fileName,
+            fileUrl: att.fileUrl,
+            fileType: att.fileType,
+            fileSize: att.fileSize
+          }))
+        } : undefined
       }
     })
 
@@ -350,92 +395,55 @@ export class CommunicationController {
     const { id } = request.params
     const userId = this.getUserId(request)
 
-    const existingDoc = await prisma.communicationDocument.findUnique({
-      where: { id }
-    })
+    const existingDoc = await prisma.communicationDocument.findUnique({ where: { id } })
 
-    if (!existingDoc) {
-      return reply.code(404).send({ message: 'Documento não encontrado' })
-    }
+    if (!existingDoc) return reply.code(404).send({ message: 'Documento não encontrado' })
+    if (existingDoc.createdBy !== userId) return reply.code(403).send({ message: 'Apenas o criador pode excluir este documento' })
+    if (existingDoc.status !== 'DRAFT') return reply.code(400).send({ message: 'Apenas rascunhos podem ser excluídos' })
 
-    if (existingDoc.createdBy !== userId) {
-      return reply.code(403).send({ message: 'Apenas o criador pode excluir este documento' })
-    }
-
-    if (existingDoc.status !== 'DRAFT') {
-      return reply.code(400).send({ message: 'Apenas rascunhos podem ser excluídos' })
-    }
-
-    await prisma.communicationDocument.delete({
-      where: { id }
-    })
-
+    await prisma.communicationDocument.delete({ where: { id } })
     return reply.code(204).send()
   }
 
+  // --- MÉTODO SEND REESCRITO E CORRIGIDO (PDF + ASSINATURA DIGITAL) ---
+  // --- MÉTODO SEND REESCRITO (AGORA DELEGADO AO SERVICE) ---
   async send(request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
     const { id } = request.params
     const userId = this.getUserId(request)
 
-    // 1. Busca o documento
-    const document = await prisma.communicationDocument.findUnique({
-      where: { id }
-    })
+    try {
+      const result = await documentService.protocolAndSend(id, userId)
 
-    if (!document) {
-      return reply.code(404).send({ message: 'Documento não encontrado' })
+      return reply.send({
+        message: 'Documento protocolado, gerado e enviado com sucesso!',
+        protocol: result.protocol,
+        hash: result.hash
+      })
+    } catch (error: any) {
+      request.log.error(error)
+      return reply.code(400).send({ message: error.message || 'Erro ao enviar documento' })
     }
+  }
 
-    // 2. Validações
-    if (document.createdBy !== userId) {
-      return reply.code(403).send({ message: 'Apenas o criador pode enviar este documento' })
+  // --- NOVO MÉTODO SIGN ---
+  async sign(request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
+    const { id } = request.params
+    const userId = this.getUserId(request)
+    const ipAddress = request.ip
+
+    try {
+      const result = await documentService.sign(id, userId, ipAddress)
+
+      return reply.send(result)
+    } catch (error: any) {
+      request.log.error(error)
+      return reply.code(400).send({ message: error.message || 'Erro ao assinar documento' })
     }
-
-    if (document.status !== 'DRAFT') {
-      return reply.code(400).send({ message: 'Este documento já foi enviado ou finalizado.' })
-    }
-
-    // 3. Gera o Protocolo Interno (controle do sistema)
-    const protocolNumber = await ProtocolService.generate()
-    const now = new Date()
-
-    // 4. Gera o Hash Original (SHA-256)
-    // Concatena dados imutáveis do documento para garantir integridade
-    const dataToHash = `${protocolNumber}|${document.title}|${document.content}|${document.documentType}|${now.toISOString()}|${userId}`
-    const originalHash = crypto.createHash('sha256').update(dataToHash).digest('hex')
-
-    // 5. Atualiza para ENVIADO (SENT)
-    const updatedDoc = await prisma.communicationDocument.update({
-      where: { id },
-      data: {
-        status: 'SENT',
-        protocolNumber: protocolNumber,
-        sentAt: now,
-        originalHash: originalHash
-      }
-    })
-
-    return reply.send({
-      message: 'Documento protocolado com sucesso!',
-      protocol: protocolNumber,
-      hash: originalHash,
-      document: {
-        ...updatedDoc,
-        verification: {
-          protocol: protocolNumber,
-          hash: originalHash,
-          url: `${process.env.APP_URL || 'https://simp-system.com'}/verify/${originalHash}`,
-          timestamp: now,
-          valid: true
-        }
-      }
-    })
   }
 
   async getRecipients(request: FastifyRequest, reply: FastifyReply) {
     const userId = this.getUserId(request)
 
-    // 1. Buscar roles que têm permissão de leitura ou são admin
     const eligibleRoles = await prisma.role.findMany({
       where: {
         isActive: true,
@@ -451,7 +459,6 @@ export class CommunicationController {
 
     const roleIds = eligibleRoles.map(r => r.id)
 
-    // Parse da query string para busca
     const { search } = request.query as { search?: string }
     const userWhereClause: any = {
       isActive: true,
@@ -472,7 +479,6 @@ export class CommunicationController {
       ]
     }
 
-    // 2. Buscar usuários que têm esses roles com paginação/limite
     const usersFull = await prisma.user.findMany({
       where: userWhereClause,
       select: {
@@ -489,10 +495,9 @@ export class CommunicationController {
         }
       },
       orderBy: { firstName: 'asc' },
-      take: 20 // Limite para não sobrecarregar em pesquisas vazias
+      take: 20
     })
 
-    // 3. Formatar resposta para o frontend
     const formattedUsers = usersFull.map(user => ({
       id: user.id,
       name: `${user.firstName} ${user.lastName}`,
@@ -503,5 +508,48 @@ export class CommunicationController {
     }))
 
     return reply.send(formattedUsers)
+  }
+
+  async downloadAttachment(request: FastifyRequest<{ Params: { id: string, attachmentId: string } }>, reply: FastifyReply) {
+    const { id, attachmentId } = request.params
+    const userId = this.getUserId(request)
+
+    const document = await prisma.communicationDocument.findUnique({
+      where: { id },
+      include: {
+        recipients: true
+      }
+    })
+
+    if (!document) return reply.code(404).send({ message: 'Documento não encontrado' })
+
+    const isCreator = document.createdBy === userId
+    const isRecipient = document.recipients.some(r => r.userId === userId)
+
+    if (!isCreator && !isRecipient) {
+      return reply.code(403).send({ message: 'Sem permissão para baixar este anexo' })
+    }
+
+    const attachment = await prisma.communicationAttachment.findUnique({
+      where: { id: attachmentId, documentId: id }
+    })
+
+    if (!attachment) return reply.code(404).send({ message: 'Anexo não encontrado' })
+
+    const urlParts = attachment.fileUrl.split('/')
+    const diskFileName = urlParts[urlParts.length - 1]
+
+    const uploadDir = path.join(__dirname, '../../uploads')
+    const filePath = path.join(uploadDir, diskFileName)
+
+    if (!fs.existsSync(filePath)) {
+      return reply.code(404).send({ message: 'Arquivo físico não encontrado no servidor' })
+    }
+
+    reply.header('Content-Disposition', `attachment; filename="${attachment.fileName}"`)
+    reply.header('Content-Type', attachment.fileType)
+
+    const stream = fs.createReadStream(filePath)
+    return reply.send(stream)
   }
 }

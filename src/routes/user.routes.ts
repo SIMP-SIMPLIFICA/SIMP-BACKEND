@@ -8,7 +8,6 @@ export function userRoutes(server: FastifyInstance) {
   server.get(
     '/',
     {
-      // Simplificado: removido authMiddleware.readUsers pois não existe no arquivo atual
       preHandler: [authenticate],
       schema: {
         description: 'Get paginated list of users',
@@ -84,6 +83,35 @@ export function userRoutes(server: FastifyInstance) {
     },
     userController.getUsers.bind(userController)
   )
+
+  // --- NOVA ROTA: Gerar Certificado Digital ---
+  server.post(
+    '/me/certificate',
+    {
+      preHandler: [authenticate],
+      schema: {
+        description: 'Generate a self-signed digital certificate (PFX) for the current user',
+        tags: ['User Management'],
+        security: [{ bearerAuth: [] }],
+        // CORREÇÃO: Adicionado body para evitar erro 500 no Swagger
+        body: {
+          type: 'object',
+          properties: {} 
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              message: { type: 'string' },
+              hasCertificate: { type: 'boolean' }
+            }
+          }
+        }
+      }
+    },
+    userController.generateCertificate.bind(userController)
+  )
+  // ------------------------------------------
 
   // Get specific user by ID
   server.get(

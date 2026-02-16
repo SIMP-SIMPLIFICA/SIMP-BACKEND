@@ -4,13 +4,22 @@ import { roleRoutes } from '@/routes/role.routes.js'
 import { workspaceRoutes } from '@/routes/workspace.routes.js'
 import { taskRoutes } from '@/routes/task.routes.js'
 import { notificationRoutes } from '@/routes/notification.routes.js'
-import { communicationRoutes } from '@/routes/communication.routes.js' // Nova rota
+import { communicationRoutes } from '@/routes/communication.routes.js'
+import { settingsRoutes } from '@/routes/settings.routes.js'
 
 import { AppServer } from '@/types/server'
 import { db } from '@/utils/database.js'
 import { logger } from '@/utils/logger.js'
 
+import { publicRoutes } from '@/routes/public.routes.js'
+
 export async function registerRoutes(server: AppServer) {
+  // ... existing error handler ...
+
+  // --- ROTAS PÚBLICAS ---
+  await server.register(publicRoutes, { prefix: '/public', logLevel: 'info' })
+
+  // --- API V1 ROUTES (Auth, User, Role) ---
   // --- ERROR HANDLER GLOBAL ---
   server.setErrorHandler(async (error, request, reply) => {
     request.log.error(error, 'Request error occurred')
@@ -125,20 +134,23 @@ export async function registerRoutes(server: AppServer) {
       await server.register(authRoutes, { prefix: '/auth', logLevel: 'info' })
       await server.register(userRoutes, { prefix: '/users', logLevel: 'info' })
       await server.register(roleRoutes, { prefix: '/roles', logLevel: 'info' })
-      
+
       // Módulo de Comunicação
       await server.register(communicationRoutes, { prefix: '/communication', logLevel: 'info' })
 
+      // Módulo de Configurações
+      await server.register(settingsRoutes, { prefix: '/settings', logLevel: 'info' })
+
       server.get('/', { /* schema omitido */ }, async (request, reply) => {
-          return reply.send({ message: "API V1 Root" }) 
+        return reply.send({ message: "API V1 Root" })
       })
     },
     { prefix: '/api/v1' }
   )
 
   // --- ROTAS PRINCIPAIS (ROOT LEVEL) ---
-  
-  await server.register(workspaceRoutes, { 
+
+  await server.register(workspaceRoutes, {
     prefix: '/workspaces',
     logLevel: 'info'
   })

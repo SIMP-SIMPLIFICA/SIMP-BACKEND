@@ -3,6 +3,7 @@ import handlebars from 'handlebars';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadLogoBase64 } from '../utils/pdf.utils';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -57,7 +58,7 @@ export class PdfService {
                  */
                 @page { 
                     margin-top: 2cm;
-                    margin-bottom: 3cm; /* Espaço para o rodapé fixo */
+                    margin-bottom: 2cm;
                     margin-left: 2cm;
                     margin-right: 2cm;
                 }
@@ -140,7 +141,7 @@ export class PdfService {
                     padding: 0;
                     margin: 20px auto;
                     width: 90%;
-                    max-width: 500px;
+                    max-width: 260px;
                     background-color: #fff;
                     font-family: 'Arial', sans-serif;
                     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
@@ -151,8 +152,8 @@ export class PdfService {
                 .seal-header {
                     background-color: #004a8f;
                     color: white;
-                    padding: 5px 10px;
-                    font-size: 10pt;
+                    padding: 3px 6px;
+                    font-size: 7pt;
                     font-weight: bold;
                     display: flex;
                     align-items: center;
@@ -160,17 +161,18 @@ export class PdfService {
                 }
 
                 .seal-body {
-                    padding: 10px;
-                    font-size: 9pt;
+                    padding: 4px;
+                    font-size: 7pt;
                     color: #333;
                     display: flex;
                     align-items: center;
                 }
 
+
                 .seal-logo {
-                    width: 40px;
-                    height: 40px;
-                    margin-right: 15px;
+                    width: 30px;
+                    height: 30px;
+                    margin-right: 10px;
                     opacity: 0.8;
                 }
                 
@@ -179,12 +181,12 @@ export class PdfService {
                 }
 
                 .seal-row {
-                    margin-bottom: 3px;
+                    margin-bottom: 2px;
                     display: flex;
                 }
                 .seal-label {
                     font-weight: bold;
-                    width: 60px;
+                    width: 50px;
                     color: #555;
                 }
                 .seal-value {
@@ -193,37 +195,10 @@ export class PdfService {
                 }
                 .seal-hash {
                     font-family: 'Courier New', monospace;
-                    font-size: 8pt;
+                    font-size: 6pt;
                     color: #666;
-                    margin-top: 5px;
+                    margin-top: 3px;
                     word-break: break-all;
-                }
-
-                /* RODAPÉ FIXO */
-                .footer { 
-                    position: fixed; 
-                    bottom: 0; 
-                    left: 0; 
-                    right: 0;
-                    height: 2cm; 
-                    
-                    text-align: center; 
-                    font-size: 8pt; 
-                    color: #000;
-                    border-top: 1px solid #000; 
-                    padding-top: 5px;
-                    
-                    display: flex;
-                    flex-direction: column;
-                    justify-content: center;
-                    align-items: center;
-                    background: white; 
-                    z-index: 1000;
-                }
-                .footer-text {
-                    max-width: 90%;
-                    margin: 0 auto;
-                    font-family: Arial, sans-serif;
                 }
 
                 /* --- PÁGINA DE MANIFESTO --- */
@@ -337,13 +312,6 @@ export class PdfService {
             </style>
         </head>
         <body>
-            <!-- RODAPÉ FIXO -->
-            <div class="footer">
-                <div class="footer-text">
-                    ASSINADO DIGITALMENTE NO SISTEMA SIMP - SIMPLIFICA NO DIA {{data_hora_criacao}} <br/>
-                    TOKEN HASH {{rodape_hash_curto}} PARA AUTENTICAR ACESSE {{base_url}}/public/validate
-                </div>
-            </div>
 
             <!-- 1. PÁGINA DE CONTEÚDO -->
             <div class="content-page">
@@ -375,7 +343,7 @@ export class PdfService {
                 <div class="texto">
                     <p>Senhor(a),</p>
                     {{#each lista_paragrafos}}
-                        <p>{{this.texto}}</p>
+                        <p>{{{this.texto}}}</p>
                     {{/each}}
                     <p style="margin-top: 30px;">Atenciosamente,</p>
                 </div>
@@ -403,13 +371,13 @@ export class PdfService {
                                 </div>
                             </div>
                         </div>
+                   {{else}}
+                       <div class="assinatura-visual">
+                            <div class="linha"></div>
+                            <div>{{nome_remetente}}</div>
+                            <div>{{cargo_remetente}}</div>
+                       </div>
                    {{/if}}
-                   
-                   <div class="assinatura-visual">
-                        <div class="linha"></div>
-                        <div>{{nome_remetente}}</div>
-                        <div>{{cargo_remetente}}</div>
-                   </div>
                 </div>
             </div>
 
@@ -501,23 +469,16 @@ export class PdfService {
         });
         const page = await browser.newPage();
 
-        // 1. Carrega LOGO PEQUIZEIRO (src/templates/assets/logo_pequizeiro.png)
-        if (!data.logo_base64) {
-            const logoPaths = [
-                // Caminho relativo ao fonte (src/services -> src/templates)
-                path.resolve(__dirname, '../templates/assets/logo_pequizeiro.png'),
-                // Caminho relativo à raiz do projeto (process.cwd())
-                path.resolve(process.cwd(), 'src/templates/assets/logo_pequizeiro.png'),
-                // Fallback para public na raiz
-                path.resolve(__dirname, '../../public/logo.png'),
-                path.resolve(process.cwd(), 'public/logo.png')
-            ];
+        // 1. Carrega LOGO PEQUIZEIRO (via utility)
+        let safeLogo = data.logo_base64;
+        if (safeLogo && safeLogo.includes('base64,')) {
+            safeLogo = safeLogo.split('base64,')[1];
+        }
 
-            for (const logoPath of logoPaths) {
-                if (fs.existsSync(logoPath)) {
-                    data.logo_base64 = fs.readFileSync(logoPath).toString('base64');
-                    break;
-                }
+        if (!safeLogo) {
+            const loadedLogo = loadLogoBase64();
+            if (loadedLogo) {
+                safeLogo = loadedLogo;
             }
         }
 
@@ -534,13 +495,14 @@ export class PdfService {
         const finalHtml = template({
             ...data,
             base_url: baseUrl,
+            logo_base64: safeLogo,
             data_hora_criacao: dataHoraRodape,
             rodape_hash_curto: data.rodape_hash.substring(0, 8),
             remetente_assinou: true, // Lógica pode vir de fora futuramente
             mostrar_historico: (data.historico && data.historico.length > 0) || (data.assinaturas && data.assinaturas.length > 0)
         });
 
-        await page.setContent(finalHtml, { waitUntil: 'networkidle0' });
+        await page.setContent(finalHtml, { waitUntil: 'load' });
 
         const pdfBuffer = await page.pdf({
             format: 'A4',

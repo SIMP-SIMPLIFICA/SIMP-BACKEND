@@ -1,76 +1,28 @@
 import type { FastifyInstance } from 'fastify'
+import { z } from 'zod' // Importando Zod
 import { roleController } from '@/controllers/role.controller.js'
-// Importamos apenas o authenticate que sabemos que existe
 import { authenticate } from '../middleware/auth.middleware.js'
 
-export function roleRoutes(server: FastifyInstance) {
+export async function roleRoutes(server: FastifyInstance) {
   // Get list of roles
   server.get(
     '/',
     {
-      // Simplificado: removido authMiddleware.required (objeto) em favor de authenticate (função)
       preHandler: [authenticate],
       schema: {
         description: 'Get list of roles',
         tags: ['Role Management'],
         security: [{ bearerAuth: [] }],
-        querystring: {
-          type: 'object',
-          properties: {
-            page: { type: 'integer', minimum: 1, default: 1 },
-            limit: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
-            search: { type: 'string' },
-            isActive: { type: 'boolean' },
-            isSystem: { type: 'boolean' },
-            sortBy: { type: 'string', enum: ['name', 'displayName', 'createdAt'] },
-            sortOrder: { type: 'string', enum: ['asc', 'desc'], default: 'asc' }
-          }
-        },
-        response: {
-          200: {
-            type: 'object',
-            properties: {
-              data: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    id: { type: 'string' },
-                    name: { type: 'string' },
-                    displayName: { type: 'string' },
-                    description: { type: 'string' },
-                    color: { type: 'string' },
-                    permissions: {
-                      type: 'array',
-                      items: { type: 'string' }
-                    },
-                    isSystem: { type: 'boolean' },
-                    isActive: { type: 'boolean' },
-                    createdAt: { type: 'string' },
-                    updatedAt: { type: 'string' },
-                    _count: {
-                      type: 'object',
-                      properties: {
-                        users: { type: 'integer' }
-                      }
-                    }
-                  }
-                }
-              },
-              pagination: {
-                type: 'object',
-                properties: {
-                  page: { type: 'integer' },
-                  limit: { type: 'integer' },
-                  total: { type: 'integer' },
-                  totalPages: { type: 'integer' },
-                  hasNext: { type: 'boolean' },
-                  hasPrev: { type: 'boolean' }
-                }
-              }
-            }
-          }
-        }
+        querystring: z.object({
+          page: z.coerce.number().min(1).default(1),
+          limit: z.coerce.number().min(1).max(100).default(20),
+          search: z.string().optional(),
+          isActive: z.coerce.boolean().optional(),
+          isSystem: z.coerce.boolean().optional(),
+          sortBy: z.enum(['name', 'displayName', 'createdAt']).optional(),
+          sortOrder: z.enum(['asc', 'desc']).default('asc')
+        }),
+        // Response schema pode ser mantido ou omitido se não for crítico validar a saída agora
       }
     },
     roleController.getRoles.bind(roleController)
@@ -85,13 +37,9 @@ export function roleRoutes(server: FastifyInstance) {
         description: 'Get role by ID',
         tags: ['Role Management'],
         security: [{ bearerAuth: [] }],
-        params: {
-          type: 'object',
-          required: ['id'],
-          properties: {
-            id: { type: 'string' }
-          }
-        }
+        params: z.object({
+          id: z.string()
+        })
       }
     },
     roleController.getRoleById.bind(roleController)
@@ -106,38 +54,15 @@ export function roleRoutes(server: FastifyInstance) {
         description: 'Create a new role',
         tags: ['Role Management'],
         security: [{ bearerAuth: [] }],
-        body: {
-          type: 'object',
-          required: ['name', 'displayName', 'permissions'],
-          properties: {
-            name: {
-              type: 'string',
-              pattern: '^[a-zA-Z0-9_-]+$',
-              minLength: 1,
-              maxLength: 50
-            },
-            displayName: {
-              type: 'string',
-              minLength: 1,
-              maxLength: 100
-            },
-            description: {
-              type: 'string',
-              maxLength: 500
-            },
-            color: {
-              type: 'string',
-              pattern: '^#[0-9A-Fa-f]{6}$'
-            },
-            permissions: {
-              type: 'array',
-              items: { type: 'string' },
-              minItems: 1
-            },
-            parentId: { type: 'string' },
-            metadata: { type: 'object' }
-          }
-        }
+        body: z.object({
+          name: z.string().min(1).max(50).regex(/^[a-zA-Z0-9_-]+$/),
+          displayName: z.string().min(1).max(100),
+          description: z.string().max(500).optional().nullable(),
+          color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional().nullable(),
+          permissions: z.array(z.string()).min(1),
+          parentId: z.string().optional().nullable(),
+          metadata: z.record(z.any()).optional().nullable()
+        })
       }
     },
     roleController.createRole.bind(roleController)
@@ -152,44 +77,19 @@ export function roleRoutes(server: FastifyInstance) {
         description: 'Update role information',
         tags: ['Role Management'],
         security: [{ bearerAuth: [] }],
-        params: {
-          type: 'object',
-          required: ['id'],
-          properties: {
-            id: { type: 'string' }
-          }
-        },
-        body: {
-          type: 'object',
-          properties: {
-            name: {
-              type: 'string',
-              pattern: '^[a-zA-Z0-9_-]+$',
-              minLength: 1,
-              maxLength: 50
-            },
-            displayName: {
-              type: 'string',
-              minLength: 1,
-              maxLength: 100
-            },
-            description: {
-              type: 'string',
-              maxLength: 500
-            },
-            color: {
-              type: 'string',
-              pattern: '^#[0-9A-Fa-f]{6}$'
-            },
-            permissions: {
-              type: 'array',
-              items: { type: 'string' }
-            },
-            parentId: { type: 'string' },
-            isActive: { type: 'boolean' },
-            metadata: { type: 'object' }
-          }
-        }
+        params: z.object({
+          id: z.string()
+        }),
+        body: z.object({
+          name: z.string().min(1).max(50).regex(/^[a-zA-Z0-9_-]+$/).optional(),
+          displayName: z.string().min(1).max(100).optional(),
+          description: z.string().max(500).optional().nullable(),
+          color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional().nullable(),
+          permissions: z.array(z.string()).optional(),
+          parentId: z.string().optional().nullable(),
+          isActive: z.boolean().optional(),
+          metadata: z.record(z.any()).optional().nullable()
+        })
       }
     },
     roleController.updateRole.bind(roleController)
@@ -204,13 +104,9 @@ export function roleRoutes(server: FastifyInstance) {
         description: 'Delete a role',
         tags: ['Role Management'],
         security: [{ bearerAuth: [] }],
-        params: {
-          type: 'object',
-          required: ['id'],
-          properties: {
-            id: { type: 'string' }
-          }
-        }
+        params: z.object({
+          id: z.string()
+        })
       }
     },
     roleController.deleteRole.bind(roleController)
@@ -225,21 +121,14 @@ export function roleRoutes(server: FastifyInstance) {
         description: 'Get users assigned to specific role',
         tags: ['Role Management'],
         security: [{ bearerAuth: [] }],
-        params: {
-          type: 'object',
-          required: ['id'],
-          properties: {
-            id: { type: 'string' }
-          }
-        },
-        querystring: {
-          type: 'object',
-          properties: {
-            page: { type: 'integer', minimum: 1, default: 1 },
-            limit: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
-            isActive: { type: 'boolean' }
-          }
-        }
+        params: z.object({
+          id: z.string()
+        }),
+        querystring: z.object({
+          page: z.coerce.number().min(1).default(1),
+          limit: z.coerce.number().min(1).max(100).default(20),
+          isActive: z.coerce.boolean().optional()
+        })
       }
     },
     roleController.getRoleUsers.bind(roleController)
@@ -253,40 +142,7 @@ export function roleRoutes(server: FastifyInstance) {
       schema: {
         description: 'Get list of available permissions',
         tags: ['Role Management'],
-        security: [{ bearerAuth: [] }],
-        response: {
-          200: {
-            type: 'object',
-            properties: {
-              permissions: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    key: { type: 'string' },
-                    description: { type: 'string' },
-                    category: { type: 'string' },
-                    level: { type: 'string', enum: ['read', 'write', 'delete', 'manage', 'admin'] }
-                  }
-                }
-              },
-              categories: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    name: { type: 'string' },
-                    displayName: { type: 'string' },
-                    permissions: {
-                      type: 'array',
-                      items: { type: 'string' }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
+        security: [{ bearerAuth: [] }]
       }
     },
     roleController.getAvailablePermissions.bind(roleController)
@@ -301,31 +157,14 @@ export function roleRoutes(server: FastifyInstance) {
         description: 'Duplicate an existing role',
         tags: ['Role Management'],
         security: [{ bearerAuth: [] }],
-        params: {
-          type: 'object',
-          required: ['id'],
-          properties: {
-            id: { type: 'string' }
-          }
-        },
-        body: {
-          type: 'object',
-          required: ['name', 'displayName'],
-          properties: {
-            name: {
-              type: 'string',
-              pattern: '^[a-zA-Z0-9_-]+$',
-              minLength: 1,
-              maxLength: 50
-            },
-            displayName: {
-              type: 'string',
-              minLength: 1,
-              maxLength: 100
-            },
-            description: { type: 'string' }
-          }
-        }
+        params: z.object({
+          id: z.string()
+        }),
+        body: z.object({
+          name: z.string().min(1).max(50).regex(/^[a-zA-Z0-9_-]+$/),
+          displayName: z.string().min(1).max(100),
+          description: z.string().optional().nullable()
+        })
       }
     },
     roleController.duplicateRole.bind(roleController)
@@ -339,30 +178,7 @@ export function roleRoutes(server: FastifyInstance) {
       schema: {
         description: 'Get role hierarchy tree',
         tags: ['Role Management'],
-        security: [{ bearerAuth: [] }],
-        response: {
-          200: {
-            type: 'object',
-            properties: {
-              hierarchy: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    id: { type: 'string' },
-                    name: { type: 'string' },
-                    displayName: { type: 'string' },
-                    level: { type: 'integer' },
-                    children: {
-                      type: 'array',
-                      items: { type: 'object' }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
+        security: [{ bearerAuth: [] }]
       }
     },
     roleController.getRoleHierarchy.bind(roleController)

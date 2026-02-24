@@ -3,6 +3,7 @@ import handlebars from 'handlebars';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadLogoBase64 } from '../utils/pdf.utils';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -174,18 +175,17 @@ export class DocumentGeneratorService {
     }
 
     async generatePDF(data: DocumentData): Promise<Buffer> {
-        const browser = await puppeteer.launch({ 
+        const browser = await puppeteer.launch({
             headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox'] 
+            args: ['--no-sandbox', '--disable-setuid-sandbox']
         });
         const page = await browser.newPage();
 
-        // LÓGICA DE LOGO: Se não veio no data, tenta carregar local
+        // LÓGICA DE LOGO: Se não veio no data, tenta carregar local (via utility)
         if (!data.logo_base64) {
-            const logoPath = path.resolve(__dirname, '../../templates/assets/logo_pequizeiro.png');
-            if (fs.existsSync(logoPath)) {
-                const logoBuffer = fs.readFileSync(logoPath);
-                data.logo_base64 = logoBuffer.toString('base64');
+            const loadedLogo = loadLogoBase64();
+            if (loadedLogo) {
+                data.logo_base64 = loadedLogo;
             }
         }
 

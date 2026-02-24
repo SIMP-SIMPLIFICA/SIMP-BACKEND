@@ -17,19 +17,22 @@ const attachmentSchema = z.object({
 
 export const createDocumentSchema = z.object({
   title: z.string().min(3, 'O título deve ter pelo menos 3 caracteres').max(500),
-  
+
   documentNumber: z.string().optional(),
-  
+
   content: z.string().min(1, 'O conteúdo do documento é obrigatório'),
-  
-  documentType: z.string().min(1, 'O tipo de documento é obrigatório'), // Ex: 'OFICIO', 'MEMORANDO'
-  
+
+  // Rule #4: Validar tipos de documento aceitos
+  documentType: z.enum(['OFICIO', 'MEMORANDO', 'OFICIO_CIRCULAR', 'DECRETO', 'PORTARIA', 'REQUERIMENTO'], {
+    message: 'Tipo de documento inválido. Aceitos: OFICIO, MEMORANDO, OFICIO_CIRCULAR, DECRETO, PORTARIA, REQUERIMENTO'
+  }),
+
   priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).default('MEDIUM'),
-  
+
   departmentId: z.string().optional(),
-  
+
   sendEmailNotif: z.boolean().optional().default(false),
-  
+
   // 🔥 CORREÇÃO: z.record exige 2 argumentos ou assume string->any. 
   // Usar .passthrough() em z.object() costuma ser mais seguro para JSON genérico,
   // mas z.record(z.string(), z.any()) funciona bem para metadados dinâmicos.
@@ -37,7 +40,7 @@ export const createDocumentSchema = z.object({
 
   // 🔥 SOLUÇÃO DO ERRO 500: Usamos a definição local, sem importar de outros arquivos
   recipients: z.array(recipientSchema).optional(),
-  
+
   attachments: z.array(attachmentSchema).optional()
 })
 

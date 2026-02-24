@@ -74,6 +74,7 @@ export class DocumentService {
             cargo_remetente: document.creator.jobTitle || "Servidor",
             rodape_hash: originalHash,
             qr_code_url: `${process.env.APP_URL}/verify/${originalHash}`,
+            logo_base64: (document.metadata as any)?.logoBase64,
             cabecalho_livre: (document.metadata as any)?.customHeader,
             data_hora_criacao: now.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
             historico: historico.map(h => ({

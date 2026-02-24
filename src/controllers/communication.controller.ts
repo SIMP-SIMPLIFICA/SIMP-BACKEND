@@ -42,12 +42,27 @@ export class CommunicationController {
           departmentId,
           metadata: metadata || {}, // Salva o JSON com a lista de parágrafos estruturada
           recipients: {
-            create: recipients?.map((recipient: any) => ({
-              userId: recipient.userId,
-              role: recipient.role,
-              canView: true,
-              canSign: false
-            }))
+            create: [
+              // Garante que o autor seja um signatário
+              {
+                userId,
+                role: 'TO', // Ajustado de SIGNER para TO, pois SIGNER não existe no enum
+                canView: true,
+                canSign: true
+              },
+              // Adiciona os demais destinatários, filtrando para não duplicar o autor
+              ...(recipients || [])
+                .filter((r: any) => r.userId !== userId)
+                .map((recipient: any) => ({
+                  userId: recipient.userId,
+                  // Mapeia SIGNER para TO, mantendo apenas TO/CC/BCC validos se existirem, mas priorizando TO conforme solicitado
+                  // "Force SEMPRE: role: 'TO'"
+                  role: 'TO',
+                  canView: true,
+                  // FORÇADO: Todo destinatário pode assinar (Regra de Negócio Atualizada)
+                  canSign: true
+                }))
+            ]
           },
           attachments: {
             create: attachments?.map((att: any) => ({
@@ -111,11 +126,9 @@ export class CommunicationController {
       orderBy: {
         updatedAt: 'desc'
       },
+      take: 50,
       include: {
-        department: true,
-        _count: {
-          select: { recipients: true, attachments: true }
-        }
+        department: true
       }
     })
 
@@ -139,6 +152,7 @@ export class CommunicationController {
       orderBy: {
         sentAt: 'desc'
       },
+      take: 50,
       include: {
         creator: {
           select: { id: true, username: true, firstName: true, lastName: true }
@@ -179,6 +193,7 @@ export class CommunicationController {
       orderBy: {
         sentAt: 'desc'
       },
+      take: 50,
       include: {
         department: true,
         recipients: {
@@ -186,13 +201,6 @@ export class CommunicationController {
             user: {
               select: { id: true, firstName: true, lastName: true, avatar: true }
             }
-          }
-        },
-        _count: {
-          select: {
-            recipients: true,
-            signatures: true,
-            attachments: true
           }
         }
       }
@@ -355,14 +363,6 @@ export class CommunicationController {
 
     const { recipients, attachments, documentNumber, metadata, ...simpleData } = data
 
-    if (attachments) {
-      await prisma.communicationAttachment.deleteMany({ where: { documentId: id } })
-    }
-
-    if (recipients) {
-      await prisma.documentRecipient.deleteMany({ where: { documentId: id } })
-    }
-
     const updatedDoc = await prisma.communicationDocument.update({
       where: { id },
       data: {
@@ -370,14 +370,16 @@ export class CommunicationController {
         documentNumber,
         metadata: metadata || existingDoc.metadata || {},
         recipients: recipients ? {
+          deleteMany: {},
           create: recipients.map((recipient: any) => ({
             userId: recipient.userId,
             role: recipient.role,
             canView: true,
-            canSign: false
+            canSign: recipient.canSign
           }))
         } : undefined,
         attachments: attachments ? {
+          deleteMany: {},
           create: attachments.map((att: any) => ({
             fileName: att.fileName,
             fileUrl: att.fileUrl,

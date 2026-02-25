@@ -4,6 +4,7 @@ import { roleRoutes } from '@/routes/role.routes.js'
 import { workspaceRoutes } from '@/routes/workspace.routes.js'
 import { taskRoutes } from '@/routes/task.routes.js'
 import { notificationRoutes } from '@/routes/notification.routes.js' // Rota de notificações adicionada
+import { financeRoutes } from '@/routes/finance.routes.js'
 
 import { AppServer } from '@/types/server'
 import { db } from '@/utils/database.js'
@@ -126,16 +127,16 @@ export async function registerRoutes(server: AppServer) {
       await server.register(roleRoutes, { prefix: '/roles', logLevel: 'info' })
 
       server.get('/', { /* schema omitido */ }, async (request, reply) => {
-          return reply.send({ message: "API V1 Root" }) 
+        return reply.send({ message: "API V1 Root" })
       })
     },
     { prefix: '/api/v1' }
   )
 
   // --- ROTAS PRINCIPAIS (ROOT LEVEL) ---
-  
+
   // 1. Workspaces (Gera /workspaces/...)
-  await server.register(workspaceRoutes, { 
+  await server.register(workspaceRoutes, {
     prefix: '/workspaces',
     logLevel: 'info'
   })
@@ -150,6 +151,12 @@ export async function registerRoutes(server: AppServer) {
   // 3. Notifications (Gera /notifications/...)
   await server.register(notificationRoutes, {
     prefix: '/notifications',
+    logLevel: 'info'
+  })
+
+  // 4. Finance (Gera /finance/...)
+  await server.register(financeRoutes, {
+    prefix: '/finance',
     logLevel: 'info'
   })
 

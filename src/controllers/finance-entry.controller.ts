@@ -2,6 +2,7 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { prisma } from '../lib/prisma.js';
 import { z } from 'zod';
 import { createEntrySchema, updateEntrySchema } from '../schemas/finance.schema.js';
+import { deleteFileFromR2 } from '../lib/storage.js';
 
 export class FinanceEntryController {
 
@@ -134,7 +135,10 @@ export class FinanceEntryController {
         const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
         const userId = (request.user as any).id;
 
-        const entry = await prisma.financeEntry.findUnique({ where: { id } });
+        const entry = await prisma.financeEntry.findUnique({
+            where: { id },
+            include: { attachments: true }
+        });
         if (!entry) return reply.status(404).send({ message: 'Lançamento não encontrado' });
 
         const member = await prisma.workspaceMember.findUnique({
@@ -143,15 +147,34 @@ export class FinanceEntryController {
 
         if (!member) return reply.status(403).send({ message: 'Acesso negado ao workspace' });
 
-        // Soft delete preenchendo deletedAt
-        await prisma.financeEntry.update({
-            where: { id },
-            data: {
-                deletedAt: new Date(),
-                updatedById: userId
-            }
-        });
+        try {
+            // Garbage Collector: Remove orfãos no R2 Storage fisicamente
+            if (entry.attachments && entry.attachments.length > 0) {
+                // Delete physical files
+                for (const att of entry.attachments) {
+                    await deleteFileFromR2(att.fileKey).catch((e) => {
+                        console.error(`Erro ao deletar arquivo RF ${att.fileKey} do R2. Prosseguindo...`, e);
+                    });
+                }
 
-        return reply.status(204).send();
+                // Limpar linhas do BD
+                await prisma.financeAttachment.deleteMany({ where: { entryId: id } });
+            }
+
+            // Soft delete do Lançamento Pai preenchendo deletedAt e zerando status
+            await prisma.financeEntry.update({
+                where: { id },
+                data: {
+                    deletedAt: new Date(),
+                    updatedById: userId,
+                    attachmentsStatus: 'none'
+                }
+            });
+
+            return reply.status(204).send();
+        } catch (error) {
+            console.error('[Entry Delete Error]', error);
+            return reply.status(500).send({ message: 'Falha durante o Garbage Collection do R2.' });
+        }
     }
 }

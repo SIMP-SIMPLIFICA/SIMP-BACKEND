@@ -6,6 +6,7 @@ import { taskRoutes } from '@/routes/task.routes.js'
 import { notificationRoutes } from '@/routes/notification.routes.js'
 import { communicationRoutes } from '@/routes/communication.routes.js'
 import { settingsRoutes } from '@/routes/settings.routes.js'
+import { financeRoutes } from '@/routes/finance.routes.js'
 
 import { AppServer } from '@/types/server'
 import { db } from '@/utils/database.js'
@@ -14,12 +15,9 @@ import { logger } from '@/utils/logger.js'
 import { publicRoutes } from '@/routes/public.routes.js'
 
 export async function registerRoutes(server: AppServer) {
-  // ... existing error handler ...
-
   // --- ROTAS PÚBLICAS ---
   await server.register(publicRoutes, { prefix: '/public', logLevel: 'info' })
 
-  // --- API V1 ROUTES (Auth, User, Role) ---
   // --- ERROR HANDLER GLOBAL ---
   server.setErrorHandler(async (error, request, reply) => {
     request.log.error(error, 'Request error occurred')
@@ -149,21 +147,12 @@ export async function registerRoutes(server: AppServer) {
   )
 
   // --- ROTAS PRINCIPAIS (ROOT LEVEL) ---
+  await server.register(workspaceRoutes, { prefix: '/workspaces', logLevel: 'info' })
+  await server.register(taskRoutes, { prefix: '/tasks', logLevel: 'info' })
+  await server.register(notificationRoutes, { prefix: '/notifications', logLevel: 'info' })
 
-  await server.register(workspaceRoutes, {
-    prefix: '/workspaces',
-    logLevel: 'info'
-  })
-
-  await server.register(taskRoutes, {
-    prefix: '/tasks',
-    logLevel: 'info'
-  })
-
-  await server.register(notificationRoutes, {
-    prefix: '/notifications',
-    logLevel: 'info'
-  })
+  // Módulo Financeiro
+  await server.register(financeRoutes, { prefix: '/finance', logLevel: 'info' })
 
   // --- TEST ENDPOINT ---
   server.get('/test', async (request, reply) => {
@@ -177,6 +166,7 @@ export async function registerRoutes(server: AppServer) {
     logger.info('✅ Tasks mounted at /tasks')
     logger.info('✅ Notifications mounted at /notifications')
     logger.info('✅ Communication mounted at /api/v1/communication')
+    logger.info('✅ Finance mounted at /finance')
   })
 }
 
@@ -185,6 +175,7 @@ export const routeSummary = {
   '/api/v1/users': { description: 'User management' },
   '/api/v1/roles': { description: 'RBAC management' },
   '/api/v1/communication': { description: 'Protocolo e Comunicação' },
+  '/finance': { description: 'Módulo de Gestão Financeira' },
   '/workspaces': {
     description: 'Workspace management',
     endpoints: ['GET /', 'POST /', 'GET /:id', 'POST /:id/members', 'GET /:id/assignable-users']

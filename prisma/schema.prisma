@@ -49,6 +49,10 @@ model User {
   department   Department? @relation(fields: [departmentId], references: [id])
   departmentId String?
 
+  // --- RELAÇÕES FINANCEIRAS ---
+  createdFinanceEntries FinanceEntry[] @relation("FinanceEntryCreator")
+  updatedFinanceEntries FinanceEntry[] @relation("FinanceEntryUpdater")
+
   @@map("users")
 }
 
@@ -207,8 +211,10 @@ model Workspace {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  members WorkspaceMember[]
-  tasks   Task[]
+  members           WorkspaceMember[]
+  tasks             Task[]
+  financeCategories FinanceCategory[]
+  financeEntries    FinanceEntry[]
 }
 
 model WorkspaceMember {
@@ -232,8 +238,9 @@ model Task {
   status      TaskStatus   @default(TODO)
   priority    TaskPriority @default(MEDIUM)
   dueDate     DateTime?
+
   workspaceId String
-  creatorId   String
+  creatorId   String 
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -294,8 +301,8 @@ model TaskNote {
 
 model TaskHistory {
   id        String   @id @default(uuid())
-  action    String
-  metadata  Json?
+  action    String 
+  metadata  Json? 
   createdAt DateTime @default(now())
   taskId    String
   userId    String
@@ -308,10 +315,10 @@ model Notification {
   id        String   @id @default(uuid())
   title     String
   message   String
-  userId    String
+  userId    String 
   read      Boolean  @default(false)
-  type      String
-  link      String?
+  type      String 
+  link      String? 
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -443,4 +450,51 @@ model Protocol {
   document CommunicationDocument?
 
   @@map("protocols")
+}
+
+// --- MODELOS FINANCEIROS (MVP) ---
+
+enum FinanceEntryType {
+  EXPENSE
+  INCOME
+}
+
+model FinanceCategory {
+  id          String   @id @default(uuid())
+  workspaceId String
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  entries   FinanceEntry[]
+
+  @@unique([workspaceId, name])
+  @@map("finance_categories")
+}
+
+model FinanceEntry {
+  id                String           @id @default(uuid())
+  workspaceId       String
+  occurredAt        DateTime
+  description       String
+  amountCents       Int
+  type              FinanceEntryType @default(EXPENSE)
+  categoryId        String?
+  attachmentsStatus String           @default("none")
+  createdById       String
+  updatedById       String?
+  deletedAt         DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  workspace Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  category  FinanceCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  createdBy User             @relation("FinanceEntryCreator", fields: [createdById], references: [id])
+  updatedBy User?            @relation("FinanceEntryUpdater", fields: [updatedById], references: [id])
+
+  @@index([workspaceId, occurredAt])
+  @@index([categoryId])
+  @@map("finance_entries")
 }

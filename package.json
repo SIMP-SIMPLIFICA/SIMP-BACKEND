@@ -15,7 +15,17 @@
     "db:seed": "tsx prisma/seeds/seed.ts",
     "db:reset": "prisma migrate reset",
     "test": "vitest",
-    "lint": "eslint src --ext .ts"
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest --coverage",
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix",
+    "format": "prettier --write src/**/*.ts",
+    "type-check": "tsc --noEmit",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "env:local": "cp .env.local .env",
+    "env:supabase": "cp .env.supabase .env"
   },
   "dependencies": {
     "@fastify/cookie": "^9.3.1",

@@ -23,8 +23,8 @@ export const createDocumentSchema = z.object({
   content: z.string().min(1, 'O conteúdo do documento é obrigatório'),
 
   // Rule #4: Validar tipos de documento aceitos
-  documentType: z.enum(['OFICIO', 'MEMORANDO', 'OFICIO_CIRCULAR', 'DECRETO', 'PORTARIA', 'REQUERIMENTO'], {
-    message: 'Tipo de documento inválido. Aceitos: OFICIO, MEMORANDO, OFICIO_CIRCULAR, DECRETO, PORTARIA, REQUERIMENTO'
+  documentType: z.enum(['OFICIO', 'MEMORANDO', 'OFICIO_CIRCULAR', 'CIRCULAR', 'DECRETO', 'PORTARIA', 'REQUERIMENTO', 'MENSAGEM'], {
+    message: 'Tipo de documento inválido. Aceitos: OFICIO, MEMORANDO, OFICIO_CIRCULAR, CIRCULAR, DECRETO, PORTARIA, REQUERIMENTO, MENSAGEM'
   }),
 
   priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).default('MEDIUM'),

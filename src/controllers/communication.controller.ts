@@ -43,14 +43,7 @@ export class CommunicationController {
           metadata: metadata || {}, // Salva o JSON com a lista de parágrafos estruturada
           recipients: {
             create: [
-              // Garante que o autor seja um signatário
-              {
-                userId,
-                role: 'TO', // Ajustado de SIGNER para TO, pois SIGNER não existe no enum
-                canView: true,
-                canSign: true
-              },
-              // Adiciona os demais destinatários, filtrando para não duplicar o autor
+              // Adiciona APENAS os destinatários que vieram do payload, filtrados
               ...(recipients || [])
                 .filter((r: any) => r.userId !== userId)
                 .map((recipient: any) => ({
@@ -117,19 +110,30 @@ export class CommunicationController {
 
   async listDrafts(request: FastifyRequest, reply: FastifyReply) {
     const userId = this.getUserId(request)
+    const { type, startDate, endDate } = request.query as any
+
+    const whereClause: any = {
+      createdBy: userId,
+      status: 'DRAFT'
+    }
+
+    if (type === 'MENSAGEM') {
+      whereClause.documentType = 'MENSAGEM'
+    } else if (type === 'DOCUMENTO') {
+      whereClause.documentType = { not: 'MENSAGEM' }
+    }
+
+    if (startDate && endDate) {
+      whereClause.createdAt = { gte: new Date(startDate), lte: new Date(endDate) }
+    }
 
     const drafts = await prisma.communicationDocument.findMany({
-      where: {
-        createdBy: userId,
-        status: 'DRAFT'
-      },
+      where: whereClause,
       orderBy: {
         updatedAt: 'desc'
       },
       take: 50,
-      include: {
-        department: true
-      }
+      select: { id: true, title: true, documentType: true, status: true, updatedAt: true }
     })
 
     return reply.send(drafts)
@@ -137,31 +141,43 @@ export class CommunicationController {
 
   async listReceived(request: FastifyRequest, reply: FastifyReply) {
     const userId = this.getUserId(request)
+    const { type, startDate, endDate, personId } = request.query as any
 
-    const documents = await prisma.communicationDocument.findMany({
-      where: {
-        recipients: {
-          some: {
-            userId: userId
-          }
-        },
-        status: {
-          in: ['SENT', 'READ', 'SIGNED', 'ARCHIVED']
+    const whereClause: any = {
+      recipients: {
+        some: {
+          userId: userId
         }
       },
+      status: {
+        in: ['SENT', 'READ', 'SIGNED', 'ARCHIVED']
+      }
+    }
+
+    if (type === 'MENSAGEM') {
+      whereClause.documentType = 'MENSAGEM'
+    } else if (type === 'DOCUMENTO') {
+      whereClause.documentType = { not: 'MENSAGEM' }
+    }
+
+    if (startDate && endDate) {
+      whereClause.sentAt = { gte: new Date(startDate), lte: new Date(endDate) }
+    }
+
+    if (personId) {
+      whereClause.createdBy = personId
+    }
+
+    const documents = await prisma.communicationDocument.findMany({
+      where: whereClause,
       orderBy: {
         sentAt: 'desc'
       },
       take: 50,
-      include: {
-        creator: {
-          select: { id: true, username: true, firstName: true, lastName: true }
-        },
-        department: true,
-        recipients: {
-          where: { userId: userId },
-          select: { readAt: true, signedAt: true }
-        }
+      select: {
+        id: true, title: true, documentType: true, documentNumber: true, protocolNumber: true, status: true, sentAt: true,
+        creator: { select: { id: true, username: true, firstName: true, lastName: true } },
+        recipients: { where: { userId: userId }, select: { readAt: true, signedAt: true } }
       }
     })
 
@@ -182,25 +198,41 @@ export class CommunicationController {
 
   async listSent(request: FastifyRequest, reply: FastifyReply) {
     const userId = this.getUserId(request)
+    const { type, startDate, endDate, personId } = request.query as any
+
+    const whereClause: any = {
+      createdBy: userId,
+      status: {
+        not: 'DRAFT'
+      }
+    }
+
+    if (type === 'MENSAGEM') {
+      whereClause.documentType = 'MENSAGEM'
+    } else if (type === 'DOCUMENTO') {
+      whereClause.documentType = { not: 'MENSAGEM' }
+    }
+
+    if (startDate && endDate) {
+      whereClause.sentAt = { gte: new Date(startDate), lte: new Date(endDate) }
+    }
+
+    if (personId) {
+      whereClause.recipients = { some: { userId: personId } }
+    }
 
     const documents = await prisma.communicationDocument.findMany({
-      where: {
-        createdBy: userId,
-        status: {
-          not: 'DRAFT'
-        }
-      },
+      where: whereClause,
       orderBy: {
         sentAt: 'desc'
       },
       take: 50,
-      include: {
-        department: true,
+      select: {
+        id: true, title: true, documentType: true, documentNumber: true, protocolNumber: true, status: true, sentAt: true,
         recipients: {
-          include: {
-            user: {
-              select: { id: true, firstName: true, lastName: true, avatar: true }
-            }
+          select: {
+            role: true, readAt: true, signedAt: true,
+            user: { select: { id: true, firstName: true, lastName: true, avatar: true } }
           }
         }
       }
@@ -415,6 +447,12 @@ export class CommunicationController {
 
     try {
       const result = await documentService.protocolAndSend(id, userId)
+
+      // Auto-assinatura: Assina automaticamente o documento caso não seja MENSAGEM
+      const doc = await prisma.communicationDocument.findUnique({ where: { id } })
+      if (doc && doc.documentType !== 'MENSAGEM') {
+        await documentService.sign(id, userId, request.ip)
+      }
 
       return reply.send({
         message: 'Documento protocolado, gerado e enviado com sucesso!',

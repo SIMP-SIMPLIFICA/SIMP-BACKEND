@@ -3,6 +3,13 @@ import { z } from 'zod'
 import { CommunicationController } from '@/controllers/communication.controller'
 import { createDocumentSchema, updateDocumentSchema, documentIdSchema } from '@/schemas/communication.schemas'
 
+const listFiltersSchema = z.object({
+  type: z.enum(['ALL', 'MENSAGEM', 'DOCUMENTO']).optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+  personId: z.string().optional()
+})
+
 export async function communicationRoutes(app: FastifyInstance) {
   const controller = new CommunicationController()
 
@@ -29,6 +36,7 @@ export async function communicationRoutes(app: FastifyInstance) {
   // GET (Listar Meus Rascunhos)
   app.get('/drafts', {
     schema: {
+      querystring: listFiltersSchema,
       tags: ['Communication'],
       description: 'List user drafts'
     }
@@ -37,6 +45,7 @@ export async function communicationRoutes(app: FastifyInstance) {
   // GET (Caixa de Entrada - Recebidos)
   app.get('/received', {
     schema: {
+      querystring: listFiltersSchema,
       tags: ['Communication'],
       description: 'List received documents (Inbox)'
     }
@@ -45,6 +54,7 @@ export async function communicationRoutes(app: FastifyInstance) {
   // GET (Enviados)
   app.get('/sent', {
     schema: {
+      querystring: listFiltersSchema,
       tags: ['Communication'],
       description: 'List sent documents'
     }

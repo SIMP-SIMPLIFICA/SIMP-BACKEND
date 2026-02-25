@@ -58,6 +58,11 @@ export class DocumentService {
             }
         })
 
+        // Bypass de PDF para MENSAGEM (não gera PDF, não assina, não gera anexos)
+        if (document.documentType === 'MENSAGEM') {
+            return { protocol: protocolNumber, hash: originalHash }
+        }
+
         // Recupera histórico atualizado
         const historico = await AuditService.getDocumentHistory(documentId)
 

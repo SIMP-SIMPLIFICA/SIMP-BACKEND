@@ -18,15 +18,25 @@ export class FinanceCategoryController {
             return reply.status(403).send({ message: 'Acesso negado ao workspace' });
         }
 
-        const category = await prisma.financeCategory.create({
-            data: {
+        let category = await prisma.financeCategory.findFirst({
+            where: {
                 workspaceId: data.workspaceId,
-                name: data.name,
-                description: data.description,
+                name: data.name
             }
         });
 
-        return reply.status(201).send(category);
+        if (!category) {
+            category = await prisma.financeCategory.create({
+                data: {
+                    workspaceId: data.workspaceId,
+                    name: data.name,
+                    description: data.description,
+                }
+            });
+            return reply.status(201).send(category);
+        }
+
+        return reply.status(200).send(category);
     }
 
     async list(request: FastifyRequest, reply: FastifyReply) {
@@ -42,7 +52,14 @@ export class FinanceCategoryController {
         }
 
         const categories = await prisma.financeCategory.findMany({
-            where: { workspaceId },
+            where: {
+                workspaceId,
+                financeEntries: {
+                    some: {
+                        deletedAt: null
+                    }
+                }
+            },
             orderBy: { name: 'asc' }
         });
 

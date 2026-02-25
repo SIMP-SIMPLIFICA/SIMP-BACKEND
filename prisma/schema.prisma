@@ -324,8 +324,8 @@ model FinanceCategory {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  workspace Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  entries   FinanceEntry[]
+  workspace      Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  financeEntries FinanceEntry[] @relation("CategoryEntries")
 
   @@unique([workspaceId, name])
   @@map("finance_categories")
@@ -346,12 +346,27 @@ model FinanceEntry {
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 
-  workspace Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  category  FinanceCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  createdBy User             @relation("FinanceEntryCreator", fields: [createdById], references: [id])
-  updatedBy User?            @relation("FinanceEntryUpdater", fields: [updatedById], references: [id])
+  workspace   Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  category    FinanceCategory?    @relation("CategoryEntries", fields: [categoryId], references: [id])
+  createdBy   User                @relation("FinanceEntryCreator", fields: [createdById], references: [id])
+  updatedBy   User?               @relation("FinanceEntryUpdater", fields: [updatedById], references: [id])
+  attachments FinanceAttachment[] @relation("EntryAttachments")
 
   @@index([workspaceId, occurredAt])
   @@index([categoryId])
   @@map("finance_entries")
+}
+
+model FinanceAttachment {
+  id          String   @id @default(uuid())
+  entryId     String
+  fileName    String
+  fileKey     String // R2 unique path
+  fileSize    Int
+  contentType String
+  createdAt   DateTime @default(now())
+
+  entry FinanceEntry @relation("EntryAttachments", fields: [entryId], references: [id])
+
+  @@index([entryId])
 }

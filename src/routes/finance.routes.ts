@@ -1,10 +1,12 @@
 import { FastifyInstance } from 'fastify';
 import { FinanceCategoryController } from '../controllers/finance-category.controller.js';
 import { FinanceEntryController } from '../controllers/finance-entry.controller.js';
+import { FinanceAttachmentController } from '../controllers/finance-attachments.controller.js';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 
 const categoryController = new FinanceCategoryController();
 const entryController = new FinanceEntryController();
+const attachmentController = new FinanceAttachmentController();
 
 export async function financeRoutes(app: FastifyInstance) {
     // Todas as rotas de finanças requerem autenticação
@@ -21,4 +23,9 @@ export async function financeRoutes(app: FastifyInstance) {
     app.get('/workspaces/:workspaceId/entries', entryController.list);
     app.put('/entries/:id', entryController.update);
     app.delete('/entries/:id', entryController.delete);
+
+    // --- Rotas de Anexos (Attachments) ---
+    app.post('/entries/:id/attachments', attachmentController.upload);
+    app.get('/entries/:id/attachments', attachmentController.list);
+    app.delete('/entries/:id/attachments/:attachmentId', attachmentController.delete);
 }

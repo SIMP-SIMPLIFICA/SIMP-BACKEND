@@ -16,6 +16,13 @@ export const createEntrySchema = z.object({
   amountCents: z.number().int().positive('Amount must be positive'),
   type: z.nativeEnum(FinanceEntryType).default(FinanceEntryType.EXPENSE),
   categoryId: z.string().uuid().optional().nullable(),
+  subcategoryName: z.string().max(100).optional().nullable(),
+  nfeNumber: z.string().max(50).optional().nullable(),
+  issueDate: z.string().datetime().optional().nullable(),
+  providerDocument: z.string().max(20).optional().nullable(),
+  empenhoNumber: z.string().max(50).optional().nullable(),
+  liquidacaoNumber: z.string().max(50).optional().nullable(),
+  deliveryDate: z.string().datetime().optional().nullable(),
   attachmentsStatus: z.enum(['none', 'pending', 'ok']).default('none'),
 });
 

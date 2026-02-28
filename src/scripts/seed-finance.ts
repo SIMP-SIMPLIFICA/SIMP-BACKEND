@@ -86,9 +86,6 @@ async function main() {
 
     // 2. Limpar Lançamentos e Categorias Antigas (Reset Parcial)
     console.log('🧹 Limpando dados financeiros anteriores do Workspace...');
-    await prisma.financeAttachment.deleteMany({
-        where: { entry: { workspaceId: WID } }
-    });
     await prisma.financeEntry.deleteMany({
         where: { workspaceId: WID }
     });

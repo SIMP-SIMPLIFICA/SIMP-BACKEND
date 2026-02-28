@@ -2,6 +2,11 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { prisma } from '../lib/prisma.js';
 import { z } from 'zod';
 import { createEntrySchema, updateEntrySchema } from '../schemas/finance.schema.js';
+import { pipeline } from 'node:stream/promises';
+import { createWriteStream } from 'node:fs';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as crypto from 'node:crypto';
 
 export class FinanceEntryController {
 
@@ -25,6 +30,13 @@ export class FinanceEntryController {
                 amountCents: data.amountCents,
                 type: data.type,
                 categoryId: data.categoryId,
+                subcategoryName: data.subcategoryName,
+                nfeNumber: data.nfeNumber,
+                issueDate: data.issueDate ? new Date(data.issueDate) : undefined,
+                providerDocument: data.providerDocument,
+                empenhoNumber: data.empenhoNumber,
+                liquidacaoNumber: data.liquidacaoNumber,
+                deliveryDate: data.deliveryDate ? new Date(data.deliveryDate) : undefined,
                 attachmentsStatus: data.attachmentsStatus,
                 createdById: userId,
             },
@@ -117,6 +129,8 @@ export class FinanceEntryController {
             data: {
                 ...data,
                 occurredAt: data.occurredAt ? new Date(data.occurredAt) : undefined,
+                issueDate: data.issueDate ? new Date(data.issueDate) : undefined,
+                deliveryDate: data.deliveryDate ? new Date(data.deliveryDate) : undefined,
                 updatedById: userId,
             },
             include: {
@@ -151,6 +165,129 @@ export class FinanceEntryController {
                 updatedById: userId
             }
         });
+
+        return reply.status(204).send();
+    }
+
+    // --- ATTACHMENTS ---
+    async listAttachments(request: FastifyRequest, reply: FastifyReply) {
+        const { entryId } = z.object({ entryId: z.string().uuid() }).parse(request.params);
+        const userId = (request.user as any).id;
+
+        const entry = await prisma.financeEntry.findUnique({ where: { id: entryId } });
+        if (!entry) return reply.status(404).send({ message: 'Lançamento não encontrado' });
+
+        const member = await prisma.workspaceMember.findUnique({
+            where: { workspaceId_userId: { workspaceId: entry.workspaceId, userId } }
+        });
+
+        if (!member) return reply.status(403).send({ message: 'Acesso negado ao workspace' });
+
+        const attachments = await prisma.financeAttachment.findMany({
+            where: { entryId },
+            orderBy: { createdAt: 'desc' }
+        });
+
+        const backendUrl = process.env.API_URL || 'http://localhost:3000';
+        const mappedAttachments = attachments.map(att => ({
+            ...att,
+            url: `${backendUrl}/uploads/${att.fileUrl}`
+        }));
+
+        return reply.send(mappedAttachments);
+    }
+
+    async uploadAttachment(request: FastifyRequest, reply: FastifyReply) {
+        const { entryId } = z.object({ entryId: z.string().uuid() }).parse(request.params);
+        const userId = (request.user as any).id;
+
+        const entry = await prisma.financeEntry.findUnique({ where: { id: entryId } });
+        if (!entry) return reply.status(404).send({ message: 'Lançamento não encontrado' });
+
+        const member = await prisma.workspaceMember.findUnique({
+            where: { workspaceId_userId: { workspaceId: entry.workspaceId, userId } }
+        });
+
+        if (!member) return reply.status(403).send({ message: 'Acesso negado ao workspace' });
+
+        const data = await request.file();
+        if (!data) return reply.status(400).send({ message: 'Nenhum arquivo enviado' });
+
+        const uploadDir = path.join(process.cwd(), 'uploads');
+        if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+
+        const fileExt = path.extname(data.filename);
+        const uniqueName = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${fileExt}`;
+        const uploadPath = path.join(uploadDir, uniqueName);
+
+        await pipeline(data.file, createWriteStream(uploadPath));
+        const stats = fs.statSync(uploadPath);
+
+        const attachment = await prisma.financeAttachment.create({
+            data: {
+                entryId,
+                uploaderId: userId,
+                fileName: data.filename,
+                fileType: data.mimetype,
+                fileSize: stats.size,
+                fileUrl: uniqueName
+            }
+        });
+
+        // Update entry status if it was NONE
+        if (entry.attachmentsStatus === 'NONE' || entry.attachmentsStatus === 'none') {
+            await prisma.financeEntry.update({
+                where: { id: entryId },
+                data: { attachmentsStatus: 'ok' }
+            });
+        }
+
+        const backendUrl = process.env.API_URL || 'http://localhost:3000';
+        return reply.status(201).send({
+            ...attachment,
+            url: `${backendUrl}/uploads/${attachment.fileUrl}`
+        });
+    }
+
+    async deleteAttachment(request: FastifyRequest, reply: FastifyReply) {
+        const { entryId, attachmentId } = z.object({
+            entryId: z.string().uuid(),
+            attachmentId: z.string().uuid()
+        }).parse(request.params);
+        const userId = (request.user as any).id;
+
+        const attachment = await prisma.financeAttachment.findUnique({
+            where: { id: attachmentId },
+            include: { entry: true }
+        });
+
+        if (!attachment || attachment.entryId !== entryId) {
+            return reply.status(404).send({ message: 'Anexo não encontrado' });
+        }
+
+        const member = await prisma.workspaceMember.findUnique({
+            where: { workspaceId_userId: { workspaceId: attachment.entry.workspaceId, userId } }
+        });
+
+        if (!member) return reply.status(403).send({ message: 'Acesso negado ao workspace' });
+
+        await prisma.financeAttachment.delete({ where: { id: attachmentId } });
+
+        try {
+            const filePath = path.join(process.cwd(), 'uploads', attachment.fileUrl);
+            if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        } catch (e) {
+            console.error('Erro ao deletar arquivo físico:', e);
+        }
+
+        // Check if there are remaining attachments, update entry status if 0
+        const remaining = await prisma.financeAttachment.count({ where: { entryId } });
+        if (remaining === 0) {
+            await prisma.financeEntry.update({
+                where: { id: entryId },
+                data: { attachmentsStatus: 'none' }
+            });
+        }
 
         return reply.status(204).send();
     }

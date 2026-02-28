@@ -4,7 +4,7 @@ import { nanoid } from 'nanoid';
 const prisma = new PrismaClient();
 async function hashPassword(password) {
     return await hash(password, {
-        memoryCost: 65536,
+        memoryCost: 65536, // 64 MB
         timeCost: 3,
         parallelism: 4
     });
@@ -167,6 +167,7 @@ async function seedUsers() {
                 }
             }
         });
+        // Assign roles
         for (const roleName of userData.roles) {
             const role = await prisma.role.findUnique({
                 where: { name: roleName }
@@ -187,6 +188,7 @@ async function seedUsers() {
 async function seedSettings() {
     console.log('⚙️  Seeding settings...');
     const settings = [
+        // Application settings
         {
             key: 'app.name',
             value: 'Your Application',
@@ -211,6 +213,7 @@ async function seedSettings() {
             isPublic: true,
             isSystem: false
         },
+        // Authentication settings
         {
             key: 'auth.email_verification_required',
             value: true,
@@ -267,6 +270,7 @@ async function seedSettings() {
             isPublic: false,
             isSystem: true
         },
+        // Security settings
         {
             key: 'security.rate_limit_requests',
             value: 100,
@@ -291,6 +295,7 @@ async function seedSettings() {
             isPublic: false,
             isSystem: false
         },
+        // Email settings
         {
             key: 'email.from_name',
             value: 'Your App',
@@ -315,6 +320,7 @@ async function seedSettings() {
             isPublic: false,
             isSystem: false
         },
+        // Feature flags
         {
             key: 'features.registration_enabled',
             value: true,
@@ -347,6 +353,7 @@ async function seedSettings() {
             isPublic: false,
             isSystem: false
         },
+        // System settings
         {
             key: 'system.maintenance_mode',
             value: {
@@ -416,7 +423,7 @@ async function seedAuditLogs() {
             ipAddress: '127.0.0.1',
             userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)',
             success: true,
-            createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000)
+            createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000) // 2 hours ago
         },
         {
             userId: testUser.id,
@@ -428,7 +435,7 @@ async function seedAuditLogs() {
             ipAddress: '192.168.1.100',
             userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
             success: true,
-            createdAt: new Date(Date.now() - 1 * 60 * 60 * 1000)
+            createdAt: new Date(Date.now() - 1 * 60 * 60 * 1000) // 1 hour ago
         },
         {
             userId: null,
@@ -442,7 +449,7 @@ async function seedAuditLogs() {
             success: false,
             errorMessage: 'Invalid credentials',
             newData: { email: 'hacker@evil.com' },
-            createdAt: new Date(Date.now() - 30 * 60 * 1000)
+            createdAt: new Date(Date.now() - 30 * 60 * 1000) // 30 minutes ago
         },
         {
             userId: adminUser.id,
@@ -456,7 +463,7 @@ async function seedAuditLogs() {
             success: true,
             oldData: { value: false },
             newData: { value: true },
-            createdAt: new Date(Date.now() - 15 * 60 * 1000)
+            createdAt: new Date(Date.now() - 15 * 60 * 1000) // 15 minutes ago
         }
     ];
     for (const logData of auditLogs) {
@@ -490,7 +497,7 @@ async function seedUserSessions() {
                     city: 'San Francisco',
                     region: 'California'
                 },
-                expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+                expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
                 lastUsedAt: new Date()
             }
         });
@@ -499,6 +506,7 @@ async function seedUserSessions() {
 }
 async function cleanupExpiredData() {
     console.log('🧹 Cleaning up expired data...');
+    // Clean up expired sessions
     const expiredSessions = await prisma.userSession.deleteMany({
         where: {
             expiresAt: {
@@ -506,6 +514,7 @@ async function cleanupExpiredData() {
             }
         }
     });
+    // Clean up expired revoked tokens
     const expiredTokens = await prisma.revokedToken.deleteMany({
         where: {
             expiresAt: {
@@ -513,6 +522,7 @@ async function cleanupExpiredData() {
             }
         }
     });
+    // Clean up old audit logs (older than 90 days)
     const oldAuditLogs = await prisma.auditLog.deleteMany({
         where: {
             createdAt: {
@@ -557,4 +567,3 @@ async function runSeeder() {
     }
 }
 await runSeeder();
-//# sourceMappingURL=seed.js.map

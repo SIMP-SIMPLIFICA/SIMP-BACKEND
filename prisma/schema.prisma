@@ -46,8 +46,9 @@ model User {
   notifications        Notification[]
 
   // --- RELAÇÕES FINANCEIRAS ---
-  createdFinanceEntries FinanceEntry[] @relation("FinanceEntryCreator")
-  updatedFinanceEntries FinanceEntry[] @relation("FinanceEntryUpdater")
+  createdFinanceEntries FinanceEntry[]      @relation("FinanceEntryCreator")
+  updatedFinanceEntries FinanceEntry[]      @relation("FinanceEntryUpdater")
+  financeAttachments    FinanceAttachment[]
 
   @@map("users")
 }
@@ -339,6 +340,13 @@ model FinanceEntry {
   amountCents       Int
   type              FinanceEntryType @default(EXPENSE)
   categoryId        String?
+  subcategoryName   String?
+  nfeNumber         String?
+  issueDate         DateTime?
+  providerDocument  String? // CPF/CNPJ
+  empenhoNumber     String?
+  liquidacaoNumber  String?
+  deliveryDate      DateTime?
   attachmentsStatus String           @default("none")
   createdById       String
   updatedById       String?
@@ -346,12 +354,30 @@ model FinanceEntry {
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 
-  workspace Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  category  FinanceCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  createdBy User             @relation("FinanceEntryCreator", fields: [createdById], references: [id])
-  updatedBy User?            @relation("FinanceEntryUpdater", fields: [updatedById], references: [id])
+  attachments FinanceAttachment[]
+  workspace   Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  category    FinanceCategory?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  createdBy   User                @relation("FinanceEntryCreator", fields: [createdById], references: [id])
+  updatedBy   User?               @relation("FinanceEntryUpdater", fields: [updatedById], references: [id])
 
   @@index([workspaceId, occurredAt])
   @@index([categoryId])
   @@map("finance_entries")
+}
+
+model FinanceAttachment {
+  id         String   @id @default(uuid())
+  entryId    String
+  uploaderId String
+  fileName   String
+  fileType   String
+  fileSize   Int
+  fileUrl    String
+  createdAt  DateTime @default(now())
+
+  entry    FinanceEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  uploader User         @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
+
+  @@index([entryId])
+  @@map("finance_attachments")
 }

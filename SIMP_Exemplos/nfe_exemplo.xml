@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<nfeProc versao="4.00" xmlns="http://www.portalfiscal.inf.br/nfe">
+    <NFe>
+        <infNFe Id="NFe12345678901234567890123456789012345678901234" versao="4.00">
+            <ide>
+                <natOp>VENDA DE MERCADORIA</natOp>
+            </ide>
+            <emit>
+                <CNPJ>00000000000100</CNPJ>
+                <xNome>FORNECEDOR DE EXEMPLO LTDA</xNome>
+            </emit>
+        </infNFe>
+    </NFe>
+</nfeProc>

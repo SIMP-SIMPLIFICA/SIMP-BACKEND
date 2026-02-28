@@ -21,4 +21,9 @@ export async function financeRoutes(app: FastifyInstance) {
     app.get('/workspaces/:workspaceId/entries', entryController.list);
     app.put('/entries/:id', entryController.update);
     app.delete('/entries/:id', entryController.delete);
+
+    // --- Rotas de Anexos (Attachments) ---
+    app.get('/entries/:entryId/attachments', entryController.listAttachments);
+    app.post('/entries/:entryId/attachments', entryController.uploadAttachment);
+    app.delete('/entries/:entryId/attachments/:attachmentId', entryController.deleteAttachment);
 }

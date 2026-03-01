@@ -27,6 +27,12 @@ export async function virtualProcessRoutes(app: FastifyInstance) {
     virtualProcessController.toggleStatus.bind(virtualProcessController)
   )
 
+  app.patch(
+    '/:id/company',
+    { preHandler: [authMiddleware, requireAnyPermission(['processes:manage', 'processes:write'])] },
+    virtualProcessController.updateCompanyInfo.bind(virtualProcessController)
+  )
+
   app.delete(
     '/:id',
     { preHandler: [authMiddleware, requireAnyPermission(['processes:manage', 'processes:write'])] },
@@ -43,5 +49,11 @@ export async function virtualProcessRoutes(app: FastifyInstance) {
     '/:id/documents/:documentId/download',
     { preHandler: [authMiddleware, requireAnyPermission(['processes:download', 'processes:write', 'processes:manage'])] },
     virtualProcessController.downloadDocument.bind(virtualProcessController)
+  )
+
+  app.delete(
+    '/:id/documents/:documentId',
+    { preHandler: [authMiddleware, requireAnyPermission(['processes:manage', 'processes:write'])] },
+    virtualProcessController.deleteDocument.bind(virtualProcessController)
   )
 }

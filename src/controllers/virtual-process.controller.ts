@@ -2,7 +2,7 @@ import { FastifyRequest, FastifyReply } from 'fastify'
 import { prisma, db } from '@/utils/database.js'
 import { logger } from '@/utils/logger.js'
 import { z } from 'zod'
-import { createVirtualProcessSchema, uploadDocumentSchema } from '@/schemas/virtual-process.schemas.js'
+import { createVirtualProcessSchema, uploadDocumentSchema, updateCompanyInfoSchema } from '@/schemas/virtual-process.schemas.js'
 import { randomUUID } from 'crypto'
 import fs from 'fs'
 import path from 'path'
@@ -22,6 +22,14 @@ export class VirtualProcessController {
         limit: z.coerce.number().min(1).max(100).default(50),
         search: z.string().optional(),
         status: z.string().optional(),
+        secretaria: z.string().optional(),
+        bankAccount: z.string().optional(),
+        source: z.string().optional(),
+        category: z.string().optional(),
+        companyCnpj: z.string().optional(),
+        companyName: z.string().optional(),
+        startDate: z.coerce.date().optional(),
+        endDate: z.coerce.date().optional(),
       })
 
       const query = querySchema.parse(request.query)
@@ -38,6 +46,19 @@ export class VirtualProcessController {
 
       if (query.status) {
         where.status = query.status
+      }
+
+      if (query.secretaria) where.secretaria = query.secretaria
+      if (query.bankAccount) where.bankAccount = query.bankAccount
+      if (query.source) where.source = query.source
+      if (query.category) where.category = query.category
+      if (query.companyCnpj) where.companyCnpj = query.companyCnpj
+      if (query.companyName) where.companyName = { contains: query.companyName, mode: 'insensitive' }
+
+      if (query.startDate || query.endDate) {
+        where.createdAt = {}
+        if (query.startDate) where.createdAt.gte = query.startDate
+        if (query.endDate) where.createdAt.lte = query.endDate
       }
 
       const total = await prisma.virtualProcess.count({ where })
@@ -80,16 +101,27 @@ export class VirtualProcessController {
         return reply.code(404).send({ error: 'Process Not Found', message: 'Processo não encontrado' })
       }
 
+      const auditLogs = await prisma.auditLog.findMany({
+        where: {
+          resource: 'VIRTUAL_PROCESS',
+          resourceId: id
+        },
+        orderBy: { createdAt: 'desc' },
+        include: {
+          user: { select: { id: true, firstName: true, lastName: true } }
+        }
+      })
+
       await db.createAuditLog({
         userId: (request as any).user?.id,
         action: 'VISUALIZOU',
-        resource: 'virtual_process',
+        resource: 'VIRTUAL_PROCESS',
         resourceId: id,
         ipAddress: request.ip,
         success: true
       })
 
-      return reply.send(process)
+      return reply.send({ process, auditLog: auditLogs })
     } catch (error: any) {
       logger.error(error, 'Failed to get virtual process details')
       return reply.code(500).send({ error: 'Process Fetch Failed', message: error.message })
@@ -118,17 +150,21 @@ export class VirtualProcessController {
           bankAccount: data.bankAccount,
           agency: data.agency,
           bankName: data.bankName,
+          companyCnpj: data.companyCnpj,
+          companyName: data.companyName,
+          startDate: data.startDate,
+          endDate: data.endDate,
           subject: data.subject,
           category: data.category,
           createdById: userId,
-          status: 'Tramitando'
+          status: data.status || 'Tramitando'
         }
       })
 
       await db.createAuditLog({
         userId,
         action: 'AUTUOU',
-        resource: 'virtual_process',
+        resource: 'VIRTUAL_PROCESS',
         resourceId: process.id,
         ipAddress: request.ip,
         success: true,
@@ -164,7 +200,7 @@ export class VirtualProcessController {
       await db.createAuditLog({
         userId: (request as any).user?.id,
         action: 'ALTEROU_STATUS',
-        resource: 'virtual_process',
+        resource: 'VIRTUAL_PROCESS',
         resourceId: id,
         ipAddress: request.ip,
         success: true,
@@ -176,6 +212,51 @@ export class VirtualProcessController {
     } catch (error: any) {
       logger.error(error, 'Failed to update virtual process status')
       return reply.code(500).send({ error: 'Status Update Failed', message: error.message })
+    }
+  }
+
+  async updateCompanyInfo(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { id } = request.params as { id: string }
+      const data = updateCompanyInfoSchema.parse(request.body)
+
+      const process = await prisma.virtualProcess.findUnique({ where: { id } })
+      if (!process) {
+        return reply.code(404).send({ error: 'Not Found', message: 'Processo não encontrado' })
+      }
+
+      const updatedProcess = await prisma.virtualProcess.update({
+        where: { id },
+        data: {
+          companyName: data.companyName,
+          companyCnpj: data.companyCnpj
+        }
+      })
+
+      await db.createAuditLog({
+        userId: (request as any).user?.id,
+        action: 'ATUALIZOU_DADOS_EMPRESA',
+        resource: 'VIRTUAL_PROCESS',
+        resourceId: id,
+        ipAddress: request.ip,
+        success: true,
+        oldData: {
+          companyName: process.companyName,
+          companyCnpj: process.companyCnpj
+        },
+        newData: {
+          companyName: updatedProcess.companyName,
+          companyCnpj: updatedProcess.companyCnpj
+        }
+      })
+
+      return reply.send(updatedProcess)
+    } catch (error: any) {
+      logger.error(error, 'Failed to update company info')
+      if (error instanceof z.ZodError) {
+        return reply.code(400).send({ error: 'Validation Error', details: error.errors })
+      }
+      return reply.code(500).send({ error: 'Company Info Update Failed', message: error.message })
     }
   }
 
@@ -197,7 +278,7 @@ export class VirtualProcessController {
       await db.createAuditLog({
         userId: (request as any).user?.id,
         action: 'EXCLUIU',
-        resource: 'virtual_process',
+        resource: 'VIRTUAL_PROCESS',
         resourceId: id,
         ipAddress: request.ip,
         success: true,
@@ -263,11 +344,16 @@ export class VirtualProcessController {
       await db.createAuditLog({
         userId: (request as any).user?.id,
         action: 'ANEXOU_DOCUMENTO',
-        resource: 'virtual_process_document',
-        resourceId: document.id,
+        resource: 'VIRTUAL_PROCESS',
+        resourceId: id,
         ipAddress: request.ip,
         success: true,
-        metadata: { processId: id, fileName: fileData.fileName }
+        metadata: {
+          processId: id,
+          documentId: document.id,
+          fileName: fileData.fileName,
+          description: `Anexou o documento: ${fileData.fileName}`
+        }
       })
 
       return reply.code(201).send(document)
@@ -300,7 +386,7 @@ export class VirtualProcessController {
       await db.createAuditLog({
         userId: (request as any).user?.id,
         action: 'BAIXOU_DOCUMENTO',
-        resource: 'virtual_process_document',
+        resource: 'VIRTUAL_PROCESS_DOCUMENT',
         resourceId: documentId,
         ipAddress: request.ip,
         success: true,
@@ -313,6 +399,57 @@ export class VirtualProcessController {
     } catch (error: any) {
       logger.error(error, 'Failed to download document')
       return reply.code(500).send({ error: 'Download Failed', message: error.message })
+    }
+  }
+
+  async deleteDocument(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { id, documentId } = request.params as { id: string, documentId: string }
+
+      const document = await prisma.virtualProcessDocument.findUnique({
+        where: { id: documentId }
+      })
+
+      if (!document || document.virtualProcessId !== id) {
+        return reply.code(404).send({ error: 'Not Found', message: 'Documento não encontrado' })
+      }
+
+      const diffInMs = Date.now() - document.uploadedAt.getTime()
+      const diffInHours = diffInMs / (1000 * 60 * 60)
+
+      if (diffInHours > 24) {
+        return reply.code(403).send({ error: 'Forbidden', message: 'O prazo de 24 horas para exclusão deste documento expirou' })
+      }
+
+      await prisma.virtualProcessDocument.delete({
+        where: { id: documentId }
+      })
+
+      const urlParts = document.fileUrl.split('/')
+      const fileNameOnDisk = urlParts[urlParts.length - 1]
+      const filePath = path.join(UPLOAD_DIR, fileNameOnDisk)
+
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath)
+      }
+
+      await db.createAuditLog({
+        userId: (request as any).user?.id,
+        action: 'REMOVEU_DOCUMENTO',
+        resource: 'VIRTUAL_PROCESS',
+        resourceId: id,
+        ipAddress: request.ip,
+        success: true,
+        metadata: {
+          description: `Removeu o documento: ${document.fileName}`
+        },
+        oldData: document
+      })
+
+      return reply.code(204).send()
+    } catch (error: any) {
+      logger.error(error, 'Failed to delete document')
+      return reply.code(500).send({ error: 'Document Deletion Failed', message: error.message })
     }
   }
 }

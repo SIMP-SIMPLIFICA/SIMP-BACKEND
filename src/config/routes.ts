@@ -11,6 +11,7 @@ import { financeRoutes } from '@/routes/finance.routes.js'
 import { AppServer } from '@/types/server'
 import { db } from '@/utils/database.js'
 import { logger } from '@/utils/logger.js'
+import { virtualProcessRoutes } from '@/routes/virtual-process.routes.js'
 
 import { publicRoutes } from '@/routes/public.routes.js'
 
@@ -138,7 +139,6 @@ export async function registerRoutes(server: AppServer) {
 
       // Módulo de Configurações
       await server.register(settingsRoutes, { prefix: '/settings', logLevel: 'info' })
-
       server.get('/', { /* schema omitido */ }, async (request, reply) => {
         return reply.send({ message: "API V1 Root" })
       })
@@ -153,6 +153,7 @@ export async function registerRoutes(server: AppServer) {
 
   // Módulo Financeiro
   await server.register(financeRoutes, { prefix: '/finance', logLevel: 'info' })
+  await server.register(virtualProcessRoutes, { prefix: '/virtual-processes', logLevel: 'info' })
 
   // --- TEST ENDPOINT ---
   server.get('/test', async (request, reply) => {
@@ -176,6 +177,7 @@ export const routeSummary = {
   '/api/v1/roles': { description: 'RBAC management' },
   '/api/v1/communication': { description: 'Protocolo e Comunicação' },
   '/finance': { description: 'Módulo de Gestão Financeira' },
+  '/virtual-processes': { description: 'Módulo de Processos Virtuais' },
   '/workspaces': {
     description: 'Workspace management',
     endpoints: ['GET /', 'POST /', 'GET /:id', 'POST /:id/members', 'GET /:id/assignable-users']

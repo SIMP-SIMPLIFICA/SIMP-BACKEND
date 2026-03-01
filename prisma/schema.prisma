@@ -49,9 +49,11 @@ model User {
   department   Department? @relation(fields: [departmentId], references: [id])
   departmentId String?
 
-  // --- RELAÇÕES FINANCEIRAS ---
   createdFinanceEntries FinanceEntry[] @relation("FinanceEntryCreator")
   updatedFinanceEntries FinanceEntry[] @relation("FinanceEntryUpdater")
+
+  createdProcesses         VirtualProcess[]         @relation("ProcessCreator")
+  uploadedProcessDocuments VirtualProcessDocument[] @relation("ProcessDocumentUploader")
 
   @@map("users")
 }
@@ -240,7 +242,7 @@ model Task {
   dueDate     DateTime?
 
   workspaceId String
-  creatorId   String 
+  creatorId   String
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -301,8 +303,8 @@ model TaskNote {
 
 model TaskHistory {
   id        String   @id @default(uuid())
-  action    String 
-  metadata  Json? 
+  action    String
+  metadata  Json?
   createdAt DateTime @default(now())
   taskId    String
   userId    String
@@ -315,10 +317,10 @@ model Notification {
   id        String   @id @default(uuid())
   title     String
   message   String
-  userId    String 
+  userId    String
   read      Boolean  @default(false)
-  type      String 
-  link      String? 
+  type      String
+  link      String?
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -452,8 +454,6 @@ model Protocol {
   @@map("protocols")
 }
 
-// --- MODELOS FINANCEIROS (MVP) ---
-
 enum FinanceEntryType {
   EXPENSE
   INCOME
@@ -497,4 +497,44 @@ model FinanceEntry {
   @@index([workspaceId, occurredAt])
   @@index([categoryId])
   @@map("finance_entries")
+}
+
+model VirtualProcess {
+  id            String  @id @default(uuid())
+  processNumber String  @unique @map("process_number")
+  secretaria    String
+  source        String
+  sourceDetail  String? @map("source_detail")
+  bankAccount   String? @map("bank_account")
+  agency        String?
+  bankName      String? @map("bank_name")
+  subject       String  @db.Text
+  status        String  @default("Tramitando")
+  category      String  @default("Outros")
+
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdById String   @map("created_by_id")
+
+  creator   User                     @relation("ProcessCreator", fields: [createdById], references: [id])
+  documents VirtualProcessDocument[]
+
+  @@map("virtual_processes")
+}
+
+model VirtualProcessDocument {
+  id               String   @id @default(uuid())
+  virtualProcessId String   @map("virtual_process_id")
+  tag              String
+  description      String?
+  fileName         String   @map("file_name")
+  fileUrl          String   @map("file_url")
+  fileSize         Int      @map("file_size")
+  uploadedById     String   @map("uploaded_by_id")
+  uploadedAt       DateTime @default(now()) @map("uploaded_at")
+
+  process  VirtualProcess @relation(fields: [virtualProcessId], references: [id], onDelete: Cascade)
+  uploader User           @relation("ProcessDocumentUploader", fields: [uploadedById], references: [id])
+
+  @@map("virtual_process_documents")
 }

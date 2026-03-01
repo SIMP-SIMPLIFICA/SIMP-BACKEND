@@ -60,6 +60,15 @@ const AVAILABLE_PERMISSIONS = {
       { key: 'backup:create', description: 'Gerar backup manual', level: 'admin' },
       { key: 'backup:restore', description: 'Restaurar sistema', level: 'admin' }
     ]
+  },
+  processes: {
+    displayName: 'Processos Virtuais',
+    permissions: [
+      { key: 'processes:read', description: 'Visualizar processos virtuais', level: 'read' },
+      { key: 'processes:write', description: 'Criar e editar processos', level: 'write' },
+      { key: 'processes:download', description: 'Baixar documentos de processos', level: 'read' },
+      { key: 'processes:manage', description: 'Gerenciar todos os processos', level: 'admin' }
+    ]
   }
 }
 

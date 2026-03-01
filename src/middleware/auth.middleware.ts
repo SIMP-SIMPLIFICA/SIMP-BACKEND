@@ -1,4 +1,5 @@
 import { FastifyRequest, FastifyReply } from 'fastify'
+import { prisma } from '@/lib/prisma.js'
 
 export async function authenticate(request: FastifyRequest, reply: FastifyReply) {
   // 0. Ignorar requisições OPTIONS (Preflight do CORS)
@@ -38,3 +39,38 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
 
 // Exportação dupla para garantir compatibilidade com rotas antigas
 export { authenticate as authMiddleware }
+
+export function requireAnyPermission(requiredPermissions: string[]) {
+  return async (request: FastifyRequest, reply: FastifyReply) => {
+    const user = request.user as any
+    if (!user || !user.id) {
+      return reply.code(401).send({ error: 'Unauthorized', message: 'Usuário não autenticado' })
+    }
+
+    // Busca as roles do usuário para checar permissões reais
+    const userWithRoles = await prisma.user.findUnique({
+      where: { id: user.id },
+      include: { roles: { include: { role: true } } }
+    })
+
+    if (!userWithRoles) {
+      return reply.code(401).send({ error: 'Unauthorized', message: 'Usuário não encontrado' })
+    }
+
+    const userPermissions = new Set<string>()
+    for (const userRole of userWithRoles.roles) {
+      const permissions = userRole.role.permissions as string[]
+      if (Array.isArray(permissions)) {
+        permissions.forEach(p => userPermissions.add(p))
+      }
+    }
+
+    // Bypass para Super Admin
+    if (userPermissions.has('system:admin')) return
+
+    const hasPermission = requiredPermissions.some(p => userPermissions.has(p))
+    if (!hasPermission) {
+      return reply.code(403).send({ error: 'Forbidden', message: 'Permissões insuficientes para esta ação' })
+    }
+  }
+}

@@ -7,6 +7,9 @@ import { createWriteStream } from 'node:fs';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
+import r2 from '../lib/r2.js';
+import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 export class FinanceEntryController {
 
@@ -188,10 +191,13 @@ export class FinanceEntryController {
             orderBy: { createdAt: 'desc' }
         });
 
-        const backendUrl = process.env.API_URL || 'http://localhost:3000';
-        const mappedAttachments = attachments.map(att => ({
-            ...att,
-            url: `${backendUrl}/uploads/${att.fileUrl}`
+        const mappedAttachments = await Promise.all(attachments.map(async att => {
+            const command = new GetObjectCommand({
+                Bucket: process.env.R2_BUCKET_NAME!,
+                Key: `workspaces/${entry.workspaceId}/finance/${att.fileUrl}`
+            });
+            const url = await getSignedUrl(r2, command, { expiresIn: 3600 });
+            return { ...att, url };
         }));
 
         return reply.send(mappedAttachments);
@@ -213,15 +219,18 @@ export class FinanceEntryController {
         const data = await request.file();
         if (!data) return reply.status(400).send({ message: 'Nenhum arquivo enviado' });
 
-        const uploadDir = path.join(process.cwd(), 'uploads');
-        if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-
+        const buffer = await data.toBuffer();
         const fileExt = path.extname(data.filename);
         const uniqueName = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${fileExt}`;
-        const uploadPath = path.join(uploadDir, uniqueName);
 
-        await pipeline(data.file, createWriteStream(uploadPath));
-        const stats = fs.statSync(uploadPath);
+        const fileKey = `workspaces/${entry.workspaceId}/finance/${uniqueName}`;
+
+        await r2.send(new PutObjectCommand({
+            Bucket: process.env.R2_BUCKET_NAME!,
+            Key: fileKey,
+            Body: buffer,
+            ContentType: data.mimetype,
+        }));
 
         const attachment = await prisma.financeAttachment.create({
             data: {
@@ -229,7 +238,7 @@ export class FinanceEntryController {
                 uploaderId: userId,
                 fileName: data.filename,
                 fileType: data.mimetype,
-                fileSize: stats.size,
+                fileSize: buffer.length,
                 fileUrl: uniqueName
             }
         });
@@ -242,10 +251,15 @@ export class FinanceEntryController {
             });
         }
 
-        const backendUrl = process.env.API_URL || 'http://localhost:3000';
+        const command = new GetObjectCommand({
+            Bucket: process.env.R2_BUCKET_NAME!,
+            Key: fileKey
+        });
+        const url = await getSignedUrl(r2, command, { expiresIn: 3600 });
+
         return reply.status(201).send({
             ...attachment,
-            url: `${backendUrl}/uploads/${attachment.fileUrl}`
+            url
         });
     }
 
@@ -274,10 +288,12 @@ export class FinanceEntryController {
         await prisma.financeAttachment.delete({ where: { id: attachmentId } });
 
         try {
-            const filePath = path.join(process.cwd(), 'uploads', attachment.fileUrl);
-            if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+            await r2.send(new DeleteObjectCommand({
+                Bucket: process.env.R2_BUCKET_NAME!,
+                Key: `workspaces/${attachment.entry.workspaceId}/finance/${attachment.fileUrl}`
+            }));
         } catch (e) {
-            console.error('Erro ao deletar arquivo físico:', e);
+            console.error('Erro ao deletar arquivo no R2:', e);
         }
 
         // Check if there are remaining attachments, update entry status if 0

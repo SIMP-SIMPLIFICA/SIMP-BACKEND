@@ -11,4 +11,6 @@ export async function notificationRoutes(app: FastifyInstance) {
   app.get('/', notificationController.list);
   app.patch('/:id/read', notificationController.markAsRead);
   app.patch('/read-all', notificationController.markAllRead);
+  app.delete('/', notificationController.deleteAll);
+  app.delete('/:id', notificationController.delete);
 }

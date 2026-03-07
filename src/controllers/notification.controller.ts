@@ -4,14 +4,14 @@ import { notificationService } from '../services/notification.service.js';
 import { z } from 'zod';
 
 export class NotificationController {
-  
+
   async stream(request: FastifyRequest, reply: FastifyReply) {
     const userId = (request.user as any).id;
 
     // --- CORREÇÃO DEFINITIVA DO CORS PARA SSE ---
     // Como estamos hijackando a resposta, precisamos definir os headers manualmente.
     // O plugin @fastify/cors não injeta headers aqui automaticamente.
-    
+
     // Pega a origem de quem está chamando (ex: http://localhost:5173)
     const origin = request.headers.origin || '*';
 
@@ -32,15 +32,15 @@ export class NotificationController {
     reply.raw.writeHead(200, headers);
 
     // Envia a primeira mensagem para confirmar a conexão
-    reply.raw.write('retry: 10000\n\n'); 
-    
+    reply.raw.write('retry: 10000\n\n');
+
     // Registra o cliente no serviço para receber futuras notificações
     notificationService.addClient(userId, reply);
   }
 
   async list(request: FastifyRequest, reply: FastifyReply) {
     const userId = (request.user as any).id;
-    
+
     const notifications = await prisma.notification.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
@@ -75,5 +75,26 @@ export class NotificationController {
     });
 
     return reply.send({ success: true });
+  }
+
+  async delete(request: FastifyRequest, reply: FastifyReply) {
+    const { id } = z.object({ id: z.string() }).parse(request.params);
+    const userId = (request.user as any).id;
+
+    await prisma.notification.deleteMany({
+      where: { id, userId }
+    });
+
+    return reply.code(204).send();
+  }
+
+  async deleteAll(request: FastifyRequest, reply: FastifyReply) {
+    const userId = (request.user as any).id;
+
+    await prisma.notification.deleteMany({
+      where: { userId }
+    });
+
+    return reply.code(204).send();
   }
 }

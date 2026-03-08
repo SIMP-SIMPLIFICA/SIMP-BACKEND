@@ -5,13 +5,38 @@ import { authenticate } from '../middleware/auth.middleware.js'
 export async function authRoutes(app: FastifyInstance) {
   // --- Rotas Públicas ---
   app.post('/register', authController.register)
-  app.post('/login', authController.login)
+
+  app.post('/login', {
+    config: {
+      rateLimit: {
+        max: 5,
+        timeWindow: '1 minute'
+      }
+    }
+  }, authController.login)
+
   app.post('/refresh-token', authController.refreshToken)
   app.post('/logout', authController.logout)
-  
+
   // Recuperação de Senha e Verificação
-  app.post('/forgot-password', authController.forgotPassword)
-  app.post('/reset-password', authController.resetPassword)
+  app.post('/forgot-password', {
+    config: {
+      rateLimit: {
+        max: 3,
+        timeWindow: '1 minute'
+      }
+    }
+  }, authController.forgotPassword)
+
+  app.post('/reset-password', {
+    config: {
+      rateLimit: {
+        max: 3,
+        timeWindow: '1 minute'
+      }
+    }
+  }, authController.resetPassword)
+
   app.post('/verify-email', authController.verifyEmail)
 
   // --- Rotas Protegidas (Requer Login) ---

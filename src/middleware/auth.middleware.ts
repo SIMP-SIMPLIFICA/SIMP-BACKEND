@@ -27,7 +27,7 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
     if (user && user.sub && !user.id) {
       user.id = user.sub
     }
-    
+
   } catch (err) {
     return reply.code(401).send({
       error: 'Unauthorized',
@@ -40,37 +40,64 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
 // Exportação dupla para garantir compatibilidade com rotas antigas
 export { authenticate as authMiddleware }
 
-export function requireAnyPermission(requiredPermissions: string[]) {
-  return async (request: FastifyRequest, reply: FastifyReply) => {
-    const user = request.user as any
-    if (!user || !user.id) {
-      return reply.code(401).send({ error: 'Unauthorized', message: 'Usuário não autenticado' })
-    }
-
-    // Busca as roles do usuário para checar permissões reais
-    const userWithRoles = await prisma.user.findUnique({
-      where: { id: user.id },
-      include: { roles: { include: { role: true } } }
+export async function checkPermission(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  requiredPermissions: string[]
+) {
+  const user = request.user as any
+  if (!user || !user.id) {
+    return reply.code(401).send({
+      error: 'Unauthorized',
+      message: 'Sessão inválida ou expirada',
+      statusCode: 401
     })
+  }
 
-    if (!userWithRoles) {
-      return reply.code(401).send({ error: 'Unauthorized', message: 'Usuário não encontrado' })
-    }
+  // Busca as roles e permissões reais do usuário no banco
+  // Evita confiar apenas no payload do JWT (Zero Trust)
+  const userWithRoles = await prisma.user.findUnique({
+    where: { id: user.id },
+    include: { roles: { include: { role: true } } }
+  })
 
-    const userPermissions = new Set<string>()
-    for (const userRole of userWithRoles.roles) {
+  if (!userWithRoles || !userWithRoles.isActive) {
+    return reply.code(401).send({
+      error: 'Unauthorized',
+      message: 'Usuário inexistente ou desativado',
+      statusCode: 401
+    })
+  }
+
+  const userPermissions = new Set<string>()
+  for (const userRole of userWithRoles.roles) {
+    if (userRole.role.isActive) {
       const permissions = userRole.role.permissions as string[]
       if (Array.isArray(permissions)) {
         permissions.forEach(p => userPermissions.add(p))
       }
     }
+  }
 
-    // Bypass para Super Admin
-    if (userPermissions.has('system:admin')) return
+  // Bypass para Administrador do Sistema
+  if (userPermissions.has('system:admin')) return
 
-    const hasPermission = requiredPermissions.some(p => userPermissions.has(p))
-    if (!hasPermission) {
-      return reply.code(403).send({ error: 'Forbidden', message: 'Permissões insuficientes para esta ação' })
-    }
+  const hasPermission = requiredPermissions.some(p => userPermissions.has(p))
+
+  if (!hasPermission) {
+    return reply.code(403).send({
+      error: 'Forbidden',
+      message: 'Você não tem permissão militar para acessar este recurso',
+      statusCode: 403
+    })
   }
 }
+
+export function requirePermission(permissions: string[]) {
+  return async (request: FastifyRequest, reply: FastifyReply) => {
+    await checkPermission(request, reply, permissions)
+  }
+}
+
+// Alias para compatibilidade
+export { requirePermission as requireAnyPermission }

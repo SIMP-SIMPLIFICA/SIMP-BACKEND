@@ -1,16 +1,16 @@
 import { FastifyInstance } from 'fastify';
 import { NotificationController } from '../controllers/notification.controller.js';
-import { authenticate } from '../middleware/auth.middleware.js';
+import { authMiddleware, requirePermission } from '../middleware/auth.middleware.js';
 
 const notificationController = new NotificationController();
 
 export async function notificationRoutes(app: FastifyInstance) {
-  app.addHook('preHandler', authenticate);
+  app.addHook('preHandler', authMiddleware);
 
   app.get('/stream', notificationController.stream);
-  app.get('/', notificationController.list);
-  app.patch('/:id/read', notificationController.markAsRead);
-  app.patch('/read-all', notificationController.markAllRead);
-  app.delete('/', notificationController.deleteAll);
-  app.delete('/:id', notificationController.delete);
+  app.get('/', { preHandler: requirePermission(['notifications:read']) }, notificationController.list);
+  app.patch('/:id/read', { preHandler: requirePermission(['notifications:write']) }, notificationController.markAsRead);
+  app.patch('/read-all', { preHandler: requirePermission(['notifications:write']) }, notificationController.markAllRead);
+  app.delete('/', { preHandler: requirePermission(['notifications:manage']) }, notificationController.deleteAll);
+  app.delete('/:id', { preHandler: requirePermission(['notifications:manage']) }, notificationController.delete);
 }

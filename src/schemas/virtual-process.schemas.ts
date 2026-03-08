@@ -15,20 +15,20 @@ export const createVirtualProcessSchema = z.object({
   subject: z.string().min(1),
   category: z.string().min(1),
   status: z.string().optional()
-})
+}).strip()
 
 export type CreateVirtualProcessInput = z.infer<typeof createVirtualProcessSchema>
 
 export const updateVirtualProcessStatusSchema = z.object({
   status: z.string().min(1)
-})
+}).strip()
 
 export const updateCompanyInfoSchema = z.object({
   companyName: z.string().optional().nullable(),
   companyCnpj: z.string().optional().nullable()
-})
+}).strip()
 
 export const uploadDocumentSchema = z.object({
   tag: z.string().min(1),
   description: z.string().optional().nullable()
-})
+}).strip()

@@ -12,6 +12,7 @@ import { AppServer } from '@/types/server'
 import { db } from '@/utils/database.js'
 import { logger } from '@/utils/logger.js'
 import { virtualProcessRoutes } from '@/routes/virtual-process.routes.js'
+import { errorHandler } from '@/utils/error-handler.js'
 
 import { publicRoutes } from '@/routes/public.routes.js'
 
@@ -20,88 +21,7 @@ export async function registerRoutes(server: AppServer) {
   await server.register(publicRoutes, { prefix: '/public', logLevel: 'info' })
 
   // --- ERROR HANDLER GLOBAL ---
-  server.setErrorHandler(async (error, request, reply) => {
-    request.log.error(error, 'Request error occurred')
-
-    const err = error as any;
-
-    if (err.validation) {
-      return reply.code(400).send({
-        error: 'Validation Error',
-        message: 'Request validation failed',
-        details: err.validation,
-        statusCode: 400,
-        timestamp: new Date().toISOString(),
-        requestId: request.id
-      })
-    }
-
-    if (err.statusCode === 401) {
-      return reply.code(401).send({
-        error: 'Unauthorized',
-        message: err.message || 'Authentication required',
-        statusCode: 401,
-        timestamp: new Date().toISOString(),
-        requestId: request.id
-      })
-    }
-
-    if (err.statusCode === 403) {
-      return reply.code(403).send({
-        error: 'Forbidden',
-        message: err.message || 'Insufficient permissions',
-        statusCode: 403,
-        timestamp: new Date().toISOString(),
-        requestId: request.id
-      })
-    }
-
-    if (err.statusCode === 404) {
-      return reply.code(404).send({
-        error: 'Not Found',
-        message: err.message || 'Resource not found',
-        statusCode: 404,
-        timestamp: new Date().toISOString(),
-        requestId: request.id
-      })
-    }
-
-    if (err.statusCode === 429) {
-      const retryAfter = 'retryAfter' in err ? err.retryAfter : 60
-      return reply.code(429).send({
-        error: 'Too Many Requests',
-        message: err.message || 'Rate limit exceeded',
-        statusCode: 429,
-        timestamp: new Date().toISOString(),
-        requestId: request.id,
-        retryAfter: retryAfter
-      })
-    }
-
-    if (err.statusCode && err.statusCode >= 400 && err.statusCode < 500) {
-      return reply.code(err.statusCode).send({
-        error: err.name || 'Bad Request',
-        message: err.message,
-        statusCode: err.statusCode,
-        timestamp: new Date().toISOString(),
-        requestId: request.id
-      })
-    }
-
-    const statusCode = err?.statusCode && err.statusCode >= 500 ? err.statusCode : 500
-
-    return reply.code(statusCode).send({
-      error: 'Internal Server Error',
-      message:
-        process.env.NODE_ENV === 'production' ? 'An unexpected error occurred' : err.message,
-      statusCode,
-      timestamp: new Date().toISOString(),
-      requestId: request.id,
-      ...(process.env.NODE_ENV !== 'production' && {
-        stack: err.stack
-      })
-    })
-  })
+  server.setErrorHandler(errorHandler)
 
   // --- NOT FOUND HANDLER ---
   server.setNotFoundHandler(async (request, reply) => {

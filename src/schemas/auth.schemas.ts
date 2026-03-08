@@ -31,18 +31,18 @@ export const registerSchema = z.object({
       'Username can only contain letters, numbers, underscores, and hyphens'
     )
     .optional()
-})
+}).strip()
 
 export const loginSchema = z.object({
   email: emailSchema,
   password: z.string().min(1, 'Password is required'),
   rememberMe: z.boolean().optional(),
   deviceFingerprint: z.string().optional()
-})
+}).strip()
 
 export const forgotPasswordSchema = z.object({
   email: emailSchema
-})
+}).strip()
 
 export const resetPasswordSchema = z
   .object({
@@ -50,6 +50,7 @@ export const resetPasswordSchema = z
     password: passwordSchema,
     confirmPassword: z.string()
   })
+  .strip()
   .refine(data => data.password === data.confirmPassword, {
     message: "Passwords don't match",
     path: ['confirmPassword']
@@ -91,7 +92,7 @@ export const updateProfileSchema = z.object({
   jobTitle: z.string().max(100, 'Job title must be less than 100 characters').optional(),
   preferences: z.record(z.any()).optional(),
   metadata: z.record(z.any()).optional()
-})
+}).strip()
 
 // Admin schemas
 export const createUserSchema = z.object({

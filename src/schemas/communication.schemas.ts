@@ -5,7 +5,7 @@ const recipientSchema = z.object({
   // Ajustado: Removemos .uuid() pois seus IDs (ex: Wpaj5Z...) não são UUIDs
   userId: z.string().min(1, 'ID do usuário inválido'),
   role: z.enum(['TO', 'CC', 'BCC']).default('TO')
-})
+}).strip()
 
 // Schema de anexo INLINE
 const attachmentSchema = z.object({
@@ -13,7 +13,7 @@ const attachmentSchema = z.object({
   fileUrl: z.string(),
   fileType: z.string(),
   fileSize: z.number()
-})
+}).strip()
 
 export const createDocumentSchema = z.object({
   title: z.string().min(3, 'O título deve ter pelo menos 3 caracteres').max(500),
@@ -42,13 +42,13 @@ export const createDocumentSchema = z.object({
   recipients: z.array(recipientSchema).optional(),
 
   attachments: z.array(attachmentSchema).optional()
-})
+}).strip()
 
 export const updateDocumentSchema = createDocumentSchema.partial()
 
 export const documentIdSchema = z.object({
   id: z.string()
-})
+}).strip()
 
 export type CreateDocumentInput = z.infer<typeof createDocumentSchema>
 export type UpdateDocumentInput = z.infer<typeof updateDocumentSchema>

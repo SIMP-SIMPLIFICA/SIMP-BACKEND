@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { FinanceCategoryController } from '../controllers/finance-category.controller.js';
 import { FinanceEntryController } from '../controllers/finance-entry.controller.js';
-import { authMiddleware } from '../middleware/auth.middleware.js';
+import { authMiddleware, requirePermission } from '../middleware/auth.middleware.js';
 
 const categoryController = new FinanceCategoryController();
 const entryController = new FinanceEntryController();
@@ -17,8 +17,8 @@ export async function financeRoutes(app: FastifyInstance) {
     app.delete('/categories/:id', categoryController.delete);
 
     // --- Rotas de Lançamentos (Entries) ---
-    app.post('/workspaces/:workspaceId/entries', entryController.create);
-    app.get('/workspaces/:workspaceId/entries', entryController.list);
-    app.put('/entries/:id', entryController.update);
-    app.delete('/entries/:id', entryController.delete);
+    app.post('/workspaces/:workspaceId/entries', { preHandler: requirePermission(['finance:write']) }, entryController.create);
+    app.get('/workspaces/:workspaceId/entries', { preHandler: requirePermission(['finance:read']) }, entryController.list);
+    app.put('/entries/:id', { preHandler: requirePermission(['finance:write']) }, entryController.update);
+    app.delete('/entries/:id', { preHandler: requirePermission(['finance:manage']) }, entryController.delete);
 }

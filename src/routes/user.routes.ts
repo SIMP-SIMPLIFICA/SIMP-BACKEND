@@ -44,6 +44,35 @@ export async function userRoutes(server: FastifyInstance) {
     userController.generateCertificate.bind(userController)
   )
 
+  // --- Rota de Upload de Logo Institucional ---
+  server.post(
+    '/me/logo',
+    {
+      preHandler: [authenticate],
+      schema: {
+        description: 'Upload da logo institucional do usuário (multipart/form-data)',
+        tags: ['User Management'],
+        security: [{ bearerAuth: [] }],
+        consumes: ['multipart/form-data']
+      }
+    },
+    userController.uploadLogo.bind(userController)
+  )
+
+  // --- Rota de Remoção de Logo ---
+  server.delete(
+    '/me/logo',
+    {
+      preHandler: [authenticate],
+      schema: {
+        description: 'Remove a logo institucional do usuário',
+        tags: ['User Management'],
+        security: [{ bearerAuth: [] }]
+      }
+    },
+    userController.removeLogo.bind(userController)
+  )
+
   // Get specific user by ID
   server.get(
     '/:id',

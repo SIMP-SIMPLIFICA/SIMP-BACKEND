@@ -42,3 +42,28 @@ export function loadLogoBase64(): string | undefined {
     console.error('CRÍTICO: Logo "logo_pequizeiro.png" não encontrada em nenhum dos caminhos verificados.');
     return undefined;
 }
+
+/**
+ * Carrega a logo de um usuário a partir de uma URL relativa armazenada em user.metadata.logoUrl.
+ * Ex: "/uploads/logos/abc123.png" -> Base64 string
+ * @param logoUrl URL relativa armazenada no banco (ex: "/uploads/logos/abc.png")
+ * @returns String Base64 da imagem ou undefined se não encontrar.
+ */
+export function loadLogoFromPath(logoUrl: string | undefined | null): string | undefined {
+    if (!logoUrl) return undefined;
+
+    // Remove a barra inicial para construir o caminho absoluto a partir do CWD
+    const relativePath = logoUrl.startsWith('/') ? logoUrl.slice(1) : logoUrl;
+    const absolutePath = path.resolve(process.cwd(), relativePath);
+
+    try {
+        if (fs.existsSync(absolutePath)) {
+            return fs.readFileSync(absolutePath).toString('base64');
+        }
+    } catch (error) {
+        console.warn(`Erro ao tentar carregar logo do usuário em ${absolutePath}:`, error);
+    }
+
+    return undefined;
+}
+

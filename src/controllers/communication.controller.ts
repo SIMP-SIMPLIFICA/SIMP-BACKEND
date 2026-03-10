@@ -231,8 +231,8 @@ export class CommunicationController {
         id: true, title: true, documentType: true, documentNumber: true, protocolNumber: true, status: true, sentAt: true,
         recipients: {
           select: {
-            role: true, readAt: true, signedAt: true,
-            user: { select: { id: true, firstName: true, lastName: true, avatar: true } }
+            userId: true, role: true, readAt: true, signedAt: true, canSign: true, canView: true,
+            user: { select: { id: true, firstName: true, lastName: true, avatar: true, jobTitle: true } }
           }
         }
       }
@@ -267,7 +267,10 @@ export class CommunicationController {
       where: { id },
       include: {
         creator: {
-          select: { id: true, username: true, firstName: true, lastName: true, jobTitle: true }
+          select: {
+            id: true, username: true, firstName: true, lastName: true, jobTitle: true,
+            department: { select: { id: true, name: true, code: true } }
+          }
         },
         department: true,
         attachments: true,
@@ -313,13 +316,46 @@ export class CommunicationController {
           }
         })
 
-        await notificationService.notify({
-          userId: document.createdBy,
-          title: 'Documento Visualizado',
-          message: `${(request.user as any)?.username || 'Um usuário'} visualizou ${document.protocolNumber || document.title}`,
-          type: 'DOCUMENT_VIEWED',
-          link: `/communication/${document.id}`
-        })
+        // Auto-assinatura fire-and-forget: NÃO bloqueia o retorno da página.
+        // O sign() regenera o PDF via Puppeteer — operação lenta que não deve
+        // atrasar o carregamento do documento para o destinatário.
+        if (document.status !== 'DRAFT' && recipientRecord.canSign) {
+          const alreadySigned = document.signatures.some(s => s.userId === userId && s.isValid)
+          if (!alreadySigned) {
+            setImmediate(async () => {
+              try {
+                await documentService.sign(id, userId, request.ip)
+                // Notifica o criador após assinatura concluída em background
+                await notificationService.notify({
+                  userId: document.createdBy,
+                  title: 'Documento Visualizado e Assinado',
+                  message: `${(request.user as any)?.username || 'Um usuário'} visualizou e assinou ${document.protocolNumber || document.title}`,
+                  type: 'DOCUMENT_VIEWED',
+                  link: `/communication/${document.id}`
+                })
+              } catch (signErr) {
+                // Falha silenciosa — não afeta o carregamento da página
+              }
+            })
+          } else {
+            // Já assinou — apenas notifica visualização
+            await notificationService.notify({
+              userId: document.createdBy,
+              title: 'Documento Visualizado',
+              message: `${(request.user as any)?.username || 'Um usuário'} visualizou ${document.protocolNumber || document.title}`,
+              type: 'DOCUMENT_VIEWED',
+              link: `/communication/${document.id}`
+            })
+          }
+        } else {
+          await notificationService.notify({
+            userId: document.createdBy,
+            title: 'Documento Visualizado',
+            message: `${(request.user as any)?.username || 'Um usuário'} visualizou ${document.protocolNumber || document.title}`,
+            type: 'DOCUMENT_VIEWED',
+            link: `/communication/${document.id}`
+          })
+        }
       }
     }
 
@@ -373,8 +409,16 @@ export class CommunicationController {
 
     auditTrail.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
 
+    // Flags explícitos para o frontend determinar permissões sem re-derivar no cliente
+    const currentRecipient = document.recipients.find(r => r.userId === userId)
+
     return reply.send({
       ...document,
+      // Flags de permissão: facilitam o frontend a saber o que o usuário logado pode fazer
+      isCreator,
+      isRecipient,
+      currentUserCanSign: isCreator || (!!currentRecipient && currentRecipient.canSign),
+      currentUserHasSigned: document.signatures.some(s => s.userId === userId && s.isValid),
       verification: verificationData,
       auditTrail
     })
@@ -395,6 +439,10 @@ export class CommunicationController {
 
     const { recipients, attachments, documentNumber, metadata, ...simpleData } = data
 
+    // BUG FIX: Só substitui anexos se o payload tiver uma lista NÃO-VAZIA.
+    // Isso evita que a ação de protocolar/assinar (que não envia attachments) apague os arquivos.
+    const shouldUpdateAttachments = Array.isArray(attachments) && attachments.length > 0
+
     const updatedDoc = await prisma.communicationDocument.update({
       where: { id },
       data: {
@@ -410,7 +458,7 @@ export class CommunicationController {
             canSign: recipient.canSign
           }))
         } : undefined,
-        attachments: attachments ? {
+        attachments: shouldUpdateAttachments ? {
           deleteMany: {},
           create: attachments.map((att: any) => ({
             fileName: att.fileName,
@@ -448,10 +496,29 @@ export class CommunicationController {
     try {
       const result = await documentService.protocolAndSend(id, userId)
 
-      // Auto-assinatura: Assina automaticamente o documento caso não seja MENSAGEM
-      const doc = await prisma.communicationDocument.findUnique({ where: { id } })
+      // Auto-assinatura do criador ao protocolar
+      const doc = await prisma.communicationDocument.findUnique({
+        where: { id },
+        include: { recipients: true }
+      })
       if (doc && doc.documentType !== 'MENSAGEM') {
         await documentService.sign(id, userId, request.ip)
+      }
+
+      // Notificação em tempo real para todos os destinatários ao protocolar/enviar
+      if (doc && doc.recipients.length > 0) {
+        try {
+          const recipientIds = doc.recipients.map((r: any) => r.userId)
+          const distinctUserIds = [...new Set(recipientIds)] as string[]
+          await notificationService.notifyMany(distinctUserIds, {
+            title: 'Nova Comunicação Recebida',
+            message: `Você recebeu uma nova comunicação que requer sua atenção.`,
+            type: 'COMMUNICATION',
+            link: `/communication/document/${id}`
+          })
+        } catch (notifError) {
+          request.log.error({ err: notifError }, 'Falha ao enviar notificações ao protocolar')
+        }
       }
 
       return reply.send({
@@ -576,11 +643,10 @@ export class CommunicationController {
 
     if (!attachment) return reply.code(404).send({ message: 'Anexo não encontrado' })
 
-    const urlParts = attachment.fileUrl.split('/')
-    const diskFileName = urlParts[urlParts.length - 1]
-
-    const uploadDir = path.join(__dirname, '../../uploads')
-    const filePath = path.join(uploadDir, diskFileName)
+    // BUG FIX: usa process.cwd() para resolução de caminhos confiável em dev e prod.
+    // A fileUrl armazenada é relativa à raiz do servidor (ex: /uploads/OFICIO_xxx.pdf)
+    const fileUrl = attachment.fileUrl.startsWith('/') ? attachment.fileUrl.slice(1) : attachment.fileUrl
+    const filePath = path.resolve(process.cwd(), fileUrl)
 
     if (!fs.existsSync(filePath)) {
       return reply.code(404).send({ message: 'Arquivo físico não encontrado no servidor' })
@@ -588,6 +654,54 @@ export class CommunicationController {
 
     reply.header('Content-Disposition', `attachment; filename="${attachment.fileName}"`)
     reply.header('Content-Type', attachment.fileType)
+
+    const stream = fs.createReadStream(filePath)
+    return reply.send(stream)
+  }
+
+  async downloadDocument(request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
+    const { id } = request.params
+    const userId = this.getUserId(request)
+
+    const document = await prisma.communicationDocument.findUnique({
+      where: { id },
+      include: {
+        recipients: true,
+        attachments: true
+      }
+    })
+
+    if (!document) return reply.code(404).send({ message: 'Documento não encontrado' })
+
+    const isCreator = document.createdBy === userId
+    const isRecipient = document.recipients.some(r => r.userId === userId)
+
+    if (!isCreator && !isRecipient) {
+      return reply.code(403).send({ message: 'Sem permissão para baixar este documento' })
+    }
+
+    if (document.status === 'DRAFT') {
+      return reply.code(400).send({ message: 'Rascunhos ainda não possuem PDF gerado. Protocole o documento primeiro.' })
+    }
+
+    // Procura o anexo PDF do protocolo (o mais recente PDF gerado pelo sistema)
+    const pdfAttachment = document.attachments
+      .filter(a => a.fileType === 'application/pdf')
+      .sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime())[0]
+
+    if (!pdfAttachment) {
+      return reply.code(404).send({ message: 'PDF do documento não encontrado. Tente reprotocolar o documento.' })
+    }
+
+    const fileUrl = pdfAttachment.fileUrl.startsWith('/') ? pdfAttachment.fileUrl.slice(1) : pdfAttachment.fileUrl
+    const filePath = path.resolve(process.cwd(), fileUrl)
+
+    if (!fs.existsSync(filePath)) {
+      return reply.code(404).send({ message: 'Arquivo físico não encontrado no servidor' })
+    }
+
+    reply.header('Content-Disposition', `attachment; filename="${pdfAttachment.fileName}"`)
+    reply.header('Content-Type', 'application/pdf')
 
     const stream = fs.createReadStream(filePath)
     return reply.send(stream)

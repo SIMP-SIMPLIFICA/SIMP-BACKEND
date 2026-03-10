@@ -19,6 +19,12 @@ export async function communicationRoutes(app: FastifyInstance) {
   app.addHook('onRequest', async (request, reply) => {
     try {
       await request.jwtVerify()
+
+      // Garante compatibilidade: copia sub -> id para os controllers (igual ao authenticate middleware)
+      const user = request.user as any
+      if (user && user.sub && !user.id) {
+        user.id = user.sub
+      }
     } catch (err) {
       reply.send(err)
     }
@@ -109,7 +115,7 @@ export async function communicationRoutes(app: FastifyInstance) {
     }
   }, controller.sign.bind(controller))
 
-  // GET (Download de Anexo)
+  // GET (Download de Anexo Específico)
   app.get('/documents/:id/attachments/:attachmentId/download', {
     schema: {
       params: z.object({
@@ -120,4 +126,15 @@ export async function communicationRoutes(app: FastifyInstance) {
       description: 'Download secure attachment'
     }
   }, controller.downloadAttachment.bind(controller))
+
+  // GET (Download do Documento Principal - PDF do Protocolo)
+  app.get('/documents/:id/download', {
+    schema: {
+      params: z.object({
+        id: z.string()
+      }),
+      tags: ['Communication'],
+      description: 'Download the main protocol PDF of the document'
+    }
+  }, controller.downloadDocument.bind(controller))
 }

@@ -3,6 +3,7 @@ import { ProtocolService } from './protocol.service'
 import { AuditService } from './audit.service'
 import { pdfService } from './pdf.service'
 import { signatureService } from './signature.service'
+import { loadLogoFromPath } from '../utils/pdf.utils'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -20,7 +21,7 @@ export class DocumentService {
         const document = await prisma.communicationDocument.findUnique({
             where: { id: documentId },
             include: {
-                creator: true,
+                creator: { include: { department: true } },
                 recipients: { include: { user: true } },
                 signatures: true
             }
@@ -68,18 +69,33 @@ export class DocumentService {
 
         // Prepara dados para PDF
         const recipientUser = document.recipients[0]?.user
+
+        // Carrega a logo do criador a partir de seu perfil (metadata.logoUrl)
+        const creatorMeta = (document.creator as any)?.metadata as any
+        const creatorLogoBase64 = loadLogoFromPath(creatorMeta?.logoUrl)
+
+        const docTypeLabel: Record<string, string> = {
+            OFICIO: 'OFÍCIO', MEMORANDO: 'MEMORANDO', OFICIO_CIRCULAR: 'OFÍCIO CIRCULAR',
+            DECRETO: 'DECRETO', PORTARIA: 'PORTARIA', REQUERIMENTO: 'REQUERIMENTO', MENSAGEM: 'MENSAGEM'
+        }
+        const typeLabel = docTypeLabel[document.documentType] || document.documentType
+        const docRef = document.documentNumber || protocolNumber
+
         const pdfData = {
-            numero_oficio: document.documentNumber || protocolNumber,
+            numero_oficio: `${typeLabel} Nº ${docRef}`,
             data_extenso: now.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' }),
             nome_destinatario: recipientUser ? `${recipientUser.firstName} ${recipientUser.lastName}` : "A QUEM INTERESSAR POSSA",
             cargo_destinatario: recipientUser?.jobTitle || "Cargo não informado",
             assunto: document.title,
             lista_paragrafos: [{ texto: document.content }],
             nome_remetente: `${document.creator.firstName} ${document.creator.lastName}`,
-            cargo_remetente: document.creator.jobTitle || "Servidor",
+            cargo_remetente: [
+                document.creator.jobTitle,
+                (document.creator as any).department?.name
+            ].filter(Boolean).join(' - ') || 'Servidor',
             rodape_hash: originalHash,
             qr_code_url: `${process.env.APP_URL}/verify/${originalHash}`,
-            logo_base64: (document.metadata as any)?.logoBase64,
+            logo_base64: creatorLogoBase64, // Logo do criador, com fallback para logo padrão no pdfService
             cabecalho_livre: (document.metadata as any)?.customHeader,
             data_hora_criacao: now.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
             historico: historico.map(h => ({
@@ -99,7 +115,7 @@ export class DocumentService {
         // 4. Assina Digitalmente (PAdES com certificado do sistema)
         let finalPdf = pdfBuffer
         try {
-            const certPath = path.resolve(__dirname, '../../certs/certificado_sistema.pfx')
+            const certPath = path.resolve(process.cwd(), 'certs', 'certificado_sistema.pfx')
             if (fs.existsSync(certPath)) {
                 const pfxBuffer = fs.readFileSync(certPath)
                 finalPdf = await signatureService.signPdf(pdfBuffer, pfxBuffer, process.env.CERT_PASSWORD || '1234')
@@ -109,10 +125,15 @@ export class DocumentService {
         }
 
         // 5. Salva Arquivo
-        const uploadDir = path.resolve(__dirname, '../../uploads')
+        const uploadDir = path.resolve(process.cwd(), 'uploads')
         if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true })
 
-        const fileName = `OFICIO_${protocolNumber.replace(/\./g, '')}.pdf`
+        const docTypeAbbrev: Record<string, string> = {
+            OFICIO: 'OFICIO', MEMORANDO: 'MEMO', OFICIO_CIRCULAR: 'CIRC', DECRETO: 'DEC',
+            PORTARIA: 'PORT', REQUERIMENTO: 'REQ'
+        }
+        const filePrefix = docTypeAbbrev[document.documentType] || 'DOC'
+        const fileName = `${filePrefix}_${protocolNumber.replace(/\./g, '')}.pdf`
         const filePath = path.join(uploadDir, fileName)
         fs.writeFileSync(filePath, finalPdf)
 
@@ -141,7 +162,7 @@ export class DocumentService {
         const document = await prisma.communicationDocument.findUnique({
             where: { id: documentId },
             include: {
-                creator: true,
+                creator: { include: { department: true } },
                 recipients: { include: { user: true } },
                 signatures: true,
                 attachments: true
@@ -216,18 +237,33 @@ export class DocumentService {
         }))
 
         const recipientUser = document.recipients[0]?.user
+
+        // Carrega a logo do criador a partir de seu perfil (metadata.logoUrl)
+        const creatorMeta2 = (document.creator as any)?.metadata as any
+        const creatorLogoBase64_2 = loadLogoFromPath(creatorMeta2?.logoUrl)
+
+        const docTypeLabel2: Record<string, string> = {
+            OFICIO: 'OFÍCIO', MEMORANDO: 'MEMORANDO', OFICIO_CIRCULAR: 'OFÍCIO CIRCULAR',
+            DECRETO: 'DECRETO', PORTARIA: 'PORTARIA', REQUERIMENTO: 'REQUERIMENTO'
+        }
+        const typeLabel2 = docTypeLabel2[document.documentType] || document.documentType
+        const docRef2 = document.documentNumber || document.protocolNumber || '---'
+
         const pdfData = {
-            numero_oficio: document.documentNumber || document.protocolNumber || "---",
+            numero_oficio: `${typeLabel2} Nº ${docRef2}`,
             data_extenso: (document.sentAt || now).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' }),
             nome_destinatario: recipientUser ? `${recipientUser.firstName} ${recipientUser.lastName}` : "A QUEM INTERESSAR POSSA",
             cargo_destinatario: recipientUser?.jobTitle || "Cargo não informado",
             assunto: document.title,
             lista_paragrafos: [{ texto: document.content }],
             nome_remetente: `${document.creator.firstName} ${document.creator.lastName}`,
-            cargo_remetente: document.creator.jobTitle || "Servidor",
+            cargo_remetente: [
+                document.creator.jobTitle,
+                (document.creator as any).department?.name
+            ].filter(Boolean).join(' - ') || 'Servidor',
             rodape_hash: document.originalHash || "---",
             qr_code_url: `${process.env.APP_URL}/verify/${document.originalHash}`,
-            logo_base64: (document.metadata as any)?.logoBase64,
+            logo_base64: creatorLogoBase64_2, // Logo do criador, com fallback para logo padrão no pdfService
             cabecalho_livre: (document.metadata as any)?.customHeader,
             historico: historico.map(h => ({
                 date: new Date(h.date).toLocaleString('pt-BR'),
@@ -251,7 +287,7 @@ export class DocumentService {
         // 4. Assina o novo PDF
         let finalPdf = pdfBuffer
         try {
-            const certPath = path.resolve(__dirname, '../../certs/certificado_sistema.pfx')
+            const certPath = path.resolve(process.cwd(), 'certs', 'certificado_sistema.pfx')
             if (fs.existsSync(certPath)) {
                 const pfxBuffer = fs.readFileSync(certPath)
                 finalPdf = await signatureService.signPdf(pdfBuffer, pfxBuffer, process.env.CERT_PASSWORD || '1234')
@@ -262,7 +298,7 @@ export class DocumentService {
 
         // 5. Substitui Arquivo
         const fileName = document.attachments[0]?.fileName || `OFICIO_${document.protocolNumber?.replace(/\./g, '') || 'SIGNED'}.pdf`
-        const uploadDir = path.resolve(__dirname, '../../uploads')
+        const uploadDir = path.resolve(process.cwd(), 'uploads')
         if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true })
 
         const filePath = path.join(uploadDir, fileName)

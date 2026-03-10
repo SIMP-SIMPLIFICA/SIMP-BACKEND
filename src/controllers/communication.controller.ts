@@ -637,7 +637,7 @@ export class CommunicationController {
       return reply.code(403).send({ message: 'Sem permissão para baixar este anexo' })
     }
 
-    const attachment = await prisma.communicationAttachment.findUnique({
+    const attachment = await prisma.communicationAttachment.findFirst({
       where: { id: attachmentId, documentId: id }
     })
 

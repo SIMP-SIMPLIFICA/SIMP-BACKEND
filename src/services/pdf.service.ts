@@ -41,7 +41,9 @@ interface PdfData {
         is_digital: boolean;
         cpf_mascarado?: string; // NOVO
         ip?: string; // NOVO
+        isAuthor?: boolean; // NOVO
     }[];
+    authorHasDigitalSignature?: boolean;
 }
 
 export class PdfService {
@@ -395,7 +397,7 @@ export class PdfService {
                     {{#each assinaturas}}
                         {{#if this.is_digital}}
                         <div class="signature-item valid">
-                            <span class="valid-badge">✓ VÁLIDO</span>
+                            <span class="valid-badge">✓ VÁLIDO{{#if this.isAuthor}} (AUTOR){{/if}}</span>
                             <div style="font-weight: bold; font-size: 11pt;">{{this.nome}}</div>
                             <div style="font-size: 9pt; color: #555;">{{this.cargo}}</div>
                             <div style="margin-top: 5px; font-size: 9pt;">
@@ -412,6 +414,7 @@ export class PdfService {
                     {{/each}}
                     <!-- Se remetente também assinou e não está na lista 'assinaturas', adicionar visualmente -->
                      {{#if remetente_assinou}}
+                      {{#unless authorHasDigitalSignature}}
                         <div class="signature-item valid">
                             <span class="valid-badge">✓ VÁLIDO (AUTOR)</span>
                             <div style="font-weight: bold; font-size: 11pt;">{{nome_remetente}}</div>
@@ -421,6 +424,7 @@ export class PdfService {
                                 <strong>Método:</strong> Criação e Assinatura na Origem
                             </div>
                         </div>
+                      {{/unless}}
                      {{/if}}
                 </div>
 

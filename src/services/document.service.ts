@@ -106,7 +106,8 @@ export class DocumentService {
                 role: h.role,
                 details: h.details ? JSON.stringify(h.details) : ''
             })),
-            assinaturas: []
+            assinaturas: [],
+            authorHasDigitalSignature: false
         }
 
         // Gera PDF Visual
@@ -233,7 +234,8 @@ export class DocumentService {
             cargo: s.user.jobTitle || "Assinante",
             data: s.signedAt,
             hash: (s.sealData as any)?.hash || "---",
-            is_digital: true
+            is_digital: true,
+            isAuthor: s.userId === document.createdBy
         }))
 
         const recipientUser = document.recipients[0]?.user
@@ -279,7 +281,8 @@ export class DocumentService {
                 data: new Date(s.data).toLocaleString('pt-BR'),
                 cpf_mascarado: "***.***.***-**", // Placeholder, pois User não tem CPF no schema ainda
                 ip: "IP Registrado" // Placeholder ou pegar de log
-            }))
+            })),
+            authorHasDigitalSignature: visualSignatures.some(s => s.isAuthor)
         }
 
         const pdfBuffer = await pdfService.generate(pdfData)

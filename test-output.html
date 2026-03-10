@@ -1,56 +1,4 @@
-import puppeteer from 'puppeteer';
-import handlebars from 'handlebars';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-interface PdfData {
-    numero_oficio: string;
-    data_extenso: string;
-    // Data e Hora para o rodapé de autenticação
-    data_hora_criacao?: string;
-    nome_destinatario: string;
-    cargo_destinatario: string;
-    assunto: string;
-    lista_paragrafos: { texto: string }[];
-    nome_remetente: string;
-    cargo_remetente: string;
-    rodape_hash: string;
-    qr_code_url: string;
-    logo_base64?: string;
-    cabecalho_livre?: string;
-
-    // Dados para a página de histórico/assinaturas
-    historico?: {
-        date: string; // Já formatado
-        action: string;
-        action_label?: string; // NOVO: Label amigável (e.g. "Visualizado")
-        user: string;
-        role: string;
-        details: any;
-    }[];
-    assinaturas?: {
-        nome: string;
-        cargo: string;
-        data: string; // Já formatado
-        hash: string;
-        is_digital: boolean;
-        cpf_mascarado?: string; // NOVO
-        ip?: string; // NOVO
-        isAuthor?: boolean; // NOVO
-    }[];
-    authorHasDigitalSignature?: boolean;
-}
-
-export class PdfService {
-
-
-    private async getTemplateHtml(): Promise<string> {
-        return `
         <!DOCTYPE html>
         <html>
         <head>
@@ -123,7 +71,6 @@ export class PdfService {
                 /* ASSINATURAS */
                 .assinatura-wrapper {
                     margin-top: 50px;
-                    page-break-inside: avoid;
                 }
 
                 .assinatura-visual { 
@@ -154,29 +101,34 @@ export class PdfService {
                 .seal-header {
                     background-color: #004a8f;
                     color: white;
-                    padding: 4px 8px;
-                    font-size: 7.5pt;
+                    padding: 3px 6px;
+                    font-size: 7pt;
                     font-weight: bold;
-                    display: block;
-                    border-bottom: 1px solid #004a8f;
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
                 }
-                .seal-header svg {
-                    width: 10px;
-                    height: 10px;
-                    margin-right: 5px;
-                    vertical-align: middle;
-                    display: inline-block;
-                }
-                .seal-header span {
-                    vertical-align: middle;
-                    display: inline-block;
-                }
+
                 .seal-body {
-                    display: block;
-                    width: 100%;
-                    padding: 10px;
-                    box-sizing: border-box;
+                    padding: 4px;
+                    font-size: 7pt;
+                    color: #333;
+                    display: flex;
+                    align-items: center;
                 }
+
+
+                .seal-logo {
+                    width: 30px;
+                    height: 30px;
+                    margin-right: 10px;
+                    opacity: 0.8;
+                }
+                
+                .seal-info {
+                    flex: 1;
+                }
+
                 .seal-row {
                     margin-bottom: 2px;
                     display: flex;
@@ -313,39 +265,27 @@ export class PdfService {
             <!-- 1. PÁGINA DE CONTEÚDO -->
             <div class="content-page">
                 <div class="header-logo">
-                    {{#if logo_base64}}
-                        <img src="data:image/png;base64,{{logo_base64}}" />
-                    {{/if}}
                 </div>
 
                 <div class="info-block">
-                    {{#if numero_oficio}}
-                        <div class="numero-oficio">{{numero_oficio}}</div>
-                    {{/if}}
-                    <div class="data-local">Pequizeiro - TO, {{data_extenso}}.</div>
+                        <div class="numero-oficio">TESTE Nº 123</div>
+                    <div class="data-local">Pequizeiro - TO, 10 de Março de 2026.</div>
                 </div>
 
                 <div class="destinatario">
-                    {{#if cabecalho_livre}}
-                        <pre style="font-family: inherit; white-space: pre-wrap;">{{cabecalho_livre}}</pre>
-                    {{else}}
                         À SUA SENHORIA O(A) SENHOR(A)<br>
-                        {{nome_destinatario}}<br>
-                        {{cargo_destinatario}}
-                    {{/if}}
+                        TESTE DESTINATARIO<br>
+                        Gerente
                 </div>
 
-                <div class="assunto">ASSUNTO: {{assunto}}</div>
+                <div class="assunto">ASSUNTO: TESTE</div>
 
                 <div class="texto">
-                    {{#each lista_paragrafos}}
-                        <p>{{{this.texto}}}</p>
-                    {{/each}}
+                        <p>Este é um paragrafo de teste.</p>
                 </div>
 
                 <!-- ASSINATURA DO REMETENTE (Obrigatória visualmente) -->
                 <div class="assinatura-wrapper">
-                   {{#if remetente_assinou}}
                         <!-- Novo Selo Sofisticado -->
                         <div class="seal-container">
                             <div class="seal-header">
@@ -353,26 +293,19 @@ export class PdfService {
                                 <span>ICP-Brasil (Simulado)</span>
                             </div>
                             <div class="seal-body">
+                                    <div class="seal-logo" style="background: #eee; border-radius: 50%;"></div>
                                 <div class="seal-info">
-                                    <div class="seal-row"><span class="seal-label">Por:</span> <span class="seal-value">{{nome_remetente}}</span></div>
-                                    <div class="seal-row"><span class="seal-label">Cargo:</span> <span class="seal-value">{{cargo_remetente}}</span></div>
-                                    <div class="seal-row"><span class="seal-label">Data:</span> <span class="seal-value">{{data_extenso}}</span></div>
-                                    <div class="seal-hash">Hash: {{rodape_hash}}</div>
+                                    <div class="seal-row"><span class="seal-label">Por:</span> <span class="seal-value">Carlos Magno</span></div>
+                                    <div class="seal-row"><span class="seal-label">Cargo:</span> <span class="seal-value">Diretor</span></div>
+                                    <div class="seal-row"><span class="seal-label">Data:</span> <span class="seal-value">10 de Março de 2026</span></div>
+                                    <div class="seal-hash">Hash: 1234567890ABCDEF</div>
                                 </div>
                             </div>
                         </div>
-                   {{else}}
-                       <div class="assinatura-visual">
-                            <div class="linha"></div>
-                            <div>{{nome_remetente}}</div>
-                            <div>{{cargo_remetente}}</div>
-                       </div>
-                   {{/if}}
                 </div>
             </div>
 
             <!-- 2. PÁGINA DE MANIFESTO (Sempre presente se houver assinaturas ou histórico) -->
-            {{#if mostrar_historico}}
             <div class="history-page">
                 <div class="manifest-header">
                     <div class="manifest-title">Manifesto de Assinaturas</div>
@@ -382,132 +315,53 @@ export class PdfService {
                 <!-- Lista de Assinantes Válidos -->
                 <div class="section-title">ASSINATURAS RECONHECIDAS</div>
                 <div class="manifest-signatures">
-                    {{#each assinaturas}}
-                        {{#if this.is_digital}}
-                        <div class="signature-item valid">
-                            <span class="valid-badge">✓ VÁLIDO{{#if this.isAuthor}} (AUTOR){{/if}}</span>
-                            <div style="font-weight: bold; font-size: 11pt;">{{this.nome}}</div>
-                            <div style="font-size: 9pt; color: #555;">{{this.cargo}}</div>
-                            <div style="margin-top: 5px; font-size: 9pt;">
-                                <strong>Data:</strong> {{this.data}}<br/>
-                                <strong>Método:</strong> Autenticação via Token/Login Seguro<br/>
-                                <strong>CPF/ID:</strong> {{this.cpf_mascarado}}<br/>
-                                <strong>IP/Local:</strong> {{this.ip}}
-                            </div>
-                            <div style="margin-top: 5px; font-family: monospace; font-size: 8pt; color: #888;">
-                                Hash: {{this.hash}}
-                            </div>
-                        </div>
-                        {{/if}}
-                    {{/each}}
-                    <!-- Se remetente também assinou e não está na lista 'assinaturas', adicionar visualmente -->
-                     {{#if remetente_assinou}}
-                      {{#unless authorHasDigitalSignature}}
                         <div class="signature-item valid">
                             <span class="valid-badge">✓ VÁLIDO (AUTOR)</span>
-                            <div style="font-weight: bold; font-size: 11pt;">{{nome_remetente}}</div>
-                            <div style="font-size: 9pt; color: #555;">{{cargo_remetente}}</div>
+                            <div style="font-weight: bold; font-size: 11pt;">Carlos Magno</div>
+                            <div style="font-size: 9pt; color: #555;">Diretor</div>
                             <div style="margin-top: 5px; font-size: 9pt;">
-                                <strong>Data:</strong> {{data_extenso}}<br/>
-                                <strong>Método:</strong> Criação e Assinatura na Origem
+                                <strong>Data:</strong> 10/03/2026<br/>
+                                <strong>Método:</strong> Autenticação via Token/Login Seguro<br/>
+                                <strong>CPF/ID:</strong> ***.***.***-**<br/>
+                                <strong>IP/Local:</strong> 127.0.0.1
+                            </div>
+                            <div style="margin-top: 5px; font-family: monospace; font-size: 8pt; color: #888;">
+                                Hash: ABCDEF123
                             </div>
                         </div>
-                      {{/unless}}
-                     {{/if}}
+                    <!-- Se remetente também assinou e não está na lista 'assinaturas', adicionar visualmente -->
                 </div>
 
                 <!-- Timeline de Eventos -->
                 <div class="section-title">LINHA DO TEMPO DE AUDITORIA</div>
                 <div class="timeline">
-                    {{#each historico}}
                     <div class="timeline-item">
                         <div class="timeline-dot"></div>
-                        <div class="timeline-date">{{this.date}}</div>
-                        <div class="timeline-content">{{this.action_label}}</div>
+                        <div class="timeline-date">10/03/2026</div>
+                        <div class="timeline-content">Criado</div>
                         <div class="timeline-details">
-                            Por: {{this.user}} ({{this.role}})<br/>
-                            {{this.details}}
+                            Por: Carlos Magno (Diretor)<br/>
+                            
                         </div>
                     </div>
-                    {{/each}}
                 </div>
 
                 <!-- Área de Validação -->
                 <div class="verification-info">
                     <div class="qr-code">
                         <!-- Placeholder para QR, idealmente gerado via imagem base64 também -->
-                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={{qr_code_url}}" alt="QR Code" />
+                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=http://localhost/verify/123" alt="QR Code" />
                     </div>
                     <div class="verification-text">
                         Para verificar a validade deste documento, aponte a câmera para o QR Code ou acesse:<br/>
-                        <a href="{{qr_code_url}}" class="verification-url">{{qr_code_url}}</a>
+                        <a href="http://localhost/verify/123" class="verification-url">http://localhost/verify/123</a>
                     </div>
                     <div style="margin-top: 10px; font-size: 8pt; color: #777;">
-                        Código Hash Original: {{rodape_hash}}
+                        Código Hash Original: 1234567890ABCDEF
                     </div>
                 </div>
 
             </div>
-            {{/if}}
         </body>
         </html>
-        `;
-    }
-
-    async generate(data: PdfData): Promise<Buffer> {
-        const browser = await puppeteer.launch({
-            headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
-        });
-        const page = await browser.newPage();
-
-        // Usa apenas a logo do usuário — sem fallback para logo padrão do sistema
-        // Se o usuário não configurou logo (logo_base64 = null/undefined), o PDF ficará sem logo
-        let safeLogo = data.logo_base64 || undefined;
-        if (safeLogo && safeLogo.includes('base64,')) {
-            safeLogo = safeLogo.split('base64,')[1];
-        }
-
-        const templateHtml = await this.getTemplateHtml();
-        const template = handlebars.compile(templateHtml);
-
-        handlebars.registerHelper('formatDate', (date) => {
-            return new Date(date).toLocaleString('pt-BR');
-        });
-
-        const baseUrl = process.env.APP_URL || 'http://localhost:3000';
-        const dataHoraRodape = data.data_hora_criacao || new Date().toLocaleString('pt-BR');
-
-        const finalHtml = template({
-            ...data,
-            base_url: baseUrl,
-            logo_base64: safeLogo,
-            data_hora_criacao: dataHoraRodape,
-            rodape_hash_curto: data.rodape_hash.substring(0, 8),
-            remetente_assinou: true, // Lógica pode vir de fora futuramente
-            mostrar_historico: (data.historico && data.historico.length > 0) || (data.assinaturas && data.assinaturas.length > 0)
-        });
-
-        await page.setContent(finalHtml, { waitUntil: 'load' });
-
-        const pdfBuffer = await page.pdf({
-            format: 'A4',
-            printBackground: true,
-            // Header e Footer já estão no HTML via CSS fixed
-            displayHeaderFooter: false,
-            // Margens já definidas no @page do CSS, mas definimos '0' aqui para delegar ao CSS
-            // ou definimos margens mínimas se o CSS não pegar bem em headless
-            margin: {
-                top: '0cm',
-                bottom: '0cm',
-                left: '0cm',
-                right: '0cm'
-            }
-        });
-
-        await browser.close();
-        return Buffer.from(pdfBuffer);
-    }
-}
-
-export const pdfService = new PdfService();
+        

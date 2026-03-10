@@ -417,7 +417,7 @@ export class CommunicationController {
       // Flags de permissão: facilitam o frontend a saber o que o usuário logado pode fazer
       isCreator,
       isRecipient,
-      currentUserCanSign: isCreator || (!!currentRecipient && currentRecipient.canSign),
+      currentUserCanSign: isCreator || !!currentRecipient, // Todo destinatário pode assinar (regra de negócio)
       currentUserHasSigned: document.signatures.some(s => s.userId === userId && s.isValid),
       verification: verificationData,
       auditTrail
@@ -455,7 +455,7 @@ export class CommunicationController {
             userId: recipient.userId,
             role: recipient.role,
             canView: true,
-            canSign: recipient.canSign
+            canSign: recipient.canSign ?? true
           }))
         } : undefined,
         attachments: shouldUpdateAttachments ? {

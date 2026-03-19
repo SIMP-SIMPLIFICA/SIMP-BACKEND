@@ -41,7 +41,7 @@
     "@fastify/swagger-ui": "^3.0.0",
     "@fastify/under-pressure": "^8.3.0",
     "@node-rs/argon2": "^1.8.0",
-    "@prisma/client": "^6.8.2",
+    "@prisma/client": "^6.19.2",
     "docxtemplater": "^3.49.0",
     "docxtemplater-image-module-free": "^1.1.1",
     "dotenv": "^16.4.5",
@@ -71,10 +71,10 @@
     "@types/qrcode": "^1.5.5",
     "@types/speakeasy": "^2.0.10",
     "@types/uuid": "^10.0.0",
+    "dotenv-expand": "^11.0.6",
     "tsx": "^4.7.1",
     "typescript": "^5.4.3",
-    "vitest": "^1.4.0",
-    "dotenv-expand": "^11.0.6"
+    "vitest": "^1.4.0"
   },
   "engines": {
     "node": ">=18.0.0"

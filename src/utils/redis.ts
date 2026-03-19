@@ -38,7 +38,7 @@ export const redis = {
     return value ? JSON.parse(value) : null
   },
   scan: (cursor: number, pattern?: string, count?: number) =>
-    redisClient.scan(cursor.toString(), pattern ? { MATCH: pattern, COUNT: count } : { COUNT: count }),
+    redisClient.scan(cursor, { MATCH: pattern, COUNT: count }),
   incrementRateLimit: async (key: string, window: number, limit: number) => {
     const result = await redisClient.incr(key)
     const current = Number(result)

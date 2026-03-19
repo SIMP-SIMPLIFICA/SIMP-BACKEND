@@ -7,6 +7,8 @@ import { notificationRoutes } from '@/routes/notification.routes.js'
 import { communicationRoutes } from '@/routes/communication.routes.js'
 import { settingsRoutes } from '@/routes/settings.routes.js'
 import { financeRoutes } from '@/routes/finance.routes.js'
+import { calendarRoutes } from '@/routes/calendar.routes.js'
+import { notesRoutes } from '@/routes/notes.routes.js'
 
 import { AppServer } from '@/types/server'
 import { db } from '@/utils/database.js'
@@ -59,6 +61,11 @@ export async function registerRoutes(server: AppServer) {
 
       // Módulo de Configurações
       await server.register(settingsRoutes, { prefix: '/settings', logLevel: 'info' })
+
+      // Módulo de Utilidades
+      await server.register(calendarRoutes, { prefix: '/utilities/calendar', logLevel: 'info' })
+      await server.register(notesRoutes, { prefix: '/utilities/notes', logLevel: 'info' })
+
       server.get('/', { /* schema omitido */ }, async (request, reply) => {
         return reply.send({ message: "API V1 Root" })
       })

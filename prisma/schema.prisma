@@ -201,6 +201,7 @@ model Workspace {
   tasks             Task[]
   financeCategories FinanceCategory[]
   financeEntries    FinanceEntry[]
+  bankAccounts      BankAccount[]
 }
 
 model WorkspaceMember {
@@ -317,6 +318,22 @@ enum FinanceEntryType {
   INCOME
 }
 
+model BankAccount {
+  id                  String   @id @default(uuid())
+  workspaceId         String
+  name                String
+  agency              String?
+  accountNumber       String?
+  initialBalanceCents Int      @default(0)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  workspace Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  entries   FinanceEntry[]
+
+  @@map("bank_accounts")
+}
+
 model FinanceCategory {
   id          String   @id @default(uuid())
   workspaceId String
@@ -340,6 +357,7 @@ model FinanceEntry {
   amountCents       Int
   type              FinanceEntryType @default(EXPENSE)
   categoryId        String?
+  accountId         String?
   subcategoryName   String?
   nfeNumber         String?
   issueDate         DateTime?
@@ -357,11 +375,13 @@ model FinanceEntry {
   attachments FinanceAttachment[]
   workspace   Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   category    FinanceCategory?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  account     BankAccount?        @relation(fields: [accountId], references: [id], onDelete: Restrict)
   createdBy   User                @relation("FinanceEntryCreator", fields: [createdById], references: [id])
   updatedBy   User?               @relation("FinanceEntryUpdater", fields: [updatedById], references: [id])
 
   @@index([workspaceId, occurredAt])
   @@index([categoryId])
+  @@index([accountId])
   @@map("finance_entries")
 }
 

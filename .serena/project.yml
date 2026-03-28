@@ -1,0 +1,24 @@
+# Serena project config — SIMP Backend
+# Docs: https://github.com/oraios/serena
+
+project_name: simp-backend
+
+# LSP para TypeScript (ESM, Node.js)
+language_backend: lsp
+
+# Paths ignorados na análise semântica
+ignored_paths:
+  - node_modules
+  - dist
+  - coverage
+  - .git
+  - "*.d.ts"
+  - "prisma/migrations"   # SQL gerado pelo Prisma
+
+web_dashboard: false
+
+tool_timeout: 60
+
+ls_specific_settings:
+  typescript:
+    tsconfig: tsconfig.json

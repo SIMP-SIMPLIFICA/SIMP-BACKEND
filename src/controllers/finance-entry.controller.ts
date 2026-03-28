@@ -71,11 +71,14 @@ export class FinanceEntryController {
         }
 
         // Parâmetros de filtro opcionais (Ex: search por data, por tipo)
-        const { startDate, endDate, type, categoryId } = z.object({
+        const { startDate, endDate, type, categoryNames, page, limit, search } = z.object({
             startDate: z.string().optional(),
             endDate: z.string().optional(),
             type: z.enum(['EXPENSE', 'INCOME']).optional(),
-            categoryId: z.string().uuid().optional(),
+            categoryNames: z.string().optional(), // Comma separated Names
+            page: z.coerce.number().min(1).optional(),
+            limit: z.coerce.number().min(1).max(500).optional(),
+            search: z.string().optional(),
         }).parse(request.query || {});
 
         const whereClause: any = {
@@ -95,20 +98,67 @@ export class FinanceEntryController {
         }
 
         if (type) whereClause.type = type;
-        if (categoryId) whereClause.categoryId = categoryId;
+        if (categoryNames) {
+            whereClause.category = { name: { in: categoryNames.split(',') } };
+        }
 
-        const entries = await prisma.financeEntry.findMany({
+        if (search) {
+            whereClause.OR = [
+                { description: { contains: search, mode: 'insensitive' } },
+                { category: { name: { contains: search, mode: 'insensitive' } } }
+            ];
+        }
+
+        const queryOptions: any = {
             where: whereClause,
             include: {
                 category: { select: { name: true } }
             },
             orderBy: { occurredAt: 'desc' }
-        });
+        };
+
+        if (page && limit) {
+            queryOptions.skip = (page - 1) * limit;
+            queryOptions.take = limit;
+        }
+
+        const [entries, totalCount, aggregations] = await Promise.all([
+            prisma.financeEntry.findMany(queryOptions),
+            prisma.financeEntry.count({ where: whereClause }),
+            prisma.financeEntry.groupBy({
+                by: ['type'],
+                where: whereClause,
+                _sum: { amountCents: true }
+            })
+        ]);
 
         const mappedEntries = entries.map(entry => ({
             ...entry,
-            categoryName: entry.category?.name || 'Sem Categoria'
+            categoryName: (entry as any).category?.name || 'Sem Categoria'
         }));
+
+        if (page && limit) {
+            let totalIncome = 0;
+            let totalExpense = 0;
+
+            aggregations.forEach(agg => {
+                const sum = agg._sum.amountCents || 0;
+                if (agg.type === 'INCOME') totalIncome += sum;
+                if (agg.type === 'EXPENSE') totalExpense += sum;
+            });
+
+            return reply.send({
+                data: mappedEntries,
+                meta: {
+                    total: totalCount,
+                    page,
+                    limit,
+                    totalPages: Math.ceil(totalCount / limit),
+                    totalIncome,
+                    totalExpense
+                }
+            });
+        }
 
         return reply.send(mappedEntries);
     }

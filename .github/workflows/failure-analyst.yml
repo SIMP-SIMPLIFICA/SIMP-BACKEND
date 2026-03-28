@@ -1,0 +1,152 @@
+name: Failure Analyst Agent
+
+# Dispara quando o CI principal falha — em qualquer branch
+on:
+  workflow_run:
+    workflows: ["CI — Validator + Test + Coverage"]
+    types: [completed]
+
+jobs:
+  analyze:
+    name: Analisar falha e notificar
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+
+    permissions:
+      issues: write
+      contents: read
+      actions: read
+
+    steps:
+      # ─────────────────────────────────────────────
+      # 1. Coletar logs de erro do run que falhou
+      # ─────────────────────────────────────────────
+      - name: Coletar logs de erro
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh run view "${{ github.event.workflow_run.id }}" \
+            --repo "${{ github.repository }}" \
+            --log-failed 2>&1 \
+            | grep -E "##\[error\]|error TS[0-9]|FAIL|Error:" \
+            | sed 's/.*##\[error\]//' \
+            | head -60 \
+            > /tmp/failed_logs.txt || true
+
+          # Fallback: pega as últimas linhas se grep não pegou nada
+          if [ ! -s /tmp/failed_logs.txt ]; then
+            gh run view "${{ github.event.workflow_run.id }}" \
+              --repo "${{ github.repository }}" \
+              --log-failed 2>&1 | tail -40 > /tmp/failed_logs.txt || true
+          fi
+
+          echo "=== Logs coletados ==="
+          cat /tmp/failed_logs.txt
+
+      # ─────────────────────────────────────────────
+      # 2. Claude Haiku analisa os erros
+      # ─────────────────────────────────────────────
+      - name: Analisar com Claude
+        run: |
+          LOGS=$(cat /tmp/failed_logs.txt | head -3000)
+          BRANCH="${{ github.event.workflow_run.head_branch }}"
+          COMMIT="${{ github.event.workflow_run.display_title }}"
+
+          jq -n \
+            --arg logs "$LOGS" \
+            --arg branch "$BRANCH" \
+            --arg commit "$COMMIT" \
+            '{
+              model: "claude-haiku-4-5-20251001",
+              max_tokens: 600,
+              messages: [{
+                role: "user",
+                content: ("Você é o Failure Analyst do projeto SIMP (sistema de gestão municipal TypeScript).\n\nO CI falhou:\n- Branch: " + $branch + "\n- Commit: " + $commit + "\n\nLogs de erro:\n" + $logs + "\n\nResponda em português, de forma direta e técnica:\n\n**Tipo de falha:** (lint / typecheck / test / build)\n**Arquivos com problema:** (liste até 3, com o erro principal de cada)\n**Ação recomendada:** (1-2 linhas objetivas para corrigir)")
+              }]
+            }' > /tmp/request.json
+
+          curl -s https://api.anthropic.com/v1/messages \
+            -H "x-api-key: ${{ secrets.ANTHROPIC_API_KEY }}" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            -d @/tmp/request.json \
+            | jq -r '.content[0].text' > /tmp/analysis.txt
+
+          echo "=== Análise do Claude ==="
+          cat /tmp/analysis.txt
+
+      # ─────────────────────────────────────────────
+      # 3. Criar labels se não existirem
+      # ─────────────────────────────────────────────
+      - name: Garantir labels
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh label create "ci-failure" --color "d73a4a" --description "Falha no CI/CD" \
+            --repo "${{ github.repository }}" 2>/dev/null || true
+          gh label create "bot" --color "0075ca" --description "Criado por agente automatizado" \
+            --repo "${{ github.repository }}" 2>/dev/null || true
+
+      # ─────────────────────────────────────────────
+      # 4. Abrir Issue no GitHub
+      # ─────────────────────────────────────────────
+      - name: Abrir GitHub Issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ANALYSIS=$(cat /tmp/analysis.txt)
+          LOGS=$(cat /tmp/failed_logs.txt | head -50)
+          BRANCH="${{ github.event.workflow_run.head_branch }}"
+          COMMIT="${{ github.event.workflow_run.display_title }}"
+          RUN_URL="${{ github.event.workflow_run.html_url }}"
+          SHA="${{ github.event.workflow_run.head_sha }}"
+
+          BODY=$(jq -n \
+            --arg branch "$BRANCH" \
+            --arg commit "$COMMIT" \
+            --arg sha "$SHA" \
+            --arg run_url "$RUN_URL" \
+            --arg analysis "$ANALYSIS" \
+            --arg logs "$LOGS" \
+            '"## ❌ Falha no CI\n\n**Branch:** `" + $branch + "`\n**Commit:** " + $commit + "\n**SHA:** `" + ($sha | .[0:7]) + "`\n**Run:** " + $run_url + "\n\n---\n\n## 🤖 Análise do Failure Analyst (Claude)\n\n" + $analysis + "\n\n---\n\n## 📋 Logs de erro\n\n```\n" + $logs + "\n```\n\n---\n*Gerado automaticamente pelo Failure Analyst Agent*"')
+
+          gh issue create \
+            --repo "${{ github.repository }}" \
+            --title "❌ CI falhou em \`$BRANCH\` — $COMMIT" \
+            --label "ci-failure,bot" \
+            --body "$(echo "$BODY" | jq -r .)"
+
+      # ─────────────────────────────────────────────
+      # 5. Notificar Discord
+      # ─────────────────────────────────────────────
+      - name: Notificar Discord
+        if: ${{ secrets.DISCORD_WEBHOOK_URL != '' }}
+        run: |
+          ANALYSIS=$(cat /tmp/analysis.txt | head -20)
+          BRANCH="${{ github.event.workflow_run.head_branch }}"
+          COMMIT="${{ github.event.workflow_run.display_title }}"
+          RUN_URL="${{ github.event.workflow_run.html_url }}"
+          REPO="${{ github.repository }}"
+
+          jq -n \
+            --arg branch "$BRANCH" \
+            --arg commit "$COMMIT" \
+            --arg run_url "$RUN_URL" \
+            --arg repo "$REPO" \
+            --arg analysis "$ANALYSIS" \
+            '{
+              embeds: [{
+                title: ("❌ CI falhou — " + $branch),
+                description: $analysis,
+                color: 15158332,
+                fields: [
+                  {name: "Repositório", value: ("`" + $repo + "`"), inline: true},
+                  {name: "Branch", value: ("`" + $branch + "`"), inline: true},
+                  {name: "Commit", value: $commit, inline: false},
+                  {name: "🔗 Ver detalhes", value: ("[GitHub Actions](" + $run_url + ")"), inline: false}
+                ],
+                footer: {text: "SIMP — Failure Analyst Agent"}
+              }]
+            }' | curl -s -X POST "${{ secrets.DISCORD_WEBHOOK_URL }}" \
+              -H "Content-Type: application/json" \
+              -d @-

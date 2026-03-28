@@ -1,22 +1,59 @@
-name: CI/CD Pipeline
+name: CI — Validator + Test + Coverage
 
 on:
   push:
-    branches: [ main ]
+    branches: [main, develop]
   pull_request:
-    branches: [ main ]
+    branches: [main, develop]
+
+concurrency:
+  group: ci-backend-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  test:
+  # ─────────────────────────────────────────────
+  # AGENT 1: Validator — lint + typecheck
+  # Roda rápido, bloqueia o PR se falhar
+  # ─────────────────────────────────────────────
+  validate:
+    name: Validator Agent (lint + tsc)
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: TypeScript check
+        run: npm run type-check
+
+      - name: Lint
+        run: npm run lint
+
+  # ─────────────────────────────────────────────
+  # AGENT 2: Test + Coverage
+  # Requer banco e Redis reais para integração
+  # ─────────────────────────────────────────────
+  test:
+    name: Test Agent (unit + integration + coverage)
+    runs-on: ubuntu-latest
+    needs: validate
 
     services:
       postgres:
-        image: postgres:15-alpine
+        image: postgres:16-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: password
-          POSTGRES_DB: simp_test_db
+          POSTGRES_DB: simp_test
         ports:
           - 5432:5432
         options: >-
@@ -25,44 +62,110 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     env:
-      DATABASE_URL: "postgresql://postgres:password@localhost:5432/simp_test_db?schema=public"
-      JWT_ACCESS_SECRET: "12345678901234567890123456789012"
-      JWT_REFRESH_SECRET: "12345678901234567890123456789012"
-      SESSION_SECRET: "12345678901234567890123456789012"
-      REDIS_URL: "redis://localhost:6379"
-      SMTP_HOST: "smtp.example.com"
-      SMTP_PORT: "587"
-      SMTP_USER: "user"
-      SMTP_PASS: "pass"
-      SMTP_FROM: "no-reply@test.com"
-      SMTP_FROM_NAME: "Test"
-      APP_URL: "http://localhost:3000"
-      FRONTEND_URL: "http://localhost:5173"
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:password@localhost:5432/simp_test?schema=public
+      REDIS_URL: redis://localhost:6379
+      JWT_ACCESS_SECRET: test-access-secret-32-chars-minimum
+      JWT_REFRESH_SECRET: test-refresh-secret-32-chars-minimum
+      SESSION_SECRET: test-session-secret-32-chars-min
+      SMTP_HOST: localhost
+      SMTP_PORT: "1025"
+      SMTP_USER: test
+      SMTP_PASS: test
+      SMTP_FROM: no-reply@test.com
+      SMTP_FROM_NAME: SIMP Test
+      APP_URL: http://localhost:3000
+      FRONTEND_URL: http://localhost:5173
       ENABLE_EMAIL_VERIFICATION: "false"
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-        cache: 'npm'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
 
-    - name: Install Dependencies
-      run: npm ci
+      - name: Install dependencies
+        run: npm ci
 
-    - name: Generate Prisma Client
-      run: npx prisma generate
+      - name: Generate Prisma Client
+        run: npx prisma generate
 
-    - name: Push Database Schema
-      run: npx prisma db push --accept-data-loss
+      - name: Push schema to test DB
+        run: npx prisma db push --accept-data-loss
 
-    - name: Run Tests
-      run: npm run test
+      - name: Run tests with coverage
+        run: npm run test:coverage
 
-    - name: Deploy to Render
-      if: success() && github.ref == 'refs/heads/main' 
-      run: curl "${{ secrets.RENDER_DEPLOY_HOOK }}"
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-backend
+          path: coverage/
+          retention-days: 7
+
+  # ─────────────────────────────────────────────
+  # AGENT 3: Security — CodeQL scan
+  # Roda em paralelo com os testes
+  # ─────────────────────────────────────────────
+  security:
+    name: Security Agent (CodeQL)
+    runs-on: ubuntu-latest
+    needs: validate
+    permissions:
+      security-events: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: typescript
+          queries: security-and-quality
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - run: npm ci
+      - run: npx prisma generate
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: backend-security
+
+  # ─────────────────────────────────────────────
+  # AGENT 4: Deploy — staging (develop) / prod (main)
+  # Só roda após todos os outros passarem
+  # ─────────────────────────────────────────────
+  deploy:
+    name: Deploy Agent
+    runs-on: ubuntu-latest
+    needs: [test, security]
+    if: github.event_name == 'push'
+
+    steps:
+      - name: Deploy to Staging (develop)
+        if: github.ref == 'refs/heads/develop'
+        run: curl -s "${{ secrets.RENDER_STAGING_DEPLOY_HOOK }}"
+
+      - name: Deploy to Production (main)
+        if: github.ref == 'refs/heads/main'
+        run: curl -s "${{ secrets.RENDER_DEPLOY_HOOK }}"

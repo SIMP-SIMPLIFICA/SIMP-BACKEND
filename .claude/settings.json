@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd /Users/marllonrodrigues/Code/Personal/simp-backend && /Users/marllonrodrigues/.nvm/versions/node/v22.21.0/bin/node node_modules/.bin/tsc --noEmit 2>&1 | head -20",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

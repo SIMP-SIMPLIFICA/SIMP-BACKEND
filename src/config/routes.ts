@@ -12,10 +12,11 @@ import { logger } from '@/utils/logger.js'
 
 export async function registerRoutes(server: AppServer) {
   // --- ERROR HANDLER GLOBAL ---
+  // eslint-disable-next-line @typescript-eslint/require-await
   server.setErrorHandler(async (error, request, reply) => {
     request.log.error(error, 'Request error occurred')
 
-    const err = error as any;
+    const err = error as { validation?: unknown; statusCode?: number; message?: string; name?: string; stack?: string; retryAfter?: number };
 
     if (err.validation) {
       return reply.code(400).send({
@@ -96,7 +97,7 @@ export async function registerRoutes(server: AppServer) {
   })
 
   // --- NOT FOUND HANDLER ---
-  server.setNotFoundHandler(async (request, reply) => {
+  server.setNotFoundHandler((request, reply) => {
     return reply.code(404).send({
       error: 'Not Found',
       message: `Endpoint ${request.method}:${request.url} not found`,
@@ -126,7 +127,7 @@ export async function registerRoutes(server: AppServer) {
       await server.register(userRoutes, { prefix: '/users', logLevel: 'info' })
       await server.register(roleRoutes, { prefix: '/roles', logLevel: 'info' })
 
-      server.get('/', { /* schema omitido */ }, async (request, reply) => {
+      server.get('/', { /* schema omitido */ }, (request, reply) => {
         return reply.send({ message: "API V1 Root" })
       })
     },
@@ -161,7 +162,7 @@ export async function registerRoutes(server: AppServer) {
   })
 
   // --- TEST ENDPOINT ---
-  server.get('/test', async (request, reply) => {
+  server.get('/test', (request, reply) => {
     logger.info('Test endpoint hit')
     return reply.send({ message: 'Test endpoint working', timestamp: new Date().toISOString() })
   })

@@ -8,7 +8,7 @@ export class WorkspaceController {
   
   async create(request: FastifyRequest, reply: FastifyReply) {
     const data = createWorkspaceSchema.parse(request.body);
-    const userId = (request.user as any).id;
+    const userId = request.user.id;
     
     const baseSlug = data.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
     const uniqueSuffix = Date.now().toString().slice(-4);
@@ -51,7 +51,7 @@ export class WorkspaceController {
 
   async addMember(request: FastifyRequest, reply: FastifyReply) {
     const { id } = z.object({ id: z.string() }).parse(request.params);
-    const userId = (request.user as any).id;
+    const userId = request.user.id;
     
     const requester = await prisma.workspaceMember.findUnique({
         where: { workspaceId_userId: { workspaceId: id, userId } },
@@ -84,7 +84,7 @@ export class WorkspaceController {
 
   async removeMember(request: FastifyRequest, reply: FastifyReply) {
     const { id, userId: targetUserId } = z.object({ id: z.string(), userId: z.string() }).parse(request.params);
-    const requesterId = (request.user as any).id;
+    const requesterId = request.user.id;
 
     const requesterMember = await prisma.workspaceMember.findUnique({
         where: { workspaceId_userId: { workspaceId: id, userId: requesterId } }
@@ -131,10 +131,10 @@ export class WorkspaceController {
   // REGRA: APENAS OWNER DELETA WORKSPACE
   async delete(request: FastifyRequest, reply: FastifyReply) {
     const { id } = z.object({ id: z.string() }).parse(request.params);
-    const userId = (request.user as any).id;
+    const userId = request.user.id;
     const member = await prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId: id, userId } } });
     
-    if (!member || member.role !== 'OWNER') {
+    if (member?.role !== 'OWNER') {
         return reply.status(403).send({ message: 'Apenas o CRIADOR (Dono) pode excluir o workspace' });
     }
     

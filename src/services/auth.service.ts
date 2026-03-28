@@ -3,7 +3,6 @@ import { SignJWT, jwtVerify } from 'jose'
 import { nanoid } from 'nanoid'
 import { config } from '@/config/config.js'
 import { db, prisma } from '@/utils/database.js'
-import { emailService } from './email.service.js'
 import { authLogger, logSecurity } from '@/utils/logger.js'
 
 export class AuthService {

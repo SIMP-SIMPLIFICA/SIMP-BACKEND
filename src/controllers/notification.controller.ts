@@ -5,8 +5,8 @@ import { z } from 'zod';
 
 export class NotificationController {
   
-  async stream(request: FastifyRequest, reply: FastifyReply) {
-    const userId = (request.user as any).id;
+  stream(request: FastifyRequest, reply: FastifyReply) {
+    const userId = request.user.id;
 
     // --- CORREÇÃO DEFINITIVA DO CORS PARA SSE ---
     // Como estamos hijackando a resposta, precisamos definir os headers manualmente.
@@ -39,7 +39,7 @@ export class NotificationController {
   }
 
   async list(request: FastifyRequest, reply: FastifyReply) {
-    const userId = (request.user as any).id;
+    const userId = request.user.id;
     
     const notifications = await prisma.notification.findMany({
       where: { userId },
@@ -56,7 +56,7 @@ export class NotificationController {
 
   async markAsRead(request: FastifyRequest, reply: FastifyReply) {
     const { id } = z.object({ id: z.string() }).parse(request.params);
-    const userId = (request.user as any).id;
+    const userId = request.user.id;
 
     await prisma.notification.updateMany({
       where: { id, userId },
@@ -67,7 +67,7 @@ export class NotificationController {
   }
 
   async markAllRead(request: FastifyRequest, reply: FastifyReply) {
-    const userId = (request.user as any).id;
+    const userId = request.user.id;
 
     await prisma.notification.updateMany({
       where: { userId, read: false },

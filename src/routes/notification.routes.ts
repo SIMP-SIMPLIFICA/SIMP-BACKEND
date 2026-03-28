@@ -4,7 +4,7 @@ import { authenticate } from '../middleware/auth.middleware.js';
 
 const notificationController = new NotificationController();
 
-export async function notificationRoutes(app: FastifyInstance) {
+export function notificationRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authenticate);
 
   app.get('/stream', notificationController.stream);

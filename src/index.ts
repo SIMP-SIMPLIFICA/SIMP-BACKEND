@@ -48,7 +48,9 @@ async function start() {
     }
 
     const shutdown = gracefulShutdown(server)
+    // eslint-disable-next-line @typescript-eslint/no-misused-promises
     process.on('SIGINT', shutdown)
+    // eslint-disable-next-line @typescript-eslint/no-misused-promises
     process.on('SIGTERM', shutdown)
 
   } catch (error) {

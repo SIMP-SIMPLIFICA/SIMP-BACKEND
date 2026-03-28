@@ -1,4 +1,4 @@
-import { FastifyRequest, FastifyReply } from 'fastify'
+import { FastifyReply, FastifyRequest } from 'fastify'
 
 export async function authenticate(request: FastifyRequest, reply: FastifyReply) {
   // 0. Ignorar requisições OPTIONS (Preflight do CORS)
@@ -22,8 +22,8 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
     // Correção do user.id para garantir compatibilidade
     // O token JWT geralmente traz o ID no campo 'sub'.
     // Aqui garantimos que request.user.id exista para os controllers usarem.
-    const user = request.user as any
-    if (user && user.sub && !user.id) {
+    const user = request.user
+    if (user?.sub && !user.id) {
       user.id = user.sub
     }
     

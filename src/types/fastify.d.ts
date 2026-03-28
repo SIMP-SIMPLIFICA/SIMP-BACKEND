@@ -1,5 +1,3 @@
-import { FastifyRequest } from 'fastify'
-
 declare module '@fastify/jwt' {
   interface FastifyJWT {
     user: any

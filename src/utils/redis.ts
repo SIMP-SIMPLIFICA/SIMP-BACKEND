@@ -35,7 +35,7 @@ export const redis = {
     ttl ? redisClient.setEx(key, ttl, JSON.stringify(value)) : redisClient.set(key, JSON.stringify(value)),
   getJSON: async <T>(key: string): Promise<T | null> => {
     const value = await redisClient.get(key) as string | null
-    return value ? JSON.parse(value) : null
+    return value ? JSON.parse(value) as T : null
   },
   scan: (cursor: number, pattern?: string, count?: number) =>
     redisClient.scan(cursor.toString(), pattern ? { MATCH: pattern, COUNT: count } : { COUNT: count }),

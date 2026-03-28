@@ -6,7 +6,7 @@ import { authMiddleware } from '../middleware/auth.middleware.js';
 const categoryController = new FinanceCategoryController();
 const entryController = new FinanceEntryController();
 
-export async function financeRoutes(app: FastifyInstance) {
+export function financeRoutes(app: FastifyInstance) {
     // Todas as rotas de finanças requerem autenticação
     app.addHook('preHandler', authMiddleware);
 

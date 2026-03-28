@@ -4,7 +4,7 @@ import { authMiddleware } from '../middleware/auth.middleware.js'
 
 const taskController = new TaskController()
 
-export async function taskRoutes(app: FastifyInstance) {
+export function taskRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authMiddleware)
 
   // NOTA: As rotas de criar/listar por workspace foram movidas para workspace.routes.ts

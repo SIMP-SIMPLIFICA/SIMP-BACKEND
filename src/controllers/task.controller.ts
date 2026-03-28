@@ -1,6 +1,6 @@
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { prisma } from '../lib/prisma.js';
-import { createTaskSchema, updateTaskSchema, createChecklistItemSchema, updateChecklistItemSchema } from '../schemas/task.schemas.js';
+import { createChecklistItemSchema, createTaskSchema, updateChecklistItemSchema, updateTaskSchema } from '../schemas/task.schemas.js';
 import { notificationService } from '../services/notification.service.js';
 import { z } from 'zod';
 import { pipeline } from 'node:stream/promises';
@@ -207,7 +207,7 @@ export class TaskController {
   async addAssignee(request: FastifyRequest, reply: FastifyReply) {
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const { userId } = z.object({ userId: z.string() }).parse(request.body);
-    const requesterId = (request.user as any).id;
+    const requesterId = request.user.id;
 
     const task = await prisma.task.findUnique({ where: { id }, include: { workspace: { include: { members: true } } } });
     if (!task) return reply.status(404).send();
@@ -240,7 +240,7 @@ export class TaskController {
   // --- REMOVE ASSIGNEE ---
   async removeAssignee(request: FastifyRequest, reply: FastifyReply) {
     const { id, userId: targetUserId } = z.object({ id: z.string(), userId: z.string() }).parse(request.params);
-    const requesterId = (request.user as any).id;
+    const requesterId = request.user.id;
 
     const task = await prisma.task.findUnique({
         where: { id },
@@ -297,7 +297,7 @@ export class TaskController {
           });
       }
 
-    } catch (error) {
+    } catch (_error) {
        return reply.status(404).send({ message: 'Usuário não encontrado.' });
     }
 
@@ -379,7 +379,7 @@ export class TaskController {
     try {
         const filePath = join(process.cwd(), 'uploads', attachment.fileUrl);
         if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-    } catch (e) { console.error(e); }
+    } catch (_e) { /* ignore */ }
     
     await prisma.taskHistory.create({
         data: { taskId: attachment.taskId, userId, action: `Removeu anexo: "${attachment.fileName}"` }
@@ -504,7 +504,7 @@ export class TaskController {
   // --- DELETE TASK ---
   async delete(request: FastifyRequest, reply: FastifyReply) {
       const { id } = z.object({ id: z.string() }).parse(request.params);
-      const userId = (request.user as any).id;
+      const userId = request.user.id;
       
       const task = await prisma.task.findUnique({ where: { id }, include: { assignees: true, workspace: true } });
       if (!task) return reply.status(404).send();

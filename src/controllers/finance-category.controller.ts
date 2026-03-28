@@ -7,7 +7,7 @@ export class FinanceCategoryController {
 
     async create(request: FastifyRequest, reply: FastifyReply) {
         const data = createCategorySchema.parse(request.body);
-        const userId = (request.user as any).id;
+        const userId = request.user.id;
 
         // Verificar se usuário tem acesso ao workspace (básico de segurança)
         const member = await prisma.workspaceMember.findUnique({
@@ -31,7 +31,7 @@ export class FinanceCategoryController {
 
     async list(request: FastifyRequest, reply: FastifyReply) {
         const { workspaceId } = z.object({ workspaceId: z.string().uuid() }).parse(request.params);
-        const userId = (request.user as any).id;
+        const userId = request.user.id;
 
         const member = await prisma.workspaceMember.findUnique({
             where: { workspaceId_userId: { workspaceId, userId } }
@@ -59,7 +59,7 @@ export class FinanceCategoryController {
             description: z.string().max(500).optional()
         });
         const data = updateSchema.parse(request.body);
-        const userId = (request.user as any).id;
+        const userId = request.user.id;
 
         // Buscar a categoria para checar o workspace
         const category = await prisma.financeCategory.findUnique({ where: { id } });
@@ -81,7 +81,7 @@ export class FinanceCategoryController {
 
     async delete(request: FastifyRequest, reply: FastifyReply) {
         const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
-        const userId = (request.user as any).id;
+        const userId = request.user.id;
 
         const category = await prisma.financeCategory.findUnique({ where: { id } });
         if (!category) return reply.status(404).send({ message: 'Categoria não encontrada' });

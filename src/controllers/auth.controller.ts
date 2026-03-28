@@ -1,16 +1,11 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { authService } from '@/services/auth.service.js'
-import { db, prisma } from '@/utils/database.js'
+import { db } from '@/utils/database.js'
 import { authLogger } from '@/utils/logger.js'
 import {
-  changePasswordSchema,
-  forgotPasswordSchema,
   loginSchema,
   refreshTokenSchema,
-  registerSchema,
-  resetPasswordSchema,
-  updateProfileSchema,
-  verifyEmailSchema
+  registerSchema
 } from '@/schemas/auth.schemas.js'
 
 export class AuthController {
@@ -25,9 +20,9 @@ export class AuthController {
         httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict', maxAge: 7 * 24 * 60 * 60 * 1000
       })
       return reply.code(201).send({ message: 'User registered successfully', user: result.user, tokens: { accessToken: result.tokens.accessToken, expiresIn: result.tokens.expiresIn } })
-    } catch (error: any) {
+    } catch (error: unknown) {
       authLogger.error(error, 'Registration failed')
-      return reply.code(400).send({ error: 'Registration Failed', message: error.message })
+      return reply.code(400).send({ error: 'Registration Failed', message: error instanceof Error ? error.message : String(error) })
     }
   }
 
@@ -44,8 +39,8 @@ export class AuthController {
         httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict', maxAge: 7 * 24 * 60 * 60 * 1000
       })
       return reply.send({ message: 'Login successful', user: result.user, tokens: { accessToken: result.tokens.accessToken, expiresIn: result.tokens.expiresIn } })
-    } catch (error: any) {
-      return reply.code(400).send({ error: 'Login Failed', message: error.message })
+    } catch (error: unknown) {
+      return reply.code(400).send({ error: 'Login Failed', message: error instanceof Error ? error.message : String(error) })
     }
   }
 
@@ -58,8 +53,8 @@ export class AuthController {
         httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict', maxAge: 7 * 24 * 60 * 60 * 1000
       })
       return reply.send({ message: 'Token refreshed successfully', tokens: { accessToken: tokens.accessToken, expiresIn: tokens.expiresIn } })
-    } catch (error: any) {
-      return reply.code(401).send({ error: 'Token Refresh Failed', message: error.message })
+    } catch (error: unknown) {
+      return reply.code(401).send({ error: 'Token Refresh Failed', message: error instanceof Error ? error.message : String(error) })
     }
   }
 
@@ -70,8 +65,8 @@ export class AuthController {
       if (refreshToken && userId) await authService.logout(refreshToken, userId, request.ip)
       reply.clearCookie('refreshToken')
       return reply.send({ message: 'Logged out successfully' })
-    } catch (error: any) {
-      return reply.code(400).send({ error: 'Logout Failed', message: error.message })
+    } catch (error: unknown) {
+      return reply.code(400).send({ error: 'Logout Failed', message: error instanceof Error ? error.message : String(error) })
     }
   }
 
@@ -104,23 +99,23 @@ export class AuthController {
           passwordResetToken: undefined
         }
       })
-    } catch (error: any) {
+    } catch (error: unknown) {
       return reply.code(500).send({
         error: 'Profile Fetch Failed',
-        message: error.message
+        message: error instanceof Error ? error.message : String(error)
       })
     }
   }
 
   // ... (outros métodos: updateProfile, changePassword, etc. mantidos) ...
-  async updateProfile(request: FastifyRequest, reply: FastifyReply) { /* ... */ }
-  async changePassword(request: FastifyRequest, reply: FastifyReply) { /* ... */ }
-  async forgotPassword(request: FastifyRequest, reply: FastifyReply) { /* ... */ }
-  async resetPassword(request: FastifyRequest, reply: FastifyReply) { /* ... */ }
-  async verifyEmail(request: FastifyRequest, reply: FastifyReply) { /* ... */ }
-  async getSessions(request: FastifyRequest, reply: FastifyReply) { /* ... */ }
-  async terminateSession(request: FastifyRequest, reply: FastifyReply) { /* ... */ }
-  async terminateAllSessions(request: FastifyRequest, reply: FastifyReply) { /* ... */ }
+  async updateProfile(_request: FastifyRequest, _reply: FastifyReply) { /* ... */ }
+  async changePassword(_request: FastifyRequest, _reply: FastifyReply) { /* ... */ }
+  async forgotPassword(_request: FastifyRequest, _reply: FastifyReply) { /* ... */ }
+  async resetPassword(_request: FastifyRequest, _reply: FastifyReply) { /* ... */ }
+  async verifyEmail(_request: FastifyRequest, _reply: FastifyReply) { /* ... */ }
+  async getSessions(_request: FastifyRequest, _reply: FastifyReply) { /* ... */ }
+  async terminateSession(_request: FastifyRequest, _reply: FastifyReply) { /* ... */ }
+  async terminateAllSessions(_request: FastifyRequest, _reply: FastifyReply) { /* ... */ }
 }
 
 export const authController = new AuthController()

@@ -119,7 +119,7 @@ async function main() {
         type: 'INCOME' | 'EXPENSE',
         count: number
     ) => {
-        const categoryId = catMap.get(categoryName)!;
+        const categoryId = catMap.get(categoryName);
         for (let i = 0; i < count; i++) {
             const tmpl = getRandomItem(templates);
             entriesToInsert.push({

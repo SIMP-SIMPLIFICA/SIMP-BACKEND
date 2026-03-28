@@ -2,20 +2,17 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { prisma } from '../lib/prisma.js';
 import { z } from 'zod';
 import { createEntrySchema, updateEntrySchema } from '../schemas/finance.schema.js';
-import { pipeline } from 'node:stream/promises';
-import { createWriteStream } from 'node:fs';
-import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import r2 from '../lib/r2.js';
-import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 export class FinanceEntryController {
 
     async create(request: FastifyRequest, reply: FastifyReply) {
         const data = createEntrySchema.parse(request.body);
-        const userId = (request.user as any).id;
+        const userId = request.user.id;
 
         const member = await prisma.workspaceMember.findUnique({
             where: { workspaceId_userId: { workspaceId: data.workspaceId, userId } }
@@ -60,7 +57,7 @@ export class FinanceEntryController {
     async list(request: FastifyRequest, reply: FastifyReply) {
         // Pegando workspaceId da rota ou da query
         const { workspaceId } = z.object({ workspaceId: z.string().uuid() }).parse(request.params);
-        const userId = (request.user as any).id;
+        const userId = request.user.id;
 
         const member = await prisma.workspaceMember.findUnique({
             where: { workspaceId_userId: { workspaceId, userId } }
@@ -134,7 +131,7 @@ export class FinanceEntryController {
 
         const mappedEntries = entries.map(entry => ({
             ...entry,
-            categoryName: (entry as any).category?.name || 'Sem Categoria'
+            categoryName: entry.category?.name || 'Sem Categoria'
         }));
 
         if (page && limit) {
@@ -166,7 +163,7 @@ export class FinanceEntryController {
     async update(request: FastifyRequest, reply: FastifyReply) {
         const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
         const data = updateEntrySchema.parse(request.body);
-        const userId = (request.user as any).id;
+        const userId = request.user.id;
 
         const entry = await prisma.financeEntry.findUnique({ where: { id } });
         if (!entry) return reply.status(404).send({ message: 'Lançamento não encontrado' });
@@ -199,7 +196,7 @@ export class FinanceEntryController {
 
     async delete(request: FastifyRequest, reply: FastifyReply) {
         const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
-        const userId = (request.user as any).id;
+        const userId = request.user.id;
 
         const entry = await prisma.financeEntry.findUnique({ where: { id } });
         if (!entry) return reply.status(404).send({ message: 'Lançamento não encontrado' });
@@ -225,7 +222,7 @@ export class FinanceEntryController {
     // --- ATTACHMENTS ---
     async listAttachments(request: FastifyRequest, reply: FastifyReply) {
         const { entryId } = z.object({ entryId: z.string().uuid() }).parse(request.params);
-        const userId = (request.user as any).id;
+        const userId = request.user.id;
 
         const entry = await prisma.financeEntry.findUnique({ where: { id: entryId } });
         if (!entry) return reply.status(404).send({ message: 'Lançamento não encontrado' });
@@ -243,7 +240,7 @@ export class FinanceEntryController {
 
         const mappedAttachments = await Promise.all(attachments.map(async att => {
             const command = new GetObjectCommand({
-                Bucket: process.env.R2_BUCKET_NAME!,
+                Bucket: process.env.R2_BUCKET_NAME,
                 Key: `workspaces/${entry.workspaceId}/finance/${att.fileUrl}`
             });
             const url = await getSignedUrl(r2, command, { expiresIn: 3600 });
@@ -255,7 +252,7 @@ export class FinanceEntryController {
 
     async uploadAttachment(request: FastifyRequest, reply: FastifyReply) {
         const { entryId } = z.object({ entryId: z.string().uuid() }).parse(request.params);
-        const userId = (request.user as any).id;
+        const userId = request.user.id;
 
         const entry = await prisma.financeEntry.findUnique({ where: { id: entryId } });
         if (!entry) return reply.status(404).send({ message: 'Lançamento não encontrado' });
@@ -276,7 +273,7 @@ export class FinanceEntryController {
         const fileKey = `workspaces/${entry.workspaceId}/finance/${uniqueName}`;
 
         await r2.send(new PutObjectCommand({
-            Bucket: process.env.R2_BUCKET_NAME!,
+            Bucket: process.env.R2_BUCKET_NAME,
             Key: fileKey,
             Body: buffer,
             ContentType: data.mimetype,
@@ -302,7 +299,7 @@ export class FinanceEntryController {
         }
 
         const command = new GetObjectCommand({
-            Bucket: process.env.R2_BUCKET_NAME!,
+            Bucket: process.env.R2_BUCKET_NAME,
             Key: fileKey
         });
         const url = await getSignedUrl(r2, command, { expiresIn: 3600 });
@@ -318,7 +315,7 @@ export class FinanceEntryController {
             entryId: z.string().uuid(),
             attachmentId: z.string().uuid()
         }).parse(request.params);
-        const userId = (request.user as any).id;
+        const userId = request.user.id;
 
         const attachment = await prisma.financeAttachment.findUnique({
             where: { id: attachmentId },
@@ -339,11 +336,11 @@ export class FinanceEntryController {
 
         try {
             await r2.send(new DeleteObjectCommand({
-                Bucket: process.env.R2_BUCKET_NAME!,
+                Bucket: process.env.R2_BUCKET_NAME,
                 Key: `workspaces/${attachment.entry.workspaceId}/finance/${attachment.fileUrl}`
             }));
-        } catch (e) {
-            console.error('Erro ao deletar arquivo no R2:', e);
+        } catch (_e) {
+            // ignore R2 delete errors
         }
 
         // Check if there are remaining attachments, update entry status if 0

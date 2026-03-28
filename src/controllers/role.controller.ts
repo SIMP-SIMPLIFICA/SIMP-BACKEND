@@ -4,10 +4,6 @@ import { authLogger } from '@/utils/logger.js'
 import { createRoleSchema, paginationSchema, updateRoleSchema } from '@/schemas/auth.schemas.js'
 import { z } from 'zod'
 
-const AVAILABLE_PERMISSIONS = {
-  users: { displayName: 'User Management', permissions: [{ key: 'users:read', description: 'View users', level: 'read' }] }
-}
-
 export class RoleController {
   async getRoles(request: FastifyRequest, reply: FastifyReply) {
     try {
@@ -262,7 +258,7 @@ export class RoleController {
     }
   }
 
-  async getAvailablePermissions(request: FastifyRequest, reply: FastifyReply) {
+  getAvailablePermissions(request: FastifyRequest, reply: FastifyReply) {
     // Implementação simplificada para economizar espaço, mantenha a lógica original se necessário
     return reply.send({ permissions: [], categories: [] })
   }

@@ -75,6 +75,18 @@ jobs:
         uses: github/codeql-action/analyze@v3
         with:
           category: backend
+          # upload:false — GitHub Advanced Security requer plano pago para repos privados
+          # SARIF salvo como artifact abaixo
+          upload: false
+          output: results/
+
+      - name: Upload SARIF as artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: codeql-results-backend
+          path: results/
+          retention-days: 30
 
   # ─────────────────────────────────────────────────────────────
   # 3. Secret Scan — garante que nenhum segredo foi comitado

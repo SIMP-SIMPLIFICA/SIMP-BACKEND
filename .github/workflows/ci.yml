@@ -150,6 +150,15 @@ jobs:
         uses: github/codeql-action/analyze@v3
         with:
           category: backend-security
+          upload: false
+
+      - name: Save SARIF as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: codeql-sarif
+          path: /home/runner/work/_temp/codeql_databases
+          retention-days: 30
+          if-no-files-found: ignore
 
   # ─────────────────────────────────────────────
   # AGENT 4: Deploy — staging (develop) / prod (main)

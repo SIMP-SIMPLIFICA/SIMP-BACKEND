@@ -1,0 +1,71 @@
+name: Meta-Agent (Agent Maintenance)
+
+on:
+  # Roda mensalmente para detectar drift dos agentes
+  schedule:
+    - cron: '0 9 1 * *' # Dia 1 de cada mês às 9h UTC
+  # Permite trigger manual quando quiser uma revisão
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Motivo da revisão manual dos agentes'
+        required: false
+        default: 'Revisão de manutenção'
+
+jobs:
+  review-agents:
+    name: Revisar e atualizar todos os agentes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Meta-Agent — Claude revisa os agentes
+        uses: anthropics/claude-code-action@beta
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          custom_instructions: |
+            Você é o Meta-Agent do projeto SIMP. Sua missão é revisar TODOS os agentes
+            (workflows do GitHub Actions) e identificar onde eles estão desatualizados
+            ou onde poderiam ser melhorados dado o estado atual do código.
+
+            **O que revisar:**
+
+            1. **Versões das Actions** — Verifique se há versões mais recentes disponíveis:
+               - actions/checkout, actions/setup-node, actions/upload-artifact
+               - github/codeql-action, trufflesecurity/trufflehog
+               - anthropics/claude-code-action
+               Compare com as versões em uso nos workflows em `.github/workflows/`.
+
+            2. **Node version** — O projeto usa Node 22. Todos os workflows usam `node-version: '22'`?
+
+            3. **Prompts dos agentes desatualizados** — Leia o código atual e compare com os
+               `custom_instructions` de cada Review/Security agent:
+               - Há novos padrões no código que os agentes não conhecem?
+               - Há regras nos prompts que não fazem mais sentido?
+               - Há arquivos críticos novos que deveriam ser mencionados?
+               Leia: `src/hooks/useAuth.ts`, `src/hooks/useMe.ts`,
+               `src/components/layout/AppLayout.tsx`, `src/components/layout/Sidebar.tsx`
+
+            4. **Coverage thresholds** — O projeto está crescendo. Os thresholds de cobertura
+               em `vitest.config.ts` ainda são adequados ou podem ser aumentados?
+
+            5. **Novos módulos sem cobertura de testes** — Liste arquivos em `src/` que
+               não têm nenhum arquivo `.test.ts` correspondente e são candidatos para testes.
+
+            6. **Dependências de segurança** — Há packages em `package.json` com
+               vulnerabilidades conhecidas que precisam de update?
+
+            **Como reportar:**
+            Abra um PR com as mudanças propostas nos workflows e um comentário detalhado
+            explicando cada mudança. Se não houver mudanças necessárias, crie apenas
+            um issue com o sumário da revisão.
+
+            Título do PR: "chore(agents): manutenção mensal dos agentes — [MÊS/ANO]"
+
+            Responda em português.

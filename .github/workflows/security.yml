@@ -1,0 +1,163 @@
+name: Security Agent
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  # Varredura semanal — pega vulnerabilidades descobertas após o merge
+  schedule:
+    - cron: '0 8 * * 1' # Toda segunda-feira às 8h UTC
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  # ─────────────────────────────────────────────────────────────
+  # 1. Dependency Audit — npm audit + vulnerabilidades conhecidas
+  # ─────────────────────────────────────────────────────────────
+  dependency-audit:
+    name: Dependency Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - run: npm ci
+
+      # Falha se houver vulnerabilidade HIGH ou CRITICAL nas deps
+      - name: npm audit (high+critical)
+        run: npm audit --audit-level=high
+
+      # Relatório completo como artefato
+      - name: npm audit full report
+        if: always()
+        run: npm audit --json > audit-report.json || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dependency-audit-report
+          path: audit-report.json
+          retention-days: 30
+
+  # ─────────────────────────────────────────────────────────────
+  # 2. CodeQL — análise estática de segurança do código
+  # ─────────────────────────────────────────────────────────────
+  codeql:
+    name: CodeQL Static Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: typescript
+          # security-extended inclui mais queries que o padrão
+          queries: security-extended
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - run: npm ci
+      - run: npx prisma generate
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: backend
+
+  # ─────────────────────────────────────────────────────────────
+  # 3. Secret Scan — garante que nenhum segredo foi comitado
+  # ─────────────────────────────────────────────────────────────
+  secret-scan:
+    name: Secret Leak Detection
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # histórico completo para varrer commits antigos
+
+      - name: TruffleHog — secret scanning
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --only-verified
+
+  # ─────────────────────────────────────────────────────────────
+  # 4. Claude Security Review — análise OWASP Top 10 + padrões do SIMP
+  # Roda em PRs para flagear problemas antes do merge
+  # ─────────────────────────────────────────────────────────────
+  claude-security-review:
+    name: Claude OWASP Security Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Claude Security Analysis
+        uses: anthropics/claude-code-action@beta
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          custom_instructions: |
+            Você é o Security Agent do SIMP — Sistema Integrado de Gestão Municipal.
+            Analise este PR com foco EXCLUSIVO em segurança. Não comente sobre estilo ou qualidade.
+
+            Stack: Fastify 5 + Prisma + PostgreSQL + Redis + JWT (Argon2) + TypeScript.
+
+            Verifique ativamente cada item abaixo. Relate apenas os que encontrar problemas.
+
+            **OWASP Top 10 aplicado ao SIMP:**
+
+            A01 - Broken Access Control:
+            - Rotas protegidas sem `authenticate` middleware?
+            - Usuário pode acessar dados de outro usuário? (falta de check userId)
+            - `workspaceId` validado contra membros antes de retornar dados?
+            - Roles verificadas para operações de admin?
+
+            A02 - Cryptographic Failures:
+            - Senhas logadas ou expostas em respostas de erro?
+            - JWTs sem expiração ou com segredos fracos?
+            - Dados sensíveis (email, CPF) em query params (ficam em logs)?
+
+            A03 - Injection:
+            - Queries Prisma com `$queryRaw` não sanitizadas?
+            - Parâmetros de usuário interpolados em strings SQL?
+            - NoSQL injection em filtros (ex: `where: body.filters` direto)?
+
+            A05 - Security Misconfiguration:
+            - CORS aberto para `*` em produção?
+            - Stack traces expostos em respostas de erro de produção?
+            - Variáveis de ambiente com valores padrão inseguros?
+
+            A07 - Authentication Failures:
+            - Rate limiting ausente em `/login`, `/register`, `/forgot-password`?
+            - Tokens de reset de senha sem expiração?
+            - Refresh tokens não invalidados no logout?
+
+            A09 - Security Logging Failures:
+            - Operações sensíveis sem audit log?
+            - Erros de auth sem logging adequado?
+
+            **Padrões específicos do SIMP:**
+            - Middleware `authenticate` em todas as rotas que retornam dados de usuário
+            - `userId` do JWT, não do body (nunca confiar no cliente para isso)
+            - Prisma `select` explícito — nunca retornar campos de senha/token
+
+            Se não encontrar problemas de segurança, responda: "✅ Nenhum problema de segurança identificado neste PR."
+            Responda em português. Seja preciso: arquivo + linha + risco + fix sugerido.

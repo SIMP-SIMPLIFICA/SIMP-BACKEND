@@ -129,7 +129,7 @@ export class FinanceEntryController {
             })
         ]);
 
-        const mappedEntries = entries.map(entry => ({
+        const mappedEntries = (entries as Array<typeof entries[0] & { category?: { name: string } | null }>).map(entry => ({
             ...entry,
             categoryName: entry.category?.name || 'Sem Categoria'
         }));

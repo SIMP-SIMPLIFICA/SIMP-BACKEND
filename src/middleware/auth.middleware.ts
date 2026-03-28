@@ -22,7 +22,7 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
     // Correção do user.id para garantir compatibilidade
     // O token JWT geralmente traz o ID no campo 'sub'.
     // Aqui garantimos que request.user.id exista para os controllers usarem.
-    const user = request.user
+    const user = request.user as { id?: string; sub?: string; [key: string]: unknown }
     if (user?.sub && !user.id) {
       user.id = user.sub
     }

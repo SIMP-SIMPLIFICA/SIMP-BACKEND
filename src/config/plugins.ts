@@ -13,6 +13,7 @@ import fastifyStatic from '@fastify/static'
 import { join } from 'node:path'
 
 import { config } from './config.js'
+import { Sentry } from './sentry.js'
 import { AppServer } from '@/types/server.js'
 import { db } from '@/utils/database.js'
 
@@ -99,8 +100,13 @@ export async function registerPlugins(server: AppServer) {
   }
 
   if (config.logging.enableRequestLogging) {
+    // eslint-disable-next-line @typescript-eslint/require-await
     server.addHook('onRequest', async (request) => {
       request.log.info({ method: request.method, url: request.url }, 'Incoming request')
     })
+  }
+
+  if (config.observability.sentryDsn) {
+    Sentry.setupFastifyErrorHandler(server)
   }
 }

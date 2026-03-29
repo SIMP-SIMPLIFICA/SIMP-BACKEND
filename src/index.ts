@@ -1,3 +1,6 @@
+import { initSentry } from '@/config/sentry.js'
+initSentry()
+
 import Fastify from 'fastify'
 import { config } from '@/config/config.js'
 import { logger } from '@/utils/logger.js'

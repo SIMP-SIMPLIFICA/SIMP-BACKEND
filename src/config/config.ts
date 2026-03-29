@@ -58,7 +58,11 @@ const configSchema = z.object({
 
   // Logging
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
-  ENABLE_REQUEST_LOGGING: z.coerce.boolean().default(true)
+  ENABLE_REQUEST_LOGGING: z.coerce.boolean().default(true),
+
+  // Observability (optional — features activate only when set)
+  SENTRY_DSN: z.string().url().optional(),
+  BETTERSTACK_SOURCE_TOKEN: z.string().optional()
 })
 
 const parsedEnv = configSchema.safeParse(process.env)
@@ -150,6 +154,12 @@ export const config = {
   logging: {
     level: env.LOG_LEVEL,
     enableRequestLogging: env.ENABLE_REQUEST_LOGGING
+  },
+
+  // Observability
+  observability: {
+    sentryDsn: env.SENTRY_DSN,
+    betterstackToken: env.BETTERSTACK_SOURCE_TOKEN
   }
 } as const
 

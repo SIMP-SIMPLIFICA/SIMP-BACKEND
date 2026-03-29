@@ -108,6 +108,46 @@ export async function registerRoutes(server: AppServer) {
     })
   })
 
+  // --- SENTRY TUNNEL ---
+  // Recebe envelopes do frontend e repassa para o Sentry.
+  // Necessário para contornar ad blockers que bloqueiam *.sentry.io diretamente.
+  server.addContentTypeParser('application/x-sentry-envelope', { parseAs: 'string' }, (_req, body, done) => {
+    done(null, body)
+  })
+
+  server.post('/api/sentry-tunnel', async (request, reply) => {
+    try {
+      const envelope = request.body as string
+      const firstLine = envelope.split('\n')[0]
+      const header = JSON.parse(firstLine) as { dsn?: string }
+
+      if (!header.dsn) {
+        return reply.code(400).send({ error: 'Missing DSN' })
+      }
+
+      const dsn = new URL(header.dsn)
+      const projectId = dsn.pathname.replace('/', '')
+
+      // Só aceita o host legítimo do Sentry — evita abuso do tunnel como proxy genérico
+      if (!dsn.hostname.endsWith('.sentry.io')) {
+        return reply.code(400).send({ error: 'Invalid DSN host' })
+      }
+
+      const sentryUrl = `https://${dsn.hostname}/api/${projectId}/envelope/`
+
+      const response = await fetch(sentryUrl, {
+        method: 'POST',
+        body: envelope,
+        headers: { 'Content-Type': 'application/x-sentry-envelope' }
+      })
+
+      return reply.code(response.status).send()
+    } catch (err) {
+      request.log.error(err, 'Sentry tunnel error')
+      return reply.code(500).send({ error: 'Tunnel error' })
+    }
+  })
+
   // --- HEALTH CHECK ---
   server.get('/health', async () => {
     const dbHealth = await db.isHealthy()

@@ -1,24 +1,24 @@
 import { FastifyInstance } from 'fastify'
 import { WorkspaceController } from '../controllers/workspace.controller.js'
-import { TaskController } from '../controllers/task.controller.js' // Importar TaskController
-import { authMiddleware } from '../middleware/auth.middleware.js'
+import { TaskController } from '../controllers/task.controller.js'
+import { authMiddleware, requirePermission } from '../middleware/auth.middleware.js'
 
 const workspaceController = new WorkspaceController()
-const taskController = new TaskController() // Instanciar
+const taskController = new TaskController()
 
 export function workspaceRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authMiddleware)
 
   // --- Rotas de Workspace ---
-  app.post('/', workspaceController.create)
-  app.get('/', workspaceController.list)
-  app.get('/:id', workspaceController.getById)
-  app.delete('/:id', workspaceController.delete)
+  app.post('/', { preHandler: requirePermission(['workspaces:write', 'system:admin']) }, workspaceController.create)
+  app.get('/', workspaceController.list) // Lista workspaces que o usuário pertence (filtrado no controller)
+  app.get('/:id', { preHandler: requirePermission(['workspaces:read']) }, workspaceController.getById)
+  app.delete('/:id', { preHandler: requirePermission(['workspaces:manage', 'system:admin']) }, workspaceController.delete)
 
   // --- Membros ---
-  app.post('/:id/members', workspaceController.addMember)
-  app.delete('/:id/members/:userId', workspaceController.removeMember)
-  
+  app.post('/:id/members', { preHandler: requirePermission(['workspaces:manage']) }, workspaceController.addMember)
+  app.delete('/:id/members/:userId', { preHandler: requirePermission(['workspaces:manage']) }, workspaceController.removeMember)
+
   // Lista de usuários atribuíveis (Correção anterior)
   app.get('/:workspaceId/assignable-users', workspaceController.listAssignableUsers)
 

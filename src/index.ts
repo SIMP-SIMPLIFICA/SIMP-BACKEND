@@ -11,8 +11,12 @@ import * as crypto from 'node:crypto'
 import { registerRoutes } from './config/routes.js'
 import { registerPlugins } from './config/plugins.js'
 
+// Import da rota de upload
+import { uploadRoutes } from './routes/upload.routes.js'
+
 const server: AppServer = Fastify({
-  loggerInstance: logger,
+  logger: logger,
+  pluginTimeout: 40000,
   trustProxy: true,
   bodyLimit: config.server.maxBodySize,
   keepAliveTimeout: 30000,
@@ -26,6 +30,7 @@ async function start() {
     logger.info('🚀 Starting server...')
 
     logger.info('📦 Registering plugins...')
+    // O registerPlugins já carrega o multipart e o static (com base no erro que vimos)
     await registerPlugins(server)
     logger.info('✅ Plugins registered successfully')
 
@@ -35,6 +40,11 @@ async function start() {
 
     logger.info('🛣️ Registering routes...')
     await registerRoutes(server)
+
+    // Registramos APENAS a rota de upload aqui
+    // (O prefixo /api/v1 garante que fique padronizado com o resto)
+    await server.register(uploadRoutes, { prefix: '/api/v1' })
+
     logger.info('✅ Routes registered successfully')
 
     await server.listen({

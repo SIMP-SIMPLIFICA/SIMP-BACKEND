@@ -8,8 +8,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// --- MODELOS DE AUTENTICAÇÃO E SISTEMA (EXISTENTES) ---
-
 model User {
   id                   String    @id @default(nanoid())
   email                String    @unique
@@ -18,6 +16,7 @@ model User {
   lastName             String?
   avatar               String?
   password             String
+  jobTitle             String?   @map("job_title")
   isActive             Boolean   @default(false)
   isVerified           Boolean   @default(false)
   verifyToken          String?
@@ -32,12 +31,10 @@ model User {
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
-  // Relações existentes
   auditLogs AuditLog[]
   roles     UserRole[]
   sessions  UserSession[]
 
-  // --- NOVAS RELAÇÕES (WORKSPACES & TASKS) ---
   workspaceMemberships WorkspaceMember[]
   createdTasks         Task[]            @relation("TaskCreator")
   assignedTasks        TaskAssignee[]
@@ -45,10 +42,23 @@ model User {
   taskHistory          TaskHistory[]
   notifications        Notification[]
 
+  createdDocuments   CommunicationDocument[] @relation("DocumentCreator")
+  documentRecipients DocumentRecipient[]
+  documentSignatures DocumentSignature[]
+
+  calendarEvents     CalendarEvent[]
+  notes              Note[]
+
+  department   Department? @relation(fields: [departmentId], references: [id])
+  departmentId String?
+
   // --- RELAÇÕES FINANCEIRAS ---
   createdFinanceEntries FinanceEntry[]      @relation("FinanceEntryCreator")
   updatedFinanceEntries FinanceEntry[]      @relation("FinanceEntryUpdater")
   financeAttachments    FinanceAttachment[]
+
+  createdProcesses         VirtualProcess[]         @relation("ProcessCreator")
+  uploadedProcessDocuments VirtualProcessDocument[] @relation("ProcessDocumentUploader")
 
   @@map("users")
 }
@@ -164,7 +174,19 @@ model Setting {
   @@map("settings")
 }
 
-// --- NOVOS MODELOS DE GESTÃO (WORKSPACES E TASKS) ---
+model Department {
+  id          String   @id @default(nanoid())
+  name        String
+  code        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users     User[]
+  documents CommunicationDocument[]
+
+  @@map("departments")
+}
 
 enum TaskStatus {
   TODO
@@ -192,11 +214,10 @@ model Workspace {
   id          String   @id @default(uuid())
   name        String
   description String?
-  slug        String   @unique // Para URLs amigáveis
+  slug        String   @unique
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  // Relações
   members           WorkspaceMember[]
   tasks             Task[]
   financeCategories FinanceCategory[]
@@ -219,7 +240,7 @@ model WorkspaceMember {
 
 model Task {
   id          String       @id @default(uuid())
-  code        Int          @default(autoincrement()) // Ex: T-1, T-2 (Visual)
+  code        Int          @default(autoincrement())
   title       String
   description String?
   status      TaskStatus   @default(TODO)
@@ -227,7 +248,7 @@ model Task {
   dueDate     DateTime?
 
   workspaceId String
-  creatorId   String // ID do usuário que criou
+  creatorId   String
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -288,8 +309,8 @@ model TaskNote {
 
 model TaskHistory {
   id        String   @id @default(uuid())
-  action    String // Ex: "Mudou status para FEITO"
-  metadata  Json? // Dados antigos/novos
+  action    String
+  metadata  Json?
   createdAt DateTime @default(now())
   taskId    String
   userId    String
@@ -302,16 +323,142 @@ model Notification {
   id        String   @id @default(uuid())
   title     String
   message   String
-  userId    String // Destinatário
+  userId    String
   read      Boolean  @default(false)
-  type      String // Ex: TASK_ASSIGNED, MENTION
-  link      String? // Link para o recurso
+  type      String
+  link      String?
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-// --- MODELOS FINANCEIROS (MVP) ---
+enum DocumentStatus {
+  DRAFT
+  SENT
+  READ
+  SIGNED
+  ARCHIVED
+}
+
+enum DocumentRole {
+  TO
+  CC
+  BCC
+}
+
+enum SignatureType {
+  DIGITAL
+  MANUAL
+  BIOMETRIC
+}
+
+model CommunicationDocument {
+  id             String         @id @default(nanoid())
+  protocolNumber String?        @unique @map("protocol_number")
+  documentNumber String?        @map("document_number")
+  title          String         @db.VarChar(500)
+  content        String         @db.Text
+  documentType   String         @map("document_type")
+  status         DocumentStatus @default(DRAFT)
+  priority       TaskPriority   @default(MEDIUM)
+
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  sentAt      DateTime? @map("sent_at")
+  deliveredAt DateTime? @map("delivered_at")
+  readAt      DateTime? @map("read_at")
+  signedAt    DateTime? @map("signed_at")
+
+  originalHash String? @map("original_hash") @db.VarChar(128)
+  currentHash  String? @map("current_hash") @db.VarChar(128)
+  qrCodeHash   String? @map("qr_code_hash") @db.VarChar(128)
+
+  createdBy String @map("created_by")
+  creator   User   @relation("DocumentCreator", fields: [createdBy], references: [id])
+
+  departmentId String?     @map("department_id")
+  department   Department? @relation(fields: [departmentId], references: [id])
+
+  recipients  DocumentRecipient[]
+  signatures  DocumentSignature[]
+  attachments CommunicationAttachment[]
+  metadata    Json?
+
+  protocol   Protocol? @relation(fields: [protocolId], references: [id])
+  protocolId String?   @unique @map("protocol_id")
+
+  pageCount Int? @default(1) @map("page_count")
+
+  @@map("communication_documents")
+}
+
+model DocumentRecipient {
+  id         String       @id @default(nanoid())
+  documentId String       @map("document_id")
+  userId     String       @map("user_id")
+  role       DocumentRole @default(TO)
+
+  canView Boolean @default(true) @map("can_view")
+  canSign Boolean @default(false) @map("can_sign")
+
+  readAt   DateTime? @map("read_at")
+  signedAt DateTime? @map("signed_at")
+
+  readIp        String? @map("read_ip") @db.VarChar(45)
+  readLocation  String? @map("read_location") @db.VarChar(200)
+  readUserAgent String? @map("read_user_agent")
+  readDeviceId  String? @map("read_device_id") @db.VarChar(100)
+
+  document CommunicationDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user     User                  @relation(fields: [userId], references: [id])
+
+  @@map("document_recipients")
+}
+
+model DocumentSignature {
+  id              String        @id @default(nanoid())
+  documentId      String        @map("document_id")
+  userId          String        @map("user_id")
+  signatureType   SignatureType @map("signature_type")
+  certificateData Json?         @map("certificate_data")
+
+  signedAt      DateTime  @default(now()) @map("signed_at")
+  ipAddress     String?   @map("ip_address") @db.VarChar(45)
+  validityUntil DateTime? @map("validity_until")
+  isValid       Boolean   @default(true) @map("is_valid")
+  sealData      Json?     @map("seal_data")
+
+  document CommunicationDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user     User                  @relation(fields: [userId], references: [id])
+
+  @@map("document_signatures")
+}
+
+model CommunicationAttachment {
+  id         String @id @default(nanoid())
+  documentId String @map("document_id")
+  fileName   String @map("file_name")
+  fileUrl    String @map("file_url")
+  fileType   String @map("file_type")
+  fileSize   Int    @map("file_size")
+
+  uploadedAt DateTime @default(now()) @map("uploaded_at")
+
+  document CommunicationDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@map("communication_attachments")
+}
+
+model Protocol {
+  id             String   @id @default(nanoid())
+  protocolNumber String   @unique @map("protocol_number")
+  year           Int
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  document CommunicationDocument?
+
+  @@map("protocols")
+}
 
 enum FinanceEntryType {
   EXPENSE
@@ -400,4 +547,99 @@ model FinanceAttachment {
 
   @@index([entryId])
   @@map("finance_attachments")
+}
+
+model VirtualProcess {
+  id            String    @id @default(uuid())
+  processNumber String    @unique @map("process_number")
+  secretaria    String
+  source        String
+  sourceDetail  String?   @map("source_detail")
+  bankAccount   String?   @map("bank_account")
+  agency        String?
+  bankName      String?   @map("bank_name")
+  companyCnpj   String?   @map("company_cnpj")
+  companyName   String?   @map("company_name")
+  startDate     DateTime? @map("start_date")
+  endDate       DateTime? @map("end_date")
+  subject       String    @db.Text
+  status        String    @default("Tramitando")
+  category      String    @default("Outros")
+
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdById String   @map("created_by_id")
+
+  creator   User                     @relation("ProcessCreator", fields: [createdById], references: [id])
+  documents VirtualProcessDocument[]
+
+  @@map("virtual_processes")
+}
+
+model VirtualProcessDocument {
+  id               String   @id @default(uuid())
+  virtualProcessId String   @map("virtual_process_id")
+  tag              String
+  description      String?
+  fileName         String   @map("file_name")
+  fileUrl          String   @map("file_url")
+  fileSize         Int      @map("file_size")
+  uploadedById     String   @map("uploaded_by_id")
+  uploadedAt       DateTime @default(now()) @map("uploaded_at")
+
+  process  VirtualProcess @relation(fields: [virtualProcessId], references: [id], onDelete: Cascade)
+  uploader User           @relation("ProcessDocumentUploader", fields: [uploadedById], references: [id])
+
+  @@map("virtual_process_documents")
+}
+
+model CalendarEvent {
+  id          String    @id @default(nanoid())
+  title       String
+  description String?   @db.Text
+  startAt     DateTime  @map("start_at")
+  endAt       DateTime? @map("end_at")
+  allDay      Boolean   @default(false) @map("all_day")
+  color       String    @default("#3B82F6")
+  location    String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  attachments CalendarAttachment[]
+
+  @@index([userId, startAt])
+  @@map("calendar_events")
+}
+
+model CalendarAttachment {
+  id         String @id @default(nanoid())
+  eventId    String @map("event_id")
+  fileName   String @map("file_name")
+  fileUrl    String @map("file_url")
+  fileType   String @map("file_type")
+  fileSize   Int    @map("file_size")
+
+  uploadedAt DateTime @default(now()) @map("uploaded_at")
+
+  event CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@map("calendar_attachments")
+}
+
+model Note {
+  id        String   @id @default(nanoid())
+  title     String?  @db.VarChar(255)
+  content   String   @db.Text
+  color     String   @default("#fef08a")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("notes")
 }

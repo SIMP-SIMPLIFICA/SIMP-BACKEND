@@ -108,14 +108,37 @@ export class AuthController {
   }
 
   // ... (outros métodos: updateProfile, changePassword, etc. mantidos) ...
-  async updateProfile(_request: FastifyRequest, _reply: FastifyReply) { /* ... */ }
-  async changePassword(_request: FastifyRequest, _reply: FastifyReply) { /* ... */ }
-  async forgotPassword(_request: FastifyRequest, _reply: FastifyReply) { /* ... */ }
-  async resetPassword(_request: FastifyRequest, _reply: FastifyReply) { /* ... */ }
-  async verifyEmail(_request: FastifyRequest, _reply: FastifyReply) { /* ... */ }
-  async getSessions(_request: FastifyRequest, _reply: FastifyReply) { /* ... */ }
-  async terminateSession(_request: FastifyRequest, _reply: FastifyReply) { /* ... */ }
-  async terminateAllSessions(_request: FastifyRequest, _reply: FastifyReply) { /* ... */ }
+  async updateProfile(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const userId = (request as any).user.id
+      const data = updateProfileSchema.parse(request.body)
+
+      const updatedUser = await authService.updateProfile(userId, data, request.ip)
+
+      return reply.send({
+        message: 'Profile updated successfully',
+        user: {
+          ...updatedUser,
+          password: undefined,
+          twoFactorSecret: undefined,
+          verifyToken: undefined,
+          passwordResetToken: undefined
+        }
+      })
+    } catch (error: any) {
+      return reply.code(400).send({
+        error: 'Profile Update Failed',
+        message: error.message
+      })
+    }
+  }
+  async changePassword(request: FastifyRequest, reply: FastifyReply) { /* ... */ }
+  async forgotPassword(request: FastifyRequest, reply: FastifyReply) { /* ... */ }
+  async resetPassword(request: FastifyRequest, reply: FastifyReply) { /* ... */ }
+  async verifyEmail(request: FastifyRequest, reply: FastifyReply) { /* ... */ }
+  async getSessions(request: FastifyRequest, reply: FastifyReply) { /* ... */ }
+  async terminateSession(request: FastifyRequest, reply: FastifyReply) { /* ... */ }
+  async terminateAllSessions(request: FastifyRequest, reply: FastifyReply) { /* ... */ }
 }
 
 export const authController = new AuthController()

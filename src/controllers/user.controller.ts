@@ -3,6 +3,10 @@ import { authService } from '@/services/auth.service.js'
 import { db, prisma } from '@/utils/database.js'
 import { authLogger } from '@/utils/logger.js'
 import { assignRoleSchema, createUserSchema, updateUserSchema, userQuerySchema } from '@/schemas/auth.schemas.js'
+import { certificateService } from '@/services/certificate.service.js'
+import fs from 'node:fs'
+import path from 'node:path'
+import crypto from 'node:crypto'
 
 export class UserController {
   async getUsers(request: FastifyRequest, reply: FastifyReply) {
@@ -44,7 +48,7 @@ export class UserController {
       const paginatedResult = db.paginate(users, query.page, query.limit, total)
 
       await db.createAuditLog({
-        userId: (request as any).user?.id, 
+        userId: (request as any).user?.id,
         action: 'users_listed',
         resource: 'user',
         ipAddress: request.ip,
@@ -61,7 +65,20 @@ export class UserController {
 
   async getUserById(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { id } = request.params as { id: string }
+      let { id } = request.params as { id: string }
+
+      // --- INÍCIO DA CORREÇÃO ---
+      // Se o ID passado na URL for 'me', buscamos o ID real no token decodificado
+      if (id === 'me') {
+        const authUser = (request as any).user
+        id = authUser?.id || authUser?.sub
+
+        if (!id) {
+          return reply.code(401).send({ error: 'Unauthorized', message: 'User ID not found in token' })
+        }
+      }
+      // --- FIM DA CORREÇÃO ---
+
       const user = await prisma.user.findUnique({
         where: { id },
         select: {
@@ -75,7 +92,7 @@ export class UserController {
       if (!user) return reply.code(404).send({ error: 'User Not Found', message: 'User with specified ID not found' })
 
       await db.createAuditLog({
-        userId: (request as any).user?.id, 
+        userId: (request as any).user?.id,
         action: 'user_viewed',
         resource: 'user',
         resourceId: id,
@@ -119,7 +136,7 @@ export class UserController {
       }
 
       await db.createAuditLog({
-        userId: (request as any).user?.id, 
+        userId: (request as any).user?.id,
         action: 'user_created',
         resource: 'user',
         resourceId: user.id,
@@ -166,7 +183,7 @@ export class UserController {
       })
 
       await db.createAuditLog({
-        userId: (request as any).user?.id, 
+        userId: (request as any).user?.id,
         action: 'user_updated',
         resource: 'user',
         resourceId: id,
@@ -189,14 +206,14 @@ export class UserController {
       const user = await prisma.user.findUnique({ where: { id }, select: { id: true, email: true } })
       if (!user) return reply.code(404).send({ error: 'User Not Found', message: 'User with specified ID not found' })
 
-      if (user.id === (request as any).user?.id) { 
+      if (user.id === (request as any).user?.id) {
         return reply.code(400).send({ error: 'Self Deletion', message: 'Cannot delete your own account' })
       }
 
       await prisma.user.delete({ where: { id } })
 
       await db.createAuditLog({
-        userId: (request as any).user?.id, 
+        userId: (request as any).user?.id,
         action: 'user_deleted',
         resource: 'user',
         resourceId: id,
@@ -228,13 +245,13 @@ export class UserController {
       await prisma.userRole.deleteMany({ where: { userId: id, roleId: { in: data.roleIds } } })
 
       const roleAssignments = data.roleIds.map(roleId => ({
-        userId: id, roleId, assignedBy: (request as any).user?.id, expiresAt: data.expiresAt 
+        userId: id, roleId, assignedBy: (request as any).user?.id, expiresAt: data.expiresAt
       }))
 
       await prisma.userRole.createMany({ data: roleAssignments })
 
       await db.createAuditLog({
-        userId: (request as any).user?.id, 
+        userId: (request as any).user?.id,
         action: 'roles_assigned',
         resource: 'user',
         resourceId: id,
@@ -265,7 +282,7 @@ export class UserController {
       const result = await prisma.userRole.deleteMany({ where: { userId: id, roleId: { in: roleIds } } })
 
       await db.createAuditLog({
-        userId: (request as any).user?.id, 
+        userId: (request as any).user?.id,
         action: 'roles_removed',
         resource: 'user',
         resourceId: id,
@@ -302,7 +319,7 @@ export class UserController {
       const result = await prisma.userSession.updateMany({ where: { userId: id, isActive: true }, data: { isActive: false } })
 
       await db.createAuditLog({
-        userId: (request as any).user?.id, 
+        userId: (request as any).user?.id,
         action: 'user_sessions_terminated',
         resource: 'user',
         resourceId: id,
@@ -323,7 +340,7 @@ export class UserController {
       const { id } = request.params as { id: string }
       const { isActive, reason } = request.body as { isActive: boolean; reason?: string }
 
-      if (!isActive && id === (request as any).user?.id) { // CORREÇÃO
+      if (!isActive && id === (request as any).user?.id) {
         return reply.code(400).send({ error: 'Self Deactivation', message: 'Cannot deactivate your own account' })
       }
 
@@ -334,7 +351,7 @@ export class UserController {
       }
 
       await db.createAuditLog({
-        userId: (request as any).user?.id, 
+        userId: (request as any).user?.id,
         action: isActive ? 'user_activated' : 'user_deactivated',
         resource: 'user',
         resourceId: id,
@@ -359,7 +376,7 @@ export class UserController {
       await authService.forgotPassword(user.email, request.ip)
 
       await db.createAuditLog({
-        userId: (request as any).user?.id, 
+        userId: (request as any).user?.id,
         action: 'password_reset_forced',
         resource: 'user',
         resourceId: id,
@@ -371,6 +388,190 @@ export class UserController {
     } catch (error: any) {
       authLogger.error(error, 'Failed to force password reset')
       return reply.code(500).send({ error: 'Password Reset Failed', message: error.message })
+    }
+  }
+
+  async generateCertificate(request: FastifyRequest, reply: FastifyReply) {
+    const user = request.user as any
+    const userId = user.id || user.sub
+
+    try {
+      const fullUser = await prisma.user.findUnique({
+        where: { id: userId },
+        include: { department: true }
+      })
+
+      if (!fullUser) {
+        return reply.code(404).send({ message: 'User Not Found' })
+      }
+
+      const pfxBuffer = await certificateService.generateForUser({
+        username: fullUser.username || 'usuario',
+        fullName: `${fullUser.firstName || ''} ${fullUser.lastName || ''}`.trim(),
+        email: fullUser.email,
+        department: fullUser.department?.name || 'Geral'
+      })
+
+      await certificateService.saveUserCertificate(userId, pfxBuffer)
+
+      const currentMeta = (fullUser.metadata as object) || {}
+      await prisma.user.update({
+        where: { id: userId },
+        data: {
+          metadata: {
+            ...currentMeta,
+            has_digital_certificate: true,
+            certificate_generated_at: new Date()
+          }
+        }
+      })
+
+      await db.createAuditLog({
+        userId: userId,
+        action: 'certificate_generated',
+        resource: 'user',
+        resourceId: userId,
+        ipAddress: request.ip,
+        success: true
+      })
+
+      return reply.send({
+        message: 'Certificado digital gerado com sucesso! Agora você pode assinar documentos.',
+        hasCertificate: true
+      })
+
+    } catch (error: any) {
+      authLogger.error(error, 'Failed to generate certificate')
+      return reply.code(500).send({ error: 'Certificate Generation Failed', message: error.message })
+    }
+  }
+
+  async uploadLogo(request: FastifyRequest, reply: FastifyReply) {
+    const user = request.user as any
+    const userId = user.id || user.sub
+
+    try {
+      const data = await request.file()
+
+      if (!data) {
+        return reply.code(400).send({ message: 'Nenhum arquivo enviado' })
+      }
+
+      // Valida tipo de arquivo
+      const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+      if (!allowedMimeTypes.includes(data.mimetype)) {
+        return reply.code(400).send({ message: 'Tipo de arquivo inválido. Envie uma imagem (JPEG, PNG, WebP ou GIF).' })
+      }
+
+      // Lê o conteúdo completo para verificar tamanho (max 5MB)
+      const chunks: Buffer[] = []
+      for await (const chunk of data.file) {
+        chunks.push(chunk)
+      }
+      const fileBuffer = Buffer.concat(chunks)
+
+      if (fileBuffer.length > 5 * 1024 * 1024) {
+        return reply.code(400).send({ message: 'Arquivo muito grande. O limite é 5MB.' })
+      }
+
+      // Cria diretório de logos se não existir
+      const logoDir = path.join(process.cwd(), 'uploads', 'logos')
+      if (!fs.existsSync(logoDir)) {
+        fs.mkdirSync(logoDir, { recursive: true })
+      }
+
+      // Remove logo antiga se existir
+      const existingUser = await prisma.user.findUnique({ where: { id: userId } })
+      const existingMeta = (existingUser?.metadata as any) || {}
+      if (existingMeta?.logoUrl) {
+        const oldRelative = existingMeta.logoUrl.startsWith('/') ? existingMeta.logoUrl.slice(1) : existingMeta.logoUrl
+        const oldAbsolute = path.resolve(process.cwd(), oldRelative)
+        if (fs.existsSync(oldAbsolute)) {
+          try { fs.unlinkSync(oldAbsolute) } catch (_e) { /* ignora */ }
+        }
+      }
+
+      // Gera nome único para o arquivo
+      const originalExt = path.extname(data.filename)
+      const ext = originalExt || `.${data.mimetype.split('/')[1]}`
+      const fileHash = crypto.randomBytes(16).toString('hex')
+      const fileName = `${userId}_${fileHash}${ext}`
+      const savePath = path.join(logoDir, fileName)
+
+      // Salva o arquivo em disco
+      fs.writeFileSync(savePath, fileBuffer)
+
+      const logoUrl = `/uploads/logos/${fileName}`
+
+      // Atualiza metadata do usuário com a URL da nova logo
+      await prisma.user.update({
+        where: { id: userId },
+        data: {
+          metadata: {
+            ...existingMeta,
+            logoUrl
+          }
+        }
+      })
+
+      await db.createAuditLog({
+        userId,
+        action: 'logo_uploaded',
+        resource: 'user',
+        resourceId: userId,
+        ipAddress: request.ip,
+        success: true,
+        newData: { logoUrl }
+      })
+
+      return reply.send({ message: 'Logo carregada com sucesso', logoUrl })
+    } catch (error: any) {
+      authLogger.error(error, 'Failed to upload logo')
+      return reply.code(500).send({ error: 'Logo Upload Failed', message: error.message })
+    }
+  }
+
+  async removeLogo(request: FastifyRequest, reply: FastifyReply) {
+    const user = request.user as any
+    const userId = user.id || user.sub
+
+    try {
+      const existingUser = await prisma.user.findUnique({ where: { id: userId } })
+      if (!existingUser) {
+        return reply.code(404).send({ message: 'Usuário não encontrado' })
+      }
+
+      const existingMeta = (existingUser.metadata as any) || {}
+
+      // Remove arquivo físico se existir
+      if (existingMeta?.logoUrl) {
+        const oldRelative = existingMeta.logoUrl.startsWith('/') ? existingMeta.logoUrl.slice(1) : existingMeta.logoUrl
+        const oldAbsolute = path.resolve(process.cwd(), oldRelative)
+        if (fs.existsSync(oldAbsolute)) {
+          try { fs.unlinkSync(oldAbsolute) } catch (_e) { /* ignora */ }
+        }
+      }
+
+      // Remove logoUrl da metadata
+      const { logoUrl: _removed, ...restMeta } = existingMeta
+      await prisma.user.update({
+        where: { id: userId },
+        data: { metadata: restMeta }
+      })
+
+      await db.createAuditLog({
+        userId,
+        action: 'logo_removed',
+        resource: 'user',
+        resourceId: userId,
+        ipAddress: request.ip,
+        success: true
+      })
+
+      return reply.send({ message: 'Logo removida com sucesso' })
+    } catch (error: any) {
+      authLogger.error(error, 'Failed to remove logo')
+      return reply.code(500).send({ error: 'Logo Removal Failed', message: error.message })
     }
   }
 }

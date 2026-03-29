@@ -5,7 +5,7 @@ export const createCategorySchema = z.object({
   workspaceId: z.string().uuid(),
   name: z.string().min(1, 'Name is required').max(100),
   description: z.string().max(500).optional(),
-});
+}).strip()
 
 export type CreateCategoryInput = z.infer<typeof createCategorySchema>;
 
@@ -24,7 +24,7 @@ export const createEntrySchema = z.object({
   liquidacaoNumber: z.string().max(50).optional().nullable(),
   deliveryDate: z.string().datetime().optional().nullable(),
   attachmentsStatus: z.enum(['none', 'pending', 'ok']).default('none'),
-});
+}).strip()
 
 export type CreateEntryInput = z.infer<typeof createEntrySchema>;
 

@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'vitest'
-import { db } from '../utils/database'
+import { expect, test, describe } from 'vitest'
+import { db } from '../utils/database.js'
 
 describe('Database Auth Helpers', () => {
   test('deve retornar falso para uma sessão inexistente', async () => {

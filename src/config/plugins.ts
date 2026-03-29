@@ -11,6 +11,7 @@ import multipart from '@fastify/multipart'
 import jwt from '@fastify/jwt'
 import fastifyStatic from '@fastify/static'
 import { join } from 'node:path'
+import { jsonSchemaTransform, validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod'
 
 import { config } from './config.js'
 import { Sentry } from './sentry.js'
@@ -18,25 +19,76 @@ import { AppServer } from '@/types/server.js'
 import { db } from '@/utils/database.js'
 
 export async function registerPlugins(server: AppServer) {
-  await server.register(helmet, { contentSecurityPolicy: false })
+  // Set global validator and serializer compilers for Zod
+  server.setValidatorCompiler(validatorCompiler)
+  server.setSerializerCompiler(serializerCompiler)
+
+  await server.register(helmet, {
+    contentSecurityPolicy: config.isProduction,
+    crossOriginEmbedderPolicy: config.isProduction,
+    crossOriginOpenerPolicy: config.isProduction,
+    crossOriginResourcePolicy: config.isProduction,
+    dnsPrefetchControl: true,
+    frameguard: { action: 'deny' },
+    hsts: config.isProduction,
+    ieNoOpen: true,
+    noSniff: true,
+    originAgentCluster: true,
+    permittedCrossDomainPolicies: { permittedPolicies: 'none' },
+    referrerPolicy: { policy: 'no-referrer' },
+    xssFilter: true
+  })
 
   await server.register(cors, {
-    origin: config.server.corsOrigins,
+    origin: (origin, cb) => {
+      // In development, allow no origin (like Postman) or local origins
+      if (!config.isProduction) {
+        cb(null, true)
+        return
+      }
+
+      // In production, strictly check against allowed origins
+      if (!origin || config.server.corsOrigins.includes(origin)) {
+        cb(null, true)
+        return
+      }
+
+      cb(new Error('Not allowed by CORS'), false)
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-request-id'],
+    exposedHeaders: ['set-cookie']
   })
 
-  await server.register(rateLimit, {
-    max: config.rateLimit.max,
-    timeWindow: config.rateLimit.timeWindow,
-    keyGenerator: request => `rate_limit:${request.ip}`,
-    errorResponseBuilder: (request, context) => ({
-      error: 'Too Many Requests',
-      message: `Tente novamente em ${Math.round(context.ttl / 1000)} segundos`,
-      statusCode: 429
+  if (!config.isTest) {
+    await server.register(rateLimit, {
+      max: config.rateLimit.max,
+      timeWindow: config.rateLimit.timeWindow,
+      addHeadersOnExceeding: {
+        'x-ratelimit-limit': true,
+        'x-ratelimit-remaining': true,
+        'x-ratelimit-reset': true
+      },
+      addHeaders: {
+        'x-ratelimit-limit': true,
+        'x-ratelimit-remaining': true,
+        'x-ratelimit-reset': true,
+        'retry-after': true
+      },
+      keyGenerator: request => {
+        return request.headers['x-real-ip'] as string ||
+          request.headers['x-forwarded-for'] as string ||
+          request.ip
+      },
+      errorResponseBuilder: (request, context) => ({
+        statusCode: 429,
+        error: 'Too Many Requests',
+        message: `Muitas requisições. Tente novamente em ${Math.round(context.ttl / 1000)} segundos.`,
+        requestId: request.id
+      })
     })
-  })
+  }
 
   await server.register(underPressure, {
     maxEventLoopDelay: 1000,
@@ -56,16 +108,23 @@ export async function registerPlugins(server: AppServer) {
       private: config.jwt.accessSecret,
       public: config.jwt.accessSecret
     },
-    sign: { expiresIn: config.jwt.accessExpiresIn },
-    cookie: { cookieName: 'token', signed: false }
+    sign: {
+      expiresIn: '15m', // Tempo curto conforme protocolo (Segurança Militar)
+      algorithm: 'HS256'
+    },
+    cookie: {
+      cookieName: 'refreshToken',
+      signed: false
+    }
   })
 
   await server.register(cookie, {
     secret: config.security.sessionSecret,
     parseOptions: {
       httpOnly: true,
-      secure: config.isProduction,
-      sameSite: config.isProduction ? 'strict' : 'lax'
+      secure: config.isProduction, // True apenas em produção (HTTPS)
+      sameSite: 'strict', // Blindagem contra CSRF
+      path: '/'
     }
   })
 
@@ -79,7 +138,7 @@ export async function registerPlugins(server: AppServer) {
 
   await server.register(fastifyStatic, {
     root: join(process.cwd(), 'uploads'),
-    prefix: '/uploads/', 
+    prefix: '/uploads/',
     decorateReply: false
   })
 
@@ -90,6 +149,15 @@ export async function registerPlugins(server: AppServer) {
         info: { title: 'SIMP API', description: 'API Documentation', version: '1.0.0' },
         components: { securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' } } },
         security: [{ bearerAuth: [] }]
+      },
+      transform: (params) => {
+        try {
+          return jsonSchemaTransform(params)
+        } catch (error) {
+          // Se falhar (ex: schema JSON puro que o Zod transform não entende), retorna o schema original
+          // Isso corrige o erro "Cannot read properties of undefined (reading 'parent')"
+          return { schema: params.schema, url: params.url }
+        }
       }
     })
     await server.register(swaggerUi, {

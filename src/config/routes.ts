@@ -3,98 +3,27 @@ import { userRoutes } from '@/routes/user.routes.js'
 import { roleRoutes } from '@/routes/role.routes.js'
 import { workspaceRoutes } from '@/routes/workspace.routes.js'
 import { taskRoutes } from '@/routes/task.routes.js'
-import { notificationRoutes } from '@/routes/notification.routes.js' // Rota de notificações adicionada
+import { notificationRoutes } from '@/routes/notification.routes.js'
+import { communicationRoutes } from '@/routes/communication.routes.js'
+import { settingsRoutes } from '@/routes/settings.routes.js'
 import { financeRoutes } from '@/routes/finance.routes.js'
+import { calendarRoutes } from '@/routes/calendar.routes.js'
+import { notesRoutes } from '@/routes/notes.routes.js'
 
 import { AppServer } from '@/types/server'
 import { db } from '@/utils/database.js'
 import { logger } from '@/utils/logger.js'
+import { virtualProcessRoutes } from '@/routes/virtual-process.routes.js'
+import { errorHandler } from '@/utils/error-handler.js'
+
+import { publicRoutes } from '@/routes/public.routes.js'
 
 export async function registerRoutes(server: AppServer) {
+  // --- ROTAS PÚBLICAS ---
+  await server.register(publicRoutes, { prefix: '/public', logLevel: 'info' })
+
   // --- ERROR HANDLER GLOBAL ---
-  // eslint-disable-next-line @typescript-eslint/require-await
-  server.setErrorHandler(async (error, request, reply) => {
-    request.log.error(error, 'Request error occurred')
-
-    const err = error as { validation?: unknown; statusCode?: number; message?: string; name?: string; stack?: string; retryAfter?: number };
-
-    if (err.validation) {
-      return reply.code(400).send({
-        error: 'Validation Error',
-        message: 'Request validation failed',
-        details: err.validation,
-        statusCode: 400,
-        timestamp: new Date().toISOString(),
-        requestId: request.id
-      })
-    }
-
-    if (err.statusCode === 401) {
-      return reply.code(401).send({
-        error: 'Unauthorized',
-        message: err.message || 'Authentication required',
-        statusCode: 401,
-        timestamp: new Date().toISOString(),
-        requestId: request.id
-      })
-    }
-
-    if (err.statusCode === 403) {
-      return reply.code(403).send({
-        error: 'Forbidden',
-        message: err.message || 'Insufficient permissions',
-        statusCode: 403,
-        timestamp: new Date().toISOString(),
-        requestId: request.id
-      })
-    }
-
-    if (err.statusCode === 404) {
-      return reply.code(404).send({
-        error: 'Not Found',
-        message: err.message || 'Resource not found',
-        statusCode: 404,
-        timestamp: new Date().toISOString(),
-        requestId: request.id
-      })
-    }
-
-    if (err.statusCode === 429) {
-      const retryAfter = 'retryAfter' in err ? err.retryAfter : 60
-      return reply.code(429).send({
-        error: 'Too Many Requests',
-        message: err.message || 'Rate limit exceeded',
-        statusCode: 429,
-        timestamp: new Date().toISOString(),
-        requestId: request.id,
-        retryAfter: retryAfter
-      })
-    }
-
-    if (err.statusCode && err.statusCode >= 400 && err.statusCode < 500) {
-      return reply.code(err.statusCode).send({
-        error: err.name || 'Bad Request',
-        message: err.message,
-        statusCode: err.statusCode,
-        timestamp: new Date().toISOString(),
-        requestId: request.id
-      })
-    }
-
-    const statusCode = err?.statusCode && err.statusCode >= 500 ? err.statusCode : 500
-
-    return reply.code(statusCode).send({
-      error: 'Internal Server Error',
-      message:
-        process.env.NODE_ENV === 'production' ? 'An unexpected error occurred' : err.message,
-      statusCode,
-      timestamp: new Date().toISOString(),
-      requestId: request.id,
-      ...(process.env.NODE_ENV !== 'production' && {
-        stack: err.stack
-      })
-    })
-  })
+  server.setErrorHandler(errorHandler)
 
   // --- NOT FOUND HANDLER ---
   server.setNotFoundHandler((request, reply) => {
@@ -167,7 +96,17 @@ export async function registerRoutes(server: AppServer) {
       await server.register(userRoutes, { prefix: '/users', logLevel: 'info' })
       await server.register(roleRoutes, { prefix: '/roles', logLevel: 'info' })
 
-      server.get('/', { /* schema omitido */ }, (request, reply) => {
+      // Módulo de Comunicação
+      await server.register(communicationRoutes, { prefix: '/communication', logLevel: 'info' })
+
+      // Módulo de Configurações
+      await server.register(settingsRoutes, { prefix: '/settings', logLevel: 'info' })
+
+      // Módulo de Utilidades
+      await server.register(calendarRoutes, { prefix: '/utilities/calendar', logLevel: 'info' })
+      await server.register(notesRoutes, { prefix: '/utilities/notes', logLevel: 'info' })
+
+      server.get('/', { /* schema omitido */ }, async (request, reply) => {
         return reply.send({ message: "API V1 Root" })
       })
     },
@@ -175,31 +114,13 @@ export async function registerRoutes(server: AppServer) {
   )
 
   // --- ROTAS PRINCIPAIS (ROOT LEVEL) ---
+  await server.register(workspaceRoutes, { prefix: '/workspaces', logLevel: 'info' })
+  await server.register(taskRoutes, { prefix: '/tasks', logLevel: 'info' })
+  await server.register(notificationRoutes, { prefix: '/notifications', logLevel: 'info' })
 
-  // 1. Workspaces (Gera /workspaces/...)
-  await server.register(workspaceRoutes, {
-    prefix: '/workspaces',
-    logLevel: 'info'
-  })
-
-  // 2. Tasks (Gera /tasks/...)
-  // Importante: O prefixo é necessário para que a rota GET /tasks/:id funcione corretamente
-  await server.register(taskRoutes, {
-    prefix: '/tasks',
-    logLevel: 'info'
-  })
-
-  // 3. Notifications (Gera /notifications/...)
-  await server.register(notificationRoutes, {
-    prefix: '/notifications',
-    logLevel: 'info'
-  })
-
-  // 4. Finance (Gera /finance/...)
-  await server.register(financeRoutes, {
-    prefix: '/finance',
-    logLevel: 'info'
-  })
+  // Módulo Financeiro
+  await server.register(financeRoutes, { prefix: '/finance', logLevel: 'info' })
+  await server.register(virtualProcessRoutes, { prefix: '/virtual-processes', logLevel: 'info' })
 
   // --- TEST ENDPOINT ---
   server.get('/test', (request, reply) => {
@@ -212,14 +133,18 @@ export async function registerRoutes(server: AppServer) {
     logger.info('✅ Workspaces mounted at /workspaces')
     logger.info('✅ Tasks mounted at /tasks')
     logger.info('✅ Notifications mounted at /notifications')
+    logger.info('✅ Communication mounted at /api/v1/communication')
+    logger.info('✅ Finance mounted at /finance')
   })
 }
 
-// Route summary para documentação/debug
 export const routeSummary = {
   '/api/v1/auth': { description: 'Authentication routes' },
   '/api/v1/users': { description: 'User management' },
   '/api/v1/roles': { description: 'RBAC management' },
+  '/api/v1/communication': { description: 'Protocolo e Comunicação' },
+  '/finance': { description: 'Módulo de Gestão Financeira' },
+  '/virtual-processes': { description: 'Módulo de Processos Virtuais' },
   '/workspaces': {
     description: 'Workspace management',
     endpoints: ['GET /', 'POST /', 'GET /:id', 'POST /:id/members', 'GET /:id/assignable-users']

@@ -1,0 +1,4 @@
+src/controllers/notes.controller.ts(29,13): error TS2322: Type '{ user: { connect: { id: string; }; }; color?: string; title?: string; content?: string; }' is not assignable to type '(Without<NoteCreateInput, NoteUncheckedCreateInput> & NoteUncheckedCreateInput) | (Without<...> & NoteCreateInput)'.
+  Type '{ user: { connect: { id: string; }; }; color?: string; title?: string; content?: string; }' is not assignable to type 'Without<NoteUncheckedCreateInput, NoteCreateInput> & NoteCreateInput'.
+    Type '{ user: { connect: { id: string; }; }; color?: string; title?: string; content?: string; }' is not assignable to type 'NoteCreateInput'.
+      Property 'content' is optional in type '{ user: { connect: { id: string; }; }; color?: string; title?: string; content?: string; }' but required in type 'NoteCreateInput'.

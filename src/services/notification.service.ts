@@ -1,11 +1,12 @@
 import { prisma } from '../lib/prisma.js';
-import { FastifyReply } from 'fastify';
+import type { FastifyReply } from 'fastify';
+import type { ServerResponse } from 'node:http';
 import { EventEmitter } from 'events';
 
 class NotificationService extends EventEmitter {
-  private clients: Map<string, FastifyReply[]> = new Map();
+  private clients: Map<string, (FastifyReply & { raw: ServerResponse })[]> = new Map();
 
-  addClient(userId: string, reply: FastifyReply) {
+  addClient(userId: string, reply: FastifyReply & { raw: ServerResponse }) {
     if (!this.clients.has(userId)) {
       this.clients.set(userId, []);
     }
@@ -16,7 +17,7 @@ class NotificationService extends EventEmitter {
     });
   }
 
-  removeClient(userId: string, reply: FastifyReply) {
+  removeClient(userId: string, reply: FastifyReply & { raw: ServerResponse }) {
     const userClients = this.clients.get(userId);
     if (userClients) {
       this.clients.set(userId, userClients.filter(c => c !== reply));

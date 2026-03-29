@@ -1,0 +1,367 @@
+
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                /** 
+                 * Define as margens da página. 
+                 */
+                @page { 
+                    margin-top: 2cm;
+                    margin-bottom: 2cm;
+                    margin-left: 2cm;
+                    margin-right: 2cm;
+                }
+
+                body { 
+                    font-family: 'Times New Roman', serif; 
+                    font-size: 12pt; 
+                    color: #333;
+                }
+
+                /* HEADER */
+                .header-logo { 
+                    text-align: center; 
+                    margin-bottom: 20px; 
+                }
+                .header-logo img { 
+                    height: 80px; 
+                }
+                
+                /* CONTROLE DE PAGINAÇÃO */
+                .content-page { 
+                    page-break-after: always; 
+                }
+                .history-page { 
+                    page-break-before: always; 
+                }
+
+                /* CORPO DO OFÍCIO */
+                .info-block { 
+                    margin-bottom: 30px; 
+                }
+                .numero-oficio { 
+                    font-weight: bold; 
+                    font-size: 14pt; 
+                    margin-bottom: 10px; 
+                }
+                .data-local { 
+                    text-align: right; 
+                    margin-bottom: 40px; 
+                }
+                
+                .destinatario { 
+                    margin-bottom: 30px; 
+                    font-weight: bold; 
+                    text-transform: uppercase; 
+                }
+                .assunto { 
+                    font-weight: bold; 
+                    margin-bottom: 25px; 
+                    text-transform: uppercase; 
+                }
+                
+                .texto p { 
+                    text-align: justify; 
+                    text-indent: 2.5cm; 
+                    margin-bottom: 15px; 
+                    line-height: 1.5;
+                }
+                
+                /* ASSINATURAS */
+                .assinatura-wrapper {
+                    margin-top: 50px;
+                }
+
+                .assinatura-visual { 
+                    text-align: center; 
+                    margin-bottom: 40px;
+                }
+                .linha { 
+                    border-top: 1px solid #000; 
+                    width: 60%; 
+                    margin: 0 auto 5px auto; 
+                }
+
+                /* --- NOVO SELO DE ASSINATURA SOFISTICADO --- */
+                .seal-container {
+                    border: 1px solid #004a8f;
+                    border-radius: 4px;
+                    padding: 0;
+                    margin: 20px auto;
+                    width: 90%;
+                    max-width: 260px;
+                    background-color: #fff;
+                    font-family: 'Arial', sans-serif;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                    position: relative;
+                    overflow: hidden;
+                }
+
+                .seal-header {
+                    background-color: #004a8f;
+                    color: white;
+                    padding: 3px 6px;
+                    font-size: 7pt;
+                    font-weight: bold;
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                }
+
+                .seal-body {
+                    padding: 4px;
+                    font-size: 7pt;
+                    color: #333;
+                    display: flex;
+                    align-items: center;
+                }
+
+
+                .seal-logo {
+                    width: 30px;
+                    height: 30px;
+                    margin-right: 10px;
+                    opacity: 0.8;
+                }
+                
+                .seal-info {
+                    flex: 1;
+                }
+
+                .seal-row {
+                    margin-bottom: 2px;
+                    display: flex;
+                }
+                .seal-label {
+                    font-weight: bold;
+                    width: 50px;
+                    color: #555;
+                }
+                .seal-value {
+                    flex: 1;
+                    font-weight: 500;
+                }
+                .seal-hash {
+                    font-family: 'Courier New', monospace;
+                    font-size: 6pt;
+                    color: #666;
+                    margin-top: 3px;
+                    word-break: break-all;
+                }
+
+                /* --- PÁGINA DE MANIFESTO --- */
+                .manifest-header {
+                    text-align: center;
+                    border-bottom: 2px solid #004a8f;
+                    padding-bottom: 10px;
+                    margin-bottom: 30px;
+                }
+                .manifest-title {
+                    font-size: 18pt;
+                    font-weight: bold;
+                    color: #004a8f;
+                    text-transform: uppercase;
+                }
+                .manifest-subtitle {
+                    font-size: 10pt;
+                    color: #666;
+                }
+
+                .section-title {
+                    font-size: 12pt;
+                    font-weight: bold;
+                    color: #333;
+                    margin-bottom: 15px;
+                    border-left: 4px solid #004a8f;
+                    padding-left: 10px;
+                    background: #f9f9f9;
+                    padding-top: 5px;
+                    padding-bottom: 5px;
+                }
+
+                .manifest-signatures {
+                    margin-bottom: 40px;
+                }
+
+                .signature-item {
+                    border: 1px solid #eee;
+                    border-radius: 4px;
+                    padding: 10px;
+                    margin-bottom: 10px;
+                    background: #fafafa;
+                }
+                .signature-item.valid {
+                    border-left: 4px solid #28a745;
+                }
+                .valid-badge {
+                    color: #28a745;
+                    font-weight: bold;
+                    font-size: 9pt;
+                    float: right;
+                }
+
+                /* VISUAL TIMELINE */
+                .timeline {
+                    position: relative;
+                    margin: 20px 0 20px 20px;
+                    border-left: 2px solid #ddd;
+                }
+                .timeline-item {
+                    position: relative;
+                    margin-bottom: 20px;
+                    padding-left: 20px;
+                }
+                .timeline-dot {
+                    position: absolute;
+                    left: -6px;
+                    top: 5px;
+                    width: 10px;
+                    height: 10px;
+                    border-radius: 50%;
+                    background: #004a8f;
+                    border: 2px solid #fff;
+                    box-shadow: 0 0 0 1px #004a8f;
+                }
+                .timeline-date {
+                    font-size: 9pt;
+                    color: #666;
+                }
+                .timeline-content {
+                    font-weight: bold;
+                    font-size: 10pt;
+                }
+                .timeline-details {
+                    font-size: 9pt;
+                    color: #555;
+                    margin-top: 2px;
+                }
+
+                .verification-info {
+                    text-align: center;
+                    margin-top: 50px;
+                    padding: 20px;
+                    background: #f0f7ff;
+                    border-radius: 8px;
+                    border: 1px dashed #004a8f;
+                }
+                .qr-code img {
+                    width: 100px;
+                    height: 100px;
+                }
+                .verification-text {
+                    margin-top: 10px;
+                    font-size: 10pt;
+                }
+                .verification-url {
+                    font-weight: bold;
+                    color: #004a8f;
+                    text-decoration: none;
+                }
+            </style>
+        </head>
+        <body>
+
+            <!-- 1. PÁGINA DE CONTEÚDO -->
+            <div class="content-page">
+                <div class="header-logo">
+                </div>
+
+                <div class="info-block">
+                        <div class="numero-oficio">TESTE Nº 123</div>
+                    <div class="data-local">Pequizeiro - TO, 10 de Março de 2026.</div>
+                </div>
+
+                <div class="destinatario">
+                        À SUA SENHORIA O(A) SENHOR(A)<br>
+                        TESTE DESTINATARIO<br>
+                        Gerente
+                </div>
+
+                <div class="assunto">ASSUNTO: TESTE</div>
+
+                <div class="texto">
+                        <p>Este é um paragrafo de teste.</p>
+                </div>
+
+                <!-- ASSINATURA DO REMETENTE (Obrigatória visualmente) -->
+                <div class="assinatura-wrapper">
+                        <!-- Novo Selo Sofisticado -->
+                        <div class="seal-container">
+                            <div class="seal-header">
+                                <span>ASSINATURA ELETRÔNICA QUALIFICADA</span>
+                                <span>ICP-Brasil (Simulado)</span>
+                            </div>
+                            <div class="seal-body">
+                                    <div class="seal-logo" style="background: #eee; border-radius: 50%;"></div>
+                                <div class="seal-info">
+                                    <div class="seal-row"><span class="seal-label">Por:</span> <span class="seal-value">Carlos Magno</span></div>
+                                    <div class="seal-row"><span class="seal-label">Cargo:</span> <span class="seal-value">Diretor</span></div>
+                                    <div class="seal-row"><span class="seal-label">Data:</span> <span class="seal-value">10 de Março de 2026</span></div>
+                                    <div class="seal-hash">Hash: 1234567890ABCDEF</div>
+                                </div>
+                            </div>
+                        </div>
+                </div>
+            </div>
+
+            <!-- 2. PÁGINA DE MANIFESTO (Sempre presente se houver assinaturas ou histórico) -->
+            <div class="history-page">
+                <div class="manifest-header">
+                    <div class="manifest-title">Manifesto de Assinaturas</div>
+                    <div class="manifest-subtitle">Registro Oficial de Rastreabilidade e Auditoria do Documento</div>
+                </div>
+
+                <!-- Lista de Assinantes Válidos -->
+                <div class="section-title">ASSINATURAS RECONHECIDAS</div>
+                <div class="manifest-signatures">
+                        <div class="signature-item valid">
+                            <span class="valid-badge">✓ VÁLIDO (AUTOR)</span>
+                            <div style="font-weight: bold; font-size: 11pt;">Carlos Magno</div>
+                            <div style="font-size: 9pt; color: #555;">Diretor</div>
+                            <div style="margin-top: 5px; font-size: 9pt;">
+                                <strong>Data:</strong> 10/03/2026<br/>
+                                <strong>Método:</strong> Autenticação via Token/Login Seguro<br/>
+                                <strong>CPF/ID:</strong> ***.***.***-**<br/>
+                                <strong>IP/Local:</strong> 127.0.0.1
+                            </div>
+                            <div style="margin-top: 5px; font-family: monospace; font-size: 8pt; color: #888;">
+                                Hash: ABCDEF123
+                            </div>
+                        </div>
+                    <!-- Se remetente também assinou e não está na lista 'assinaturas', adicionar visualmente -->
+                </div>
+
+                <!-- Timeline de Eventos -->
+                <div class="section-title">LINHA DO TEMPO DE AUDITORIA</div>
+                <div class="timeline">
+                    <div class="timeline-item">
+                        <div class="timeline-dot"></div>
+                        <div class="timeline-date">10/03/2026</div>
+                        <div class="timeline-content">Criado</div>
+                        <div class="timeline-details">
+                            Por: Carlos Magno (Diretor)<br/>
+                            
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Área de Validação -->
+                <div class="verification-info">
+                    <div class="qr-code">
+                        <!-- Placeholder para QR, idealmente gerado via imagem base64 também -->
+                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=http://localhost/verify/123" alt="QR Code" />
+                    </div>
+                    <div class="verification-text">
+                        Para verificar a validade deste documento, aponte a câmera para o QR Code ou acesse:<br/>
+                        <a href="http://localhost/verify/123" class="verification-url">http://localhost/verify/123</a>
+                    </div>
+                    <div style="margin-top: 10px; font-size: 8pt; color: #777;">
+                        Código Hash Original: 1234567890ABCDEF
+                    </div>
+                </div>
+
+            </div>
+        </body>
+        </html>
+        

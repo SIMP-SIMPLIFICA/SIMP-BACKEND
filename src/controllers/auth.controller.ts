@@ -5,7 +5,8 @@ import { authLogger } from '@/utils/logger.js'
 import {
   loginSchema,
   refreshTokenSchema,
-  registerSchema
+  registerSchema,
+  updateProfileSchema
 } from '@/schemas/auth.schemas.js'
 
 export class AuthController {

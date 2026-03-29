@@ -1,4 +1,5 @@
 import { FastifyReply, FastifyRequest } from 'fastify'
+import { prisma } from '@/lib/prisma.js'
 
 export async function authenticate(request: FastifyRequest, reply: FastifyReply) {
   // 0. Ignorar requisições OPTIONS (Preflight do CORS)

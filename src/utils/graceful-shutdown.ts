@@ -1,9 +1,9 @@
-import { FastifyInstance } from 'fastify'
+import { AppServer } from '@/types/server.js'
 import { db } from '@/utils/database.js'
 import { redisClient } from '@/utils/redis.js'
 import { logger } from '@/utils/logger.js'
 
-export const gracefulShutdown = (app: FastifyInstance, signal: string = 'SIGTERM') => {
+export const gracefulShutdown = (app: AppServer, signal: string = 'SIGTERM') => {
   return async () => {
     logger.info(`Received ${signal}, starting graceful shutdown...`)
 

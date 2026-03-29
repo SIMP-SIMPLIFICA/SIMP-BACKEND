@@ -15,7 +15,7 @@ import { registerPlugins } from './config/plugins.js'
 import { uploadRoutes } from './routes/upload.routes.js'
 
 const server: AppServer = Fastify({
-  logger: logger,
+  loggerInstance: logger,
   pluginTimeout: 40000,
   trustProxy: true,
   bodyLimit: config.server.maxBodySize,

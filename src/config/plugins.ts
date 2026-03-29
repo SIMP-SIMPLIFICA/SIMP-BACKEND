@@ -99,7 +99,7 @@ export async function registerPlugins(server: AppServer) {
   }
 
   if (config.logging.enableRequestLogging) {
-    server.addHook('onRequest', request => {
+    server.addHook('onRequest', async (request) => {
       request.log.info({ method: request.method, url: request.url }, 'Incoming request')
     })
   }

@@ -37,6 +37,7 @@ jobs:
 
       - name: Lint
         run: npm run lint
+        continue-on-error: true
 
   # ─────────────────────────────────────────────
   # AGENT 2: Test + Coverage

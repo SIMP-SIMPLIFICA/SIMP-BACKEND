@@ -74,10 +74,11 @@
     "@types/qrcode": "^1.5.5",
     "@types/speakeasy": "^2.0.10",
     "@types/uuid": "^10.0.0",
+    "@vitest/coverage-v8": "^4.1.2",
     "dotenv-expand": "^11.0.6",
     "tsx": "^4.7.1",
     "typescript": "^5.4.3",
-    "vitest": "^1.4.0"
+    "vitest": "^4.1.2"
   },
   "engines": {
     "node": ">=20.0.0"

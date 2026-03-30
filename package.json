@@ -48,7 +48,6 @@
     "@prisma/client": "^6.8.2",
     "@sentry/node": "^10.46.0",
     "docxtemplater": "^3.49.0",
-    "docxtemplater-image-module-free": "^1.1.1",
     "dotenv": "^16.3.1",
     "fastify-type-provider-zod": "^4.0.2",
     "handlebars": "^4.7.8",

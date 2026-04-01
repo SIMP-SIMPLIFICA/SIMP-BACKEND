@@ -44,7 +44,6 @@ model User {
 
   createdDocuments   CommunicationDocument[] @relation("DocumentCreator")
   documentRecipients DocumentRecipient[]
-  documentSignatures DocumentSignature[]
 
   calendarEvents     CalendarEvent[]
   notes              Note[]
@@ -182,8 +181,7 @@ model Department {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  users     User[]
-  documents CommunicationDocument[]
+  users User[]
 
   @@map("departments")
 }
@@ -336,7 +334,6 @@ enum DocumentStatus {
   DRAFT
   SENT
   READ
-  SIGNED
   ARCHIVED
 }
 
@@ -346,48 +343,22 @@ enum DocumentRole {
   BCC
 }
 
-enum SignatureType {
-  DIGITAL
-  MANUAL
-  BIOMETRIC
-}
-
 model CommunicationDocument {
-  id             String         @id @default(nanoid())
-  protocolNumber String?        @unique @map("protocol_number")
-  documentNumber String?        @map("document_number")
-  title          String         @db.VarChar(500)
-  content        String         @db.Text
-  documentType   String         @map("document_type")
-  status         DocumentStatus @default(DRAFT)
-  priority       TaskPriority   @default(MEDIUM)
+  id      String         @id @default(nanoid())
+  title   String         @db.VarChar(500)
+  content String         @db.Text
+  status  DocumentStatus @default(DRAFT)
 
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
-  sentAt      DateTime? @map("sent_at")
-  deliveredAt DateTime? @map("delivered_at")
-  readAt      DateTime? @map("read_at")
-  signedAt    DateTime? @map("signed_at")
-
-  originalHash String? @map("original_hash") @db.VarChar(128)
-  currentHash  String? @map("current_hash") @db.VarChar(128)
-  qrCodeHash   String? @map("qr_code_hash") @db.VarChar(128)
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  sentAt    DateTime? @map("sent_at")
+  readAt    DateTime? @map("read_at")
 
   createdBy String @map("created_by")
   creator   User   @relation("DocumentCreator", fields: [createdBy], references: [id])
 
-  departmentId String?     @map("department_id")
-  department   Department? @relation(fields: [departmentId], references: [id])
-
   recipients  DocumentRecipient[]
-  signatures  DocumentSignature[]
   attachments CommunicationAttachment[]
-  metadata    Json?
-
-  protocol   Protocol? @relation(fields: [protocolId], references: [id])
-  protocolId String?   @unique @map("protocol_id")
-
-  pageCount Int? @default(1) @map("page_count")
 
   @@map("communication_documents")
 }
@@ -397,17 +368,8 @@ model DocumentRecipient {
   documentId String       @map("document_id")
   userId     String       @map("user_id")
   role       DocumentRole @default(TO)
-
-  canView Boolean @default(true) @map("can_view")
-  canSign Boolean @default(false) @map("can_sign")
-
-  readAt   DateTime? @map("read_at")
-  signedAt DateTime? @map("signed_at")
-
-  readIp        String? @map("read_ip") @db.VarChar(45)
-  readLocation  String? @map("read_location") @db.VarChar(200)
-  readUserAgent String? @map("read_user_agent")
-  readDeviceId  String? @map("read_device_id") @db.VarChar(100)
+  canView    Boolean      @default(true) @map("can_view")
+  readAt     DateTime?    @map("read_at")
 
   document CommunicationDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
   user     User                  @relation(fields: [userId], references: [id])
@@ -415,24 +377,6 @@ model DocumentRecipient {
   @@map("document_recipients")
 }
 
-model DocumentSignature {
-  id              String        @id @default(nanoid())
-  documentId      String        @map("document_id")
-  userId          String        @map("user_id")
-  signatureType   SignatureType @map("signature_type")
-  certificateData Json?         @map("certificate_data")
-
-  signedAt      DateTime  @default(now()) @map("signed_at")
-  ipAddress     String?   @map("ip_address") @db.VarChar(45)
-  validityUntil DateTime? @map("validity_until")
-  isValid       Boolean   @default(true) @map("is_valid")
-  sealData      Json?     @map("seal_data")
-
-  document CommunicationDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  user     User                  @relation(fields: [userId], references: [id])
-
-  @@map("document_signatures")
-}
 
 model CommunicationAttachment {
   id         String @id @default(nanoid())
@@ -449,16 +393,6 @@ model CommunicationAttachment {
   @@map("communication_attachments")
 }
 
-model Protocol {
-  id             String   @id @default(nanoid())
-  protocolNumber String   @unique @map("protocol_number")
-  year           Int
-  createdAt      DateTime @default(now()) @map("created_at")
-
-  document CommunicationDocument?
-
-  @@map("protocols")
-}
 
 enum FinanceEntryType {
   EXPENSE

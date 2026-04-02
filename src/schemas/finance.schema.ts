@@ -19,7 +19,7 @@ export const createEntrySchema = z.object({
   subcategoryName: z.string().max(100).optional().nullable(),
   nfeNumber: z.string().max(50).optional().nullable(),
   issueDate: z.string().datetime().optional().nullable(),
-  providerDocument: z.string().max(20).optional().nullable(),
+  providerDocument: z.string().max(50).optional().nullable(),
   empenhoNumber: z.string().max(50).optional().nullable(),
   liquidacaoNumber: z.string().max(50).optional().nullable(),
   deliveryDate: z.string().datetime().optional().nullable(),

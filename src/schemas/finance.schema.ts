@@ -31,3 +31,17 @@ export type CreateEntryInput = z.infer<typeof createEntrySchema>;
 export const updateEntrySchema = createEntrySchema.partial().omit({ workspaceId: true });
 
 export type UpdateEntryInput = z.infer<typeof updateEntrySchema>;
+
+export const createBankAccountSchema = z.object({
+  workspaceId: z.string().uuid(),
+  name: z.string().min(1, 'Name is required').max(100),
+  agency: z.string().max(20).optional().nullable(),
+  accountNumber: z.string().max(30).optional().nullable(),
+  initialBalanceCents: z.number().int().default(0),
+}).strip();
+
+export type CreateBankAccountInput = z.infer<typeof createBankAccountSchema>;
+
+export const updateBankAccountSchema = createBankAccountSchema.partial().omit({ workspaceId: true });
+
+export type UpdateBankAccountInput = z.infer<typeof updateBankAccountSchema>;

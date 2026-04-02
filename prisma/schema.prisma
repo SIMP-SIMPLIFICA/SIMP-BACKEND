@@ -216,12 +216,13 @@ model Workspace {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  members           WorkspaceMember[]
-  tasks             Task[]
-  financeCategories FinanceCategory[]
-  financeEntries    FinanceEntry[]
-  bankAccounts      BankAccount[]
-  virtualProcesses  VirtualProcess[]
+  members                   WorkspaceMember[]
+  tasks                     Task[]
+  financeCategories         FinanceCategory[]
+  financeEntries            FinanceEntry[]
+  bankAccounts              BankAccount[]
+  virtualProcesses          VirtualProcess[]
+  virtualProcessCategories  VirtualProcessCategory[]
 }
 
 model WorkspaceMember {
@@ -512,6 +513,18 @@ model VirtualProcess {
 
   @@unique([workspaceId, processNumber])
   @@map("virtual_processes")
+}
+
+model VirtualProcessCategory {
+  id          String   @id @default(uuid())
+  workspaceId String   @map("workspace_id")
+  name        String
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, name])
+  @@map("virtual_process_categories")
 }
 
 model VirtualProcessDocument {

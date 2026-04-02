@@ -33,3 +33,16 @@ export const uploadDocumentSchema = z.object({
   tag: z.string().min(1),
   description: z.string().optional().nullable()
 }).strip()
+
+export const createVirtualProcessCategorySchema = z.object({
+  workspaceId: z.string().uuid(),
+  name: z.string().min(1).max(100),
+}).strip()
+
+export type CreateVirtualProcessCategoryInput = z.infer<typeof createVirtualProcessCategorySchema>
+
+export const updateVirtualProcessCategorySchema = z.object({
+  name: z.string().min(1).max(100),
+}).strip()
+
+export type UpdateVirtualProcessCategoryInput = z.infer<typeof updateVirtualProcessCategorySchema>

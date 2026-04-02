@@ -4,28 +4,28 @@ import { virtualProcessCategoryController } from '@/controllers/virtual-process-
 import { authMiddleware, requireAnyPermission } from '@/middleware/auth.middleware.js'
 
 export async function virtualProcessRoutes(app: FastifyInstance) {
-  // --- Category routes ---
+  // --- Category routes (auth only — workspace member check is done in controller) ---
   app.post(
     '/workspaces/:workspaceId/categories',
-    { preHandler: [authMiddleware, requireAnyPermission(['processes:write', 'processes:manage'])] },
+    { preHandler: [authMiddleware] },
     virtualProcessCategoryController.create.bind(virtualProcessCategoryController)
   )
 
   app.get(
     '/workspaces/:workspaceId/categories',
-    { preHandler: [authMiddleware, requireAnyPermission(['processes:read', 'processes:write', 'processes:manage'])] },
+    { preHandler: [authMiddleware] },
     virtualProcessCategoryController.list.bind(virtualProcessCategoryController)
   )
 
   app.put(
     '/categories/:id',
-    { preHandler: [authMiddleware, requireAnyPermission(['processes:write', 'processes:manage'])] },
+    { preHandler: [authMiddleware] },
     virtualProcessCategoryController.update.bind(virtualProcessCategoryController)
   )
 
   app.delete(
     '/categories/:id',
-    { preHandler: [authMiddleware, requireAnyPermission(['processes:write', 'processes:manage'])] },
+    { preHandler: [authMiddleware] },
     virtualProcessCategoryController.delete.bind(virtualProcessCategoryController)
   )
 

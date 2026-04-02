@@ -235,8 +235,8 @@ export class RoleController {
         return reply.code(404).send({ error: 'Role Not Found', message: 'Role with specified ID not found' })
       }
 
-      if (existingRole.isSystem) {
-        return reply.code(400).send({ error: 'System Role', message: 'Cannot modify system roles' })
+      if (existingRole.isSystem && data.name && data.name !== existingRole.name) {
+        return reply.code(400).send({ error: 'System Role', message: 'Cannot rename system roles' })
       }
 
       if (data.name && data.name !== existingRole.name) {

@@ -4,19 +4,22 @@ import { logger } from '@/utils/logger.js'
 import { z } from 'zod'
 import { createVirtualProcessSchema, uploadDocumentSchema, updateCompanyInfoSchema } from '@/schemas/virtual-process.schemas.js'
 import { randomUUID } from 'crypto'
-import fs from 'fs'
-import path from 'path'
-import { pipeline } from 'stream/promises'
-
-const UPLOAD_DIR = path.join(process.cwd(), 'uploads', 'virtual-processes')
-
-if (!fs.existsSync(UPLOAD_DIR)) {
-  fs.mkdirSync(UPLOAD_DIR, { recursive: true })
-}
+import * as path from 'node:path'
+import r2 from '../lib/r2.js'
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3'
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 
 export class VirtualProcessController {
   async listProcesses(request: FastifyRequest, reply: FastifyReply) {
     try {
+      const { workspaceId } = z.object({ workspaceId: z.string().uuid() }).parse(request.params)
+      const userId = (request as any).user?.id as string
+
+      const member = await prisma.workspaceMember.findUnique({
+        where: { workspaceId_userId: { workspaceId, userId } }
+      })
+      if (!member) return reply.code(403).send({ message: 'Acesso negado ao workspace' })
+
       const querySchema = z.object({
         page: z.coerce.number().min(1).default(1),
         limit: z.coerce.number().min(1).max(100).default(50),
@@ -33,7 +36,7 @@ export class VirtualProcessController {
       })
 
       const query = querySchema.parse(request.query)
-      const where: any = {}
+      const where: any = { workspaceId }
 
       if (query.search) {
         where.OR = [
@@ -44,10 +47,7 @@ export class VirtualProcessController {
         ]
       }
 
-      if (query.status) {
-        where.status = query.status
-      }
-
+      if (query.status) where.status = query.status
       if (query.secretaria) where.secretaria = query.secretaria
       if (query.bankAccount) where.bankAccount = query.bankAccount
       if (query.source) where.source = query.source
@@ -84,36 +84,34 @@ export class VirtualProcessController {
   async getProcessDetails(request: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = request.params as { id: string }
+      const userId = (request as any).user?.id as string
+
       const process = await prisma.virtualProcess.findUnique({
         where: { id },
         include: {
           creator: { select: { id: true, firstName: true, lastName: true, email: true } },
           documents: {
-            include: {
-              uploader: { select: { id: true, firstName: true, lastName: true } }
-            },
+            include: { uploader: { select: { id: true, firstName: true, lastName: true } } },
             orderBy: { uploadedAt: 'desc' }
           }
         }
       })
 
-      if (!process) {
-        return reply.code(404).send({ error: 'Process Not Found', message: 'Processo não encontrado' })
-      }
+      if (!process) return reply.code(404).send({ error: 'Process Not Found', message: 'Processo não encontrado' })
+
+      const member = await prisma.workspaceMember.findUnique({
+        where: { workspaceId_userId: { workspaceId: process.workspaceId, userId } }
+      })
+      if (!member) return reply.code(403).send({ message: 'Acesso negado ao workspace' })
 
       const auditLogs = await prisma.auditLog.findMany({
-        where: {
-          resource: 'VIRTUAL_PROCESS',
-          resourceId: id
-        },
+        where: { resource: 'VIRTUAL_PROCESS', resourceId: id },
         orderBy: { createdAt: 'desc' },
-        include: {
-          user: { select: { id: true, firstName: true, lastName: true } }
-        }
+        include: { user: { select: { id: true, firstName: true, lastName: true } } }
       })
 
       await db.createAuditLog({
-        userId: (request as any).user?.id,
+        userId,
         action: 'VISUALIZOU',
         resource: 'VIRTUAL_PROCESS',
         resourceId: id,
@@ -133,16 +131,21 @@ export class VirtualProcessController {
       const data = createVirtualProcessSchema.parse(request.body)
       const userId = (request as any).user?.id as string
 
-      const existingProcess = await prisma.virtualProcess.findUnique({
-        where: { processNumber: data.processNumber }
+      const member = await prisma.workspaceMember.findUnique({
+        where: { workspaceId_userId: { workspaceId: data.workspaceId, userId } }
       })
+      if (!member) return reply.code(403).send({ message: 'Acesso negado ao workspace' })
 
+      const existingProcess = await prisma.virtualProcess.findUnique({
+        where: { workspaceId_processNumber: { workspaceId: data.workspaceId, processNumber: data.processNumber } }
+      })
       if (existingProcess) {
-        return reply.code(400).send({ error: 'Conflict', message: 'Número de processo já existe' })
+        return reply.code(400).send({ error: 'Conflict', message: 'Número de processo já existe neste workspace' })
       }
 
       const process = await prisma.virtualProcess.create({
         data: {
+          workspaceId: data.workspaceId,
           processNumber: data.processNumber,
           secretaria: data.secretaria,
           source: data.source,
@@ -185,20 +188,21 @@ export class VirtualProcessController {
     try {
       const { id } = request.params as { id: string }
       const { status } = z.object({ status: z.string().min(1) }).parse(request.body)
+      const userId = (request as any).user?.id as string
 
       const process = await prisma.virtualProcess.findUnique({ where: { id } })
-      if (!process) {
-        return reply.code(404).send({ error: 'Not Found', message: 'Processo não encontrado' })
-      }
+      if (!process) return reply.code(404).send({ error: 'Not Found', message: 'Processo não encontrado' })
+
+      const member = await prisma.workspaceMember.findUnique({
+        where: { workspaceId_userId: { workspaceId: process.workspaceId, userId } }
+      })
+      if (!member) return reply.code(403).send({ message: 'Acesso negado ao workspace' })
 
       const oldStatus = process.status
-      const updatedProcess = await prisma.virtualProcess.update({
-        where: { id },
-        data: { status }
-      })
+      const updatedProcess = await prisma.virtualProcess.update({ where: { id }, data: { status } })
 
       await db.createAuditLog({
-        userId: (request as any).user?.id,
+        userId,
         action: 'ALTEROU_STATUS',
         resource: 'VIRTUAL_PROCESS',
         resourceId: id,
@@ -219,35 +223,30 @@ export class VirtualProcessController {
     try {
       const { id } = request.params as { id: string }
       const data = updateCompanyInfoSchema.parse(request.body)
+      const userId = (request as any).user?.id as string
 
       const process = await prisma.virtualProcess.findUnique({ where: { id } })
-      if (!process) {
-        return reply.code(404).send({ error: 'Not Found', message: 'Processo não encontrado' })
-      }
+      if (!process) return reply.code(404).send({ error: 'Not Found', message: 'Processo não encontrado' })
+
+      const member = await prisma.workspaceMember.findUnique({
+        where: { workspaceId_userId: { workspaceId: process.workspaceId, userId } }
+      })
+      if (!member) return reply.code(403).send({ message: 'Acesso negado ao workspace' })
 
       const updatedProcess = await prisma.virtualProcess.update({
         where: { id },
-        data: {
-          companyName: data.companyName,
-          companyCnpj: data.companyCnpj
-        }
+        data: { companyName: data.companyName, companyCnpj: data.companyCnpj }
       })
 
       await db.createAuditLog({
-        userId: (request as any).user?.id,
+        userId,
         action: 'ATUALIZOU_DADOS_EMPRESA',
         resource: 'VIRTUAL_PROCESS',
         resourceId: id,
         ipAddress: request.ip,
         success: true,
-        oldData: {
-          companyName: process.companyName,
-          companyCnpj: process.companyCnpj
-        },
-        newData: {
-          companyName: updatedProcess.companyName,
-          companyCnpj: updatedProcess.companyCnpj
-        }
+        oldData: { companyName: process.companyName, companyCnpj: process.companyCnpj },
+        newData: { companyName: updatedProcess.companyName, companyCnpj: updatedProcess.companyCnpj }
       })
 
       return reply.send(updatedProcess)
@@ -263,11 +262,15 @@ export class VirtualProcessController {
   async deleteProcess(request: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = request.params as { id: string }
-      const process = await prisma.virtualProcess.findUnique({ where: { id } })
+      const userId = (request as any).user?.id as string
 
-      if (!process) {
-        return reply.code(404).send({ error: 'Not Found', message: 'Processo não encontrado' })
-      }
+      const process = await prisma.virtualProcess.findUnique({ where: { id } })
+      if (!process) return reply.code(404).send({ error: 'Not Found', message: 'Processo não encontrado' })
+
+      const member = await prisma.workspaceMember.findUnique({
+        where: { workspaceId_userId: { workspaceId: process.workspaceId, userId } }
+      })
+      if (!member) return reply.code(403).send({ message: 'Acesso negado ao workspace' })
 
       if ((Date.now() - process.createdAt.getTime()) > 24 * 60 * 60 * 1000) {
         return reply.code(403).send({ error: 'Forbidden', message: 'O prazo de 24 horas para exclusão expirou' })
@@ -276,7 +279,7 @@ export class VirtualProcessController {
       await prisma.virtualProcess.delete({ where: { id } })
 
       await db.createAuditLog({
-        userId: (request as any).user?.id,
+        userId,
         action: 'EXCLUIU',
         resource: 'VIRTUAL_PROCESS',
         resourceId: id,
@@ -295,11 +298,15 @@ export class VirtualProcessController {
   async uploadDocument(request: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = request.params as { id: string }
-      const processObj = await prisma.virtualProcess.findUnique({ where: { id } })
+      const userId = (request as any).user?.id as string
 
-      if (!processObj) {
-        return reply.code(404).send({ error: 'Not Found', message: 'Processo não encontrado' })
-      }
+      const processObj = await prisma.virtualProcess.findUnique({ where: { id } })
+      if (!processObj) return reply.code(404).send({ error: 'Not Found', message: 'Processo não encontrado' })
+
+      const member = await prisma.workspaceMember.findUnique({
+        where: { workspaceId_userId: { workspaceId: processObj.workspaceId, userId } }
+      })
+      if (!member) return reply.code(403).send({ message: 'Acesso negado ao workspace' })
 
       const parts = request.parts()
       let fileData: any = null
@@ -308,24 +315,33 @@ export class VirtualProcessController {
       for await (const part of parts) {
         if (part.type === 'file') {
           const extension = path.extname(part.filename)
-          const fileName = `${randomUUID()}${extension}`
-          const filePath = path.join(UPLOAD_DIR, fileName)
+          const uniqueName = `${randomUUID()}${extension}`
+          const fileKey = `workspaces/${processObj.workspaceId}/virtual-processes/${uniqueName}`
 
-          await pipeline(part.file, fs.createWriteStream(filePath))
+          const chunks: Buffer[] = []
+          for await (const chunk of part.file) {
+            chunks.push(chunk as Buffer)
+          }
+          const buffer = Buffer.concat(chunks)
+
+          await r2.send(new PutObjectCommand({
+            Bucket: process.env.R2_BUCKET_NAME,
+            Key: fileKey,
+            Body: buffer,
+            ContentType: part.mimetype,
+          }))
 
           fileData = {
             fileName: part.filename,
-            fileUrl: `/uploads/virtual-processes/${fileName}`,
-            fileSize: (await fs.promises.stat(filePath)).size
+            fileUrl: fileKey,
+            fileSize: buffer.length,
           }
         } else {
           fieldsData[part.fieldname] = part.value
         }
       }
 
-      if (!fileData) {
-        return reply.code(400).send({ error: 'Bad Request', message: 'Nenhum arquivo enviado' })
-      }
+      if (!fileData) return reply.code(400).send({ error: 'Bad Request', message: 'Nenhum arquivo enviado' })
 
       const validatedFields = uploadDocumentSchema.parse(fieldsData)
 
@@ -337,23 +353,18 @@ export class VirtualProcessController {
           fileName: fileData.fileName,
           fileUrl: fileData.fileUrl,
           fileSize: fileData.fileSize,
-          uploadedById: (request as any).user?.id
+          uploadedById: userId
         }
       })
 
       await db.createAuditLog({
-        userId: (request as any).user?.id,
+        userId,
         action: 'ANEXOU_DOCUMENTO',
         resource: 'VIRTUAL_PROCESS',
         resourceId: id,
         ipAddress: request.ip,
         success: true,
-        metadata: {
-          processId: id,
-          documentId: document.id,
-          fileName: fileData.fileName,
-          description: `Anexou o documento: ${fileData.fileName}`
-        }
+        metadata: { processId: id, documentId: document.id, fileName: fileData.fileName, description: `Anexou o documento: ${fileData.fileName}` }
       })
 
       return reply.code(201).send(document)
@@ -365,26 +376,30 @@ export class VirtualProcessController {
 
   async downloadDocument(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { id, documentId } = request.params as { id: string, documentId: string }
+      const { id, documentId } = request.params as { id: string; documentId: string }
+      const userId = (request as any).user?.id as string
 
-      const document = await prisma.virtualProcessDocument.findUnique({
-        where: { id: documentId }
-      })
-
+      const document = await prisma.virtualProcessDocument.findUnique({ where: { id: documentId } })
       if (!document || document.virtualProcessId !== id) {
         return reply.code(404).send({ error: 'Not Found', message: 'Documento não encontrado' })
       }
 
-      const urlParts = document.fileUrl.split('/')
-      const fileNameOnDisk = urlParts[urlParts.length - 1]
-      const filePath = path.join(UPLOAD_DIR, fileNameOnDisk)
+      const processObj = await prisma.virtualProcess.findUnique({ where: { id } })
+      if (!processObj) return reply.code(404).send({ message: 'Processo não encontrado' })
 
-      if (!fs.existsSync(filePath)) {
-        return reply.code(404).send({ error: 'Not Found', message: 'Arquivo não encontrado no servidor' })
-      }
+      const member = await prisma.workspaceMember.findUnique({
+        where: { workspaceId_userId: { workspaceId: processObj.workspaceId, userId } }
+      })
+      if (!member) return reply.code(403).send({ message: 'Acesso negado ao workspace' })
+
+      const command = new GetObjectCommand({
+        Bucket: process.env.R2_BUCKET_NAME,
+        Key: document.fileUrl,
+      })
+      const signedUrl = await getSignedUrl(r2, command, { expiresIn: 300 })
 
       await db.createAuditLog({
-        userId: (request as any).user?.id,
+        userId,
         action: 'BAIXOU_DOCUMENTO',
         resource: 'VIRTUAL_PROCESS_DOCUMENT',
         resourceId: documentId,
@@ -393,9 +408,7 @@ export class VirtualProcessController {
         metadata: { processId: id }
       })
 
-      const stream = fs.createReadStream(filePath)
-      reply.header('Content-Disposition', `attachment; filename="${encodeURIComponent(document.fileName)}"`)
-      return reply.send(stream)
+      return reply.redirect(signedUrl)
     } catch (error: any) {
       logger.error(error, 'Failed to download document')
       return reply.code(500).send({ error: 'Download Failed', message: error.message })
@@ -404,45 +417,42 @@ export class VirtualProcessController {
 
   async deleteDocument(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { id, documentId } = request.params as { id: string, documentId: string }
+      const { id, documentId } = request.params as { id: string; documentId: string }
+      const userId = (request as any).user?.id as string
 
-      const document = await prisma.virtualProcessDocument.findUnique({
-        where: { id: documentId }
-      })
-
+      const document = await prisma.virtualProcessDocument.findUnique({ where: { id: documentId } })
       if (!document || document.virtualProcessId !== id) {
         return reply.code(404).send({ error: 'Not Found', message: 'Documento não encontrado' })
       }
 
-      const diffInMs = Date.now() - document.uploadedAt.getTime()
-      const diffInHours = diffInMs / (1000 * 60 * 60)
+      const processObj = await prisma.virtualProcess.findUnique({ where: { id } })
+      if (!processObj) return reply.code(404).send({ message: 'Processo não encontrado' })
 
-      if (diffInHours > 24) {
+      const member = await prisma.workspaceMember.findUnique({
+        where: { workspaceId_userId: { workspaceId: processObj.workspaceId, userId } }
+      })
+      if (!member) return reply.code(403).send({ message: 'Acesso negado ao workspace' })
+
+      if ((Date.now() - document.uploadedAt.getTime()) > 24 * 60 * 60 * 1000) {
         return reply.code(403).send({ error: 'Forbidden', message: 'O prazo de 24 horas para exclusão deste documento expirou' })
       }
 
-      await prisma.virtualProcessDocument.delete({
-        where: { id: documentId }
-      })
+      await prisma.virtualProcessDocument.delete({ where: { id: documentId } })
 
-      const urlParts = document.fileUrl.split('/')
-      const fileNameOnDisk = urlParts[urlParts.length - 1]
-      const filePath = path.join(UPLOAD_DIR, fileNameOnDisk)
-
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath)
+      try {
+        await r2.send(new DeleteObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: document.fileUrl }))
+      } catch (_e) {
+        // ignore R2 delete errors
       }
 
       await db.createAuditLog({
-        userId: (request as any).user?.id,
+        userId,
         action: 'REMOVEU_DOCUMENTO',
         resource: 'VIRTUAL_PROCESS',
         resourceId: id,
         ipAddress: request.ip,
         success: true,
-        metadata: {
-          description: `Removeu o documento: ${document.fileName}`
-        },
+        metadata: { description: `Removeu o documento: ${document.fileName}` },
         oldData: document
       })
 

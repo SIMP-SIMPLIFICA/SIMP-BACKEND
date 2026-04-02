@@ -221,6 +221,7 @@ model Workspace {
   financeCategories FinanceCategory[]
   financeEntries    FinanceEntry[]
   bankAccounts      BankAccount[]
+  virtualProcesses  VirtualProcess[]
 }
 
 model WorkspaceMember {
@@ -485,7 +486,8 @@ model FinanceAttachment {
 
 model VirtualProcess {
   id            String    @id @default(uuid())
-  processNumber String    @unique @map("process_number")
+  workspaceId   String    @map("workspace_id")
+  processNumber String    @map("process_number")
   secretaria    String
   source        String
   sourceDetail  String?   @map("source_detail")
@@ -504,9 +506,11 @@ model VirtualProcess {
   updatedAt   DateTime @updatedAt @map("updated_at")
   createdById String   @map("created_by_id")
 
+  workspace Workspace                @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   creator   User                     @relation("ProcessCreator", fields: [createdById], references: [id])
   documents VirtualProcessDocument[]
 
+  @@unique([workspaceId, processNumber])
   @@map("virtual_processes")
 }
 

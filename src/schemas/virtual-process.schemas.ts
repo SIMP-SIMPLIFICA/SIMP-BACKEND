@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 export const createVirtualProcessSchema = z.object({
+  workspaceId: z.string().uuid(),
   processNumber: z.string().regex(/^\d+\/\d{4}$/, 'O número deve estar no formato NUMERO/ANO (ex: 001/2026)'),
   secretaria: z.string().min(1),
   source: z.string().min(1),

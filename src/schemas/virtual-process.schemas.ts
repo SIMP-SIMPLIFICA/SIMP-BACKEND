@@ -46,3 +46,31 @@ export const updateVirtualProcessCategorySchema = z.object({
 }).strip()
 
 export type UpdateVirtualProcessCategoryInput = z.infer<typeof updateVirtualProcessCategorySchema>
+
+export const createVirtualProcessSourceSchema = z.object({
+  workspaceId: z.string().uuid(),
+  name: z.string().min(1).max(100),
+}).strip()
+
+export type CreateVirtualProcessSourceInput = z.infer<typeof createVirtualProcessSourceSchema>
+
+export const updateVirtualProcessSourceSchema = z.object({
+  name: z.string().min(1).max(100),
+}).strip()
+
+export type UpdateVirtualProcessSourceInput = z.infer<typeof updateVirtualProcessSourceSchema>
+
+export const createVirtualProcessCompanySchema = z.object({
+  workspaceId: z.string().uuid(),
+  name: z.string().min(1).max(150),
+  cnpj: z.string().max(20).optional().nullable(),
+}).strip()
+
+export type CreateVirtualProcessCompanyInput = z.infer<typeof createVirtualProcessCompanySchema>
+
+export const updateVirtualProcessCompanySchema = z.object({
+  name: z.string().min(1).max(150),
+  cnpj: z.string().max(20).optional().nullable(),
+}).strip()
+
+export type UpdateVirtualProcessCompanyInput = z.infer<typeof updateVirtualProcessCompanySchema>

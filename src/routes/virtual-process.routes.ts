@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { virtualProcessController } from '@/controllers/virtual-process.controller.js'
 import { virtualProcessCategoryController } from '@/controllers/virtual-process-category.controller.js'
+import { sourceController, companyController } from '@/controllers/virtual-process-config.controller.js'
 import { authMiddleware, requireAnyPermission } from '@/middleware/auth.middleware.js'
 
 export async function virtualProcessRoutes(app: FastifyInstance) {
@@ -28,6 +29,18 @@ export async function virtualProcessRoutes(app: FastifyInstance) {
     { preHandler: [authMiddleware] },
     virtualProcessCategoryController.delete.bind(virtualProcessCategoryController)
   )
+
+  // --- Source routes (Origens do Recurso) ---
+  app.post('/workspaces/:workspaceId/sources', { preHandler: [authMiddleware] }, sourceController.create)
+  app.get('/workspaces/:workspaceId/sources', { preHandler: [authMiddleware] }, sourceController.list)
+  app.put('/sources/:id', { preHandler: [authMiddleware] }, sourceController.update)
+  app.delete('/sources/:id', { preHandler: [authMiddleware] }, sourceController.delete)
+
+  // --- Company routes (Empresas Contratadas) ---
+  app.post('/workspaces/:workspaceId/companies', { preHandler: [authMiddleware] }, companyController.create)
+  app.get('/workspaces/:workspaceId/companies', { preHandler: [authMiddleware] }, companyController.list)
+  app.put('/companies/:id', { preHandler: [authMiddleware] }, companyController.update)
+  app.delete('/companies/:id', { preHandler: [authMiddleware] }, companyController.delete)
 
   // --- Workspace-scoped routes (list + create) ---
   app.get(

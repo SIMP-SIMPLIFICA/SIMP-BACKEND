@@ -223,6 +223,8 @@ model Workspace {
   bankAccounts              BankAccount[]
   virtualProcesses          VirtualProcess[]
   virtualProcessCategories  VirtualProcessCategory[]
+  virtualProcessSources     VirtualProcessSource[]
+  virtualProcessCompanies   VirtualProcessCompany[]
 }
 
 model WorkspaceMember {
@@ -525,6 +527,31 @@ model VirtualProcessCategory {
 
   @@unique([workspaceId, name])
   @@map("virtual_process_categories")
+}
+
+model VirtualProcessSource {
+  id          String   @id @default(uuid())
+  workspaceId String   @map("workspace_id")
+  name        String
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, name])
+  @@map("virtual_process_sources")
+}
+
+model VirtualProcessCompany {
+  id          String   @id @default(uuid())
+  workspaceId String   @map("workspace_id")
+  name        String
+  cnpj        String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, name])
+  @@map("virtual_process_companies")
 }
 
 model VirtualProcessDocument {

@@ -231,9 +231,23 @@ export class CommunicationController {
     const userId = this.getUserId(request)
     const { search } = request.query as { search?: string }
 
+    // Descobre os workspaces do usuário atual e retorna apenas colegas de workspace
+    const myMemberships = await prisma.workspaceMember.findMany({
+      where: { userId },
+      select: { workspaceId: true }
+    })
+    const myWorkspaceIds = myMemberships.map((m: { workspaceId: string }) => m.workspaceId)
+
+    const sharedMembers = await prisma.workspaceMember.findMany({
+      where: { workspaceId: { in: myWorkspaceIds }, userId: { not: userId } },
+      select: { userId: true },
+      distinct: ['userId']
+    })
+    const sharedUserIds = sharedMembers.map((m: { userId: string }) => m.userId)
+
     const where: any = {
       isActive: true,
-      id: { not: userId }
+      id: { in: sharedUserIds }
     }
 
     if (search) {

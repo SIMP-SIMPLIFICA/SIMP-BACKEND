@@ -100,6 +100,8 @@ export class TaskController {
   // --- DETAILS ---
   async details(request: FastifyRequest, reply: FastifyReply) {
     const { id } = z.object({ id: z.string() }).parse(request.params);
+    const userId = request.user.id;
+
     const task = await prisma.task.findUnique({
       where: { id },
       include: {
@@ -111,7 +113,15 @@ export class TaskController {
         creator: { select: { id: true, firstName: true } }
       }
     });
+
     if (!task) return reply.status(404).send({ message: 'Tarefa não encontrada' });
+
+    // Garante que o usuário é membro do workspace da tarefa
+    const member = await prisma.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId: task.workspaceId, userId } }
+    });
+    if (!member) return reply.status(403).send({ message: 'Sem permissão.' });
+
     return reply.send(task);
   }
 

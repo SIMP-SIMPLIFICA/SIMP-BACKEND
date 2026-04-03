@@ -1,4 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
+import { ZodError } from 'zod'
 import { authService } from '@/services/auth.service.js'
 import { db } from '@/utils/database.js'
 import { authLogger } from '@/utils/logger.js'
@@ -10,6 +11,13 @@ import {
   forgotPasswordSchema,
   resetPasswordSchema
 } from '@/schemas/auth.schemas.js'
+
+function zodErrorMessage(error: unknown): string {
+  if (error instanceof ZodError) {
+    return error.issues.map(i => i.message).join('. ')
+  }
+  return error instanceof Error ? error.message : String(error)
+}
 
 export class AuthController {
   // ... register, login, refreshToken, logout (mantidos igual) ...
@@ -156,7 +164,7 @@ export class AuthController {
       return reply.send({ message: 'Senha redefinida com sucesso.' })
     } catch (error: unknown) {
       authLogger.error(error, 'Reset password failed')
-      return reply.code(400).send({ error: 'Reset Failed', message: error instanceof Error ? error.message : String(error) })
+      return reply.code(400).send({ error: 'Reset Failed', message: zodErrorMessage(error) })
     }
   }
   async verifyEmail(request: FastifyRequest, reply: FastifyReply) { /* ... */ }

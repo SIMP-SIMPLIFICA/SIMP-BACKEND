@@ -4,6 +4,7 @@ import { nanoid } from 'nanoid'
 import { config } from '@/config/config.js'
 import { db, prisma } from '@/utils/database.js'
 import { authLogger, logSecurity } from '@/utils/logger.js'
+import { emailService } from '@/services/email.service.js'
 
 export class AuthService {
   async hashPassword(password: string): Promise<string> {
@@ -426,7 +427,7 @@ export class AuthService {
         }
       })
 
-      // await (emailService as any).sendPasswordResetEmail(user.email, resetToken)
+      await emailService.sendPasswordResetEmail(user.email, resetToken)
 
       await db.createAuditLog({
         userId: user.id,

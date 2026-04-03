@@ -102,6 +102,25 @@ class EmailService {
     `
   }
 
+  async sendPasswordResetEmail(email: string, token: string): Promise<void> {
+    const resetUrl = `${config.urls.frontend}/reset-password?token=${token}`
+    const content = `
+      <p>Recebemos uma solicitação para redefinir a senha da sua conta SIMP.</p>
+      <p>Clique no botão abaixo para criar uma nova senha. O link expira em <strong>1 hora</strong>.</p>
+      <p>Se você não solicitou a redefinição, ignore este e-mail — sua senha permanece a mesma.</p>
+    `
+    await this.sendEmail({
+      to: email,
+      subject: 'Redefinição de senha — SIMP',
+      html: this.generateEmailTemplate(
+        'Redefinir senha',
+        content,
+        { text: 'Redefinir minha senha', url: resetUrl }
+      ),
+      text: `Acesse o link para redefinir sua senha: ${resetUrl}\n\nO link expira em 1 hora.`
+    })
+  }
+
   async sendWelcomeEmail(email: string, name?: string): Promise<void> {
     const content = `<p>Hello ${name || ''}! Welcome to SIMP.</p>`
     await this.sendEmail({

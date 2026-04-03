@@ -6,7 +6,9 @@ import {
   loginSchema,
   refreshTokenSchema,
   registerSchema,
-  updateProfileSchema
+  updateProfileSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema
 } from '@/schemas/auth.schemas.js'
 
 export class AuthController {
@@ -134,8 +136,29 @@ export class AuthController {
     }
   }
   async changePassword(request: FastifyRequest, reply: FastifyReply) { /* ... */ }
-  async forgotPassword(request: FastifyRequest, reply: FastifyReply) { /* ... */ }
-  async resetPassword(request: FastifyRequest, reply: FastifyReply) { /* ... */ }
+
+  async forgotPassword(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { email } = forgotPasswordSchema.parse(request.body)
+      await authService.forgotPassword(email, request.ip)
+      // Sempre retorna 200 para não vazar se o e-mail existe
+      return reply.send({ message: 'Se o e-mail estiver cadastrado, você receberá as instruções em breve.' })
+    } catch (error: unknown) {
+      authLogger.error(error, 'Forgot password failed')
+      return reply.code(400).send({ error: 'Request Failed', message: error instanceof Error ? error.message : String(error) })
+    }
+  }
+
+  async resetPassword(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { token, password } = resetPasswordSchema.parse(request.body)
+      await authService.resetPassword(token, password, request.ip)
+      return reply.send({ message: 'Senha redefinida com sucesso.' })
+    } catch (error: unknown) {
+      authLogger.error(error, 'Reset password failed')
+      return reply.code(400).send({ error: 'Reset Failed', message: error instanceof Error ? error.message : String(error) })
+    }
+  }
   async verifyEmail(request: FastifyRequest, reply: FastifyReply) { /* ... */ }
   async getSessions(request: FastifyRequest, reply: FastifyReply) { /* ... */ }
   async terminateSession(request: FastifyRequest, reply: FastifyReply) { /* ... */ }

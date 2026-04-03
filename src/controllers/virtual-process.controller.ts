@@ -408,7 +408,7 @@ export class VirtualProcessController {
         metadata: { processId: id }
       })
 
-      return reply.redirect(signedUrl)
+      return reply.send({ url: signedUrl })
     } catch (error: any) {
       logger.error(error, 'Failed to download document')
       return reply.code(500).send({ error: 'Download Failed', message: error.message })

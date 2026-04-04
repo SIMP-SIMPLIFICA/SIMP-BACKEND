@@ -24,7 +24,7 @@ class NotificationService extends EventEmitter {
     }
   }
 
-  async notify(data: { userId: string; title: string; message: string; type: string; link?: string }) {
+  async notify(data: { userId: string; title: string; message: string; type: string; link?: string; entityId?: string }) {
     // 1. Salvar no Banco
     const notification = await prisma.notification.create({
       data: {
@@ -33,6 +33,7 @@ class NotificationService extends EventEmitter {
         message: data.message,
         type: data.type,
         link: data.link,
+        entityId: data.entityId,
         read: false
       }
     });
@@ -48,7 +49,7 @@ class NotificationService extends EventEmitter {
   }
 
   // Helper para notificar múltiplos usuários
-  async notifyMany(userIds: string[], data: { title: string; message: string; type: string; link?: string }) {
+  async notifyMany(userIds: string[], data: { title: string; message: string; type: string; link?: string; entityId?: string }) {
     return Promise.all(userIds.map(id => this.notify({ ...data, userId: id })));
   }
 }

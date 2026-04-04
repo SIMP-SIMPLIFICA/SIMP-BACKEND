@@ -372,6 +372,7 @@ model Notification {
   read      Boolean  @default(false)
   type      String
   link      String?
+  entityId  String?
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

@@ -87,7 +87,8 @@ export class WorkspaceController {
         title: 'Novo Workspace',
         message: `Você foi adicionado ao workspace "${workspace?.name}"`,
         type: 'WORKSPACE_INVITE',
-        link: `/workspaces/${id}`
+        link: `/workspaces/${id}`,
+        entityId: id,
     });
     return reply.status(201).send(member);
   }
@@ -131,7 +132,8 @@ export class WorkspaceController {
             title: 'Removido do Workspace',
             message: `Você foi removido do workspace "${targetMember.workspace.name}"`,
             type: 'WORKSPACE_REMOVED',
-            link: `/workspaces` 
+            link: `/workspaces`,
+            entityId: id,
         });
     }
 

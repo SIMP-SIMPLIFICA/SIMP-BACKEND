@@ -79,7 +79,8 @@ export class CommunicationController {
           title: 'Nova Mensagem',
           message: `Você recebeu uma nova mensagem: ${subject}`,
           type: 'DOCUMENT_RECEIVED',
-          link: `/communication/${message.id}`
+          link: `/communication/${message.id}`,
+          entityId: message.id,
         }).catch(err => request.log.error({ err }, 'Falha ao enviar notificações'))
       }
 
@@ -194,7 +195,8 @@ export class CommunicationController {
         title: 'Mensagem Lida',
         message: `${(request.user as any)?.username || 'Um usuário'} leu sua mensagem: ${message.title}`,
         type: 'DOCUMENT_VIEWED',
-        link: `/communication/${message.id}`
+        link: `/communication/${message.id}`,
+        entityId: message.id,
       }).catch(err => request.log.error({ err }, 'Falha ao notificar leitura'))
     }
 

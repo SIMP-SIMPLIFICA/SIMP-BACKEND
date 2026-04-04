@@ -77,7 +77,8 @@ export class CalendarController {
                 title: `Compromisso Agendado para ${dayLabel}`,
                 message: `Lembrete: "${event.title}" está agendado para o dia ${new Date(event.startAt).toLocaleDateString('pt-BR')}.`,
                 type: 'CALENDAR_ALERT',
-                link: `/utilities/calendar`
+                link: `/utilities/calendar?eventId=${event.id}`,
+                entityId: event.id,
             });
         }
 

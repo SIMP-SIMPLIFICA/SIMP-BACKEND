@@ -69,10 +69,10 @@ export class TaskController {
     if (recipients.length > 0) {
         await notificationService.notifyMany(recipients, {
             title: 'Nova Tarefa',
-            // Contexto: Workspace -> Tarefa
             message: `[${workspace.name}] Você foi vinculado à nova tarefa "${task.title}"`,
             type: 'TASK_CREATED',
-            link: `/workspaces/${workspaceId}?taskId=${task.id}`
+            link: `/workspaces/${workspaceId}?taskId=${task.id}`,
+            entityId: task.id,
         });
     }
 
@@ -168,7 +168,8 @@ export class TaskController {
                 title: 'Tarefa Atualizada',
                 message: `[${updatedTask.workspace.name}] ${userActor?.firstName} atualizou "${updatedTask.title}" (${changes.join(', ')})`,
                 type: 'TASK_UPDATE',
-                link: `/workspaces/${updatedTask.workspaceId}?taskId=${id}`
+                link: `/workspaces/${updatedTask.workspaceId}?taskId=${id}`,
+                entityId: id,
             });
         }
     }
@@ -207,7 +208,8 @@ export class TaskController {
             title: 'Status Alterado',
             message: `[${task.workspace.name}] ${userActor?.firstName} moveu "${task.title}" para ${status}`,
             type: 'TASK_STATUS',
-            link: `/workspaces/${task.workspaceId}?taskId=${id}`
+            link: `/workspaces/${task.workspaceId}?taskId=${id}`,
+            entityId: id,
         });
     }
 
@@ -241,7 +243,8 @@ export class TaskController {
             title: 'Você foi atribuído',
             message: `[${task.workspace.name}] Você é responsável pela tarefa "${task.title}"`,
             type: 'TASK_ASSIGNED',
-            link: `/workspaces/${task.workspaceId}?taskId=${id}`
+            link: `/workspaces/${task.workspaceId}?taskId=${id}`,
+            entityId: id,
         });
     }
 
@@ -291,7 +294,8 @@ export class TaskController {
               title: 'Removido da Tarefa',
               message: `[${task.workspace.name}] Você foi removido da tarefa "${task.title}"`,
               type: 'TASK_UNASSIGNED',
-              link: `/workspaces/${task.workspaceId}?taskId=${id}`
+              link: `/workspaces/${task.workspaceId}?taskId=${id}`,
+              entityId: id,
           });
       }
 
@@ -304,7 +308,8 @@ export class TaskController {
               title: 'Responsáveis Atualizados',
               message: `[${task.workspace.name}] ${actor?.firstName} removeu ${targetUser?.firstName} da tarefa "${task.title}".`,
               type: 'TASK_UPDATE',
-              link: `/workspaces/${task.workspaceId}?taskId=${id}`
+              link: `/workspaces/${task.workspaceId}?taskId=${id}`,
+              entityId: id,
           });
       }
 
@@ -363,7 +368,8 @@ export class TaskController {
             title: 'Novo Anexo',
             message: `[${task.workspace.name}] ${uploader?.firstName} anexou arquivo em "${task.title}"`,
             type: 'FILE_UPLOAD',
-            link: `/workspaces/${task.workspaceId}?taskId=${id}`
+            link: `/workspaces/${task.workspaceId}?taskId=${id}`,
+            entityId: id,
         });
     }
 
@@ -404,7 +410,8 @@ export class TaskController {
             title: 'Anexo Removido',
             message: `[${attachment.task.workspace.name}] ${actor?.firstName} removeu arquivo de "${attachment.task.title}"`,
             type: 'TASK_UPDATE',
-            link: `/workspaces/${attachment.task.workspaceId}?taskId=${attachment.taskId}`
+            link: `/workspaces/${attachment.task.workspaceId}?taskId=${attachment.taskId}`,
+            entityId: attachment.taskId,
         });
     }
 
@@ -434,7 +441,8 @@ export class TaskController {
               title: 'Checklist Atualizado',
               message: `[${task.workspace.name}] ${actor?.firstName} adicionou item na tarefa "${task.title}"`,
               type: 'TASK_UPDATE',
-              link: `/workspaces/${task.workspaceId}?taskId=${id}`
+              link: `/workspaces/${task.workspaceId}?taskId=${id}`,
+              entityId: id,
           });
       }
 
@@ -472,7 +480,8 @@ export class TaskController {
                     title: 'Item Concluído',
                     message: `[${item.task.workspace.name}] ${actor?.firstName} completou "${item.title}" em "${item.task.title}"`,
                     type: 'CHECKLIST_DONE',
-                    link: `/workspaces/${item.task.workspaceId}?taskId=${item.taskId}`
+                    link: `/workspaces/${item.task.workspaceId}?taskId=${item.taskId}`,
+                    entityId: item.taskId,
                 });
             }
           }
@@ -505,7 +514,8 @@ export class TaskController {
             title: 'Novo Comentário',
             message: `[${task.workspace.name}] ${note.author.firstName} comentou em "${task.title}"`,
             type: 'TASK_COMMENT',
-            link: `/workspaces/${task.workspaceId}?taskId=${id}`
+            link: `/workspaces/${task.workspaceId}?taskId=${id}`,
+            entityId: id,
         });
     }
 
@@ -531,7 +541,8 @@ export class TaskController {
               title: 'Tarefa Excluída',
               message: `[${task.workspace.name}] ${actor?.firstName} excluiu a tarefa "${task.title}"`,
               type: 'TASK_DELETED',
-              link: `/workspaces/${task.workspaceId}`
+              link: `/workspaces/${task.workspaceId}`,
+              entityId: id,
           });
       }
 

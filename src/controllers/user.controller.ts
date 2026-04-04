@@ -14,6 +14,11 @@ export class UserController {
       const query = userQuerySchema.parse(request.query)
       const where: any = {}
 
+      // Isolamento por organização
+      if (!request.user.isSuperAdmin) {
+        where.organizationId = request.user.organizationId
+      }
+
       if (query.search) {
         where.OR = [
           { email: { contains: query.search, mode: 'insensitive' } },
@@ -79,8 +84,10 @@ export class UserController {
       }
       // --- FIM DA CORREÇÃO ---
 
-      const user = await prisma.user.findUnique({
-        where: { id },
+      const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
+
+      const user = await prisma.user.findFirst({
+        where: { id, ...orgFilter },
         select: {
           id: true, email: true, username: true, firstName: true, lastName: true,
           avatar: true, isActive: true, isVerified: true, twoFactorEnabled: true,
@@ -109,7 +116,12 @@ export class UserController {
 
   async createUser(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const data = createUserSchema.parse(request.body)
+      const parseResult = createUserSchema.safeParse(request.body)
+      if (!parseResult.success) {
+        const firstIssue = parseResult.error.issues[0]
+        return reply.code(400).send({ error: 'Validation Error', message: firstIssue.message })
+      }
+      const data = parseResult.data
       const existingUser = await db.findUserByEmail(data.email)
       if (existingUser) return reply.code(400).send({ error: 'User Exists', message: 'User with this email already exists' })
 
@@ -122,7 +134,8 @@ export class UserController {
       const user = await prisma.user.create({
         data: {
           email: data.email.toLowerCase(), password: hashedPassword, firstName: data.firstName,
-          lastName: data.lastName, username: data.username, isActive: data.isActive ?? true, isVerified: data.isVerified ?? false
+          lastName: data.lastName, username: data.username, isActive: data.isActive ?? true, isVerified: data.isVerified ?? false,
+          organizationId: request.user.organizationId
         },
         select: { id: true, email: true, username: true, firstName: true, lastName: true, isActive: true, isVerified: true, createdAt: true }
       })
@@ -157,9 +170,15 @@ export class UserController {
   async updateUser(request: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = request.params as { id: string }
-      const data = updateUserSchema.parse(request.body)
+      const parseResult = updateUserSchema.safeParse(request.body)
+      if (!parseResult.success) {
+        const firstIssue = parseResult.error.issues[0]
+        return reply.code(400).send({ error: 'Validation Error', message: firstIssue.message })
+      }
+      const data = parseResult.data
 
-      const existingUser = await prisma.user.findUnique({ where: { id } })
+      const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
+      const existingUser = await prisma.user.findFirst({ where: { id, ...orgFilter } })
       if (!existingUser) return reply.code(404).send({ error: 'User Not Found', message: 'User with specified ID not found' })
 
       if (data.email && data.email !== existingUser.email) {
@@ -203,7 +222,8 @@ export class UserController {
   async deleteUser(request: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = request.params as { id: string }
-      const user = await prisma.user.findUnique({ where: { id }, select: { id: true, email: true } })
+      const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
+      const user = await prisma.user.findFirst({ where: { id, ...orgFilter }, select: { id: true, email: true } })
       if (!user) return reply.code(404).send({ error: 'User Not Found', message: 'User with specified ID not found' })
 
       if (user.id === (request as any).user?.id) {
@@ -236,7 +256,8 @@ export class UserController {
       const { id } = request.params as { id: string }
       const data = assignRoleSchema.parse(request.body)
 
-      const user = await prisma.user.findUnique({ where: { id } })
+      const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
+      const user = await prisma.user.findFirst({ where: { id, ...orgFilter } })
       if (!user) return reply.code(404).send({ error: 'User Not Found', message: 'User with specified ID not found' })
 
       const roles = await prisma.role.findMany({ where: { id: { in: data.roleIds } } })
@@ -275,7 +296,8 @@ export class UserController {
       const { id } = request.params as { id: string }
       const { roleIds } = request.body as { roleIds: string[] }
 
-      const user = await prisma.user.findUnique({ where: { id } })
+      const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
+      const user = await prisma.user.findFirst({ where: { id, ...orgFilter } })
       if (!user) return reply.code(404).send({ error: 'User Not Found', message: 'User with specified ID not found' })
 
       const roles = await prisma.role.findMany({ where: { id: { in: roleIds } }, select: { id: true, name: true } })
@@ -301,6 +323,9 @@ export class UserController {
   async getUserSessions(request: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = request.params as { id: string }
+      const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
+      const targetUser = await prisma.user.findFirst({ where: { id, ...orgFilter }, select: { id: true } })
+      if (!targetUser) return reply.code(404).send({ error: 'User Not Found', message: 'User with specified ID not found' })
       const sessions = await prisma.userSession.findMany({
         where: { userId: id, isActive: true, expiresAt: { gt: new Date() } },
         select: { id: true, fingerprint: true, ipAddress: true, userAgent: true, deviceType: true, deviceName: true, lastUsedAt: true, createdAt: true, expiresAt: true },
@@ -316,6 +341,9 @@ export class UserController {
   async terminateUserSessions(request: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = request.params as { id: string }
+      const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
+      const targetUser = await prisma.user.findFirst({ where: { id, ...orgFilter }, select: { id: true } })
+      if (!targetUser) return reply.code(404).send({ error: 'User Not Found', message: 'User with specified ID not found' })
       const result = await prisma.userSession.updateMany({ where: { userId: id, isActive: true }, data: { isActive: false } })
 
       await db.createAuditLog({
@@ -335,14 +363,37 @@ export class UserController {
     }
   }
 
+  async terminateSingleSession(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { id, sessionId } = request.params as { id: string; sessionId: string }
+      const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
+      const targetUser = await prisma.user.findFirst({ where: { id, ...orgFilter }, select: { id: true } })
+      if (!targetUser) return reply.code(404).send({ error: 'User Not Found', message: 'User with specified ID not found' })
+
+      const session = await prisma.userSession.findFirst({ where: { id: sessionId, userId: id, isActive: true } })
+      if (!session) return reply.code(404).send({ error: 'Session Not Found', message: 'Session not found or already terminated' })
+
+      await prisma.userSession.update({ where: { id: sessionId }, data: { isActive: false } })
+
+      return reply.send({ message: 'Session terminated successfully' })
+    } catch (error: any) {
+      authLogger.error(error, 'Failed to terminate single session')
+      return reply.code(500).send({ error: 'Session Termination Failed', message: error.message })
+    }
+  }
+
   async changeUserStatus(request: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = request.params as { id: string }
       const { isActive, reason } = request.body as { isActive: boolean; reason?: string }
 
-      if (!isActive && id === (request as any).user?.id) {
+      if (!isActive && id === request.user.id) {
         return reply.code(400).send({ error: 'Self Deactivation', message: 'Cannot deactivate your own account' })
       }
+
+      const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
+      const existingUser = await prisma.user.findFirst({ where: { id, ...orgFilter }, select: { id: true } })
+      if (!existingUser) return reply.code(404).send({ error: 'User Not Found', message: 'User with specified ID not found' })
 
       const user = await prisma.user.update({ where: { id }, data: { isActive }, select: { id: true, email: true, isActive: true } })
 
@@ -370,7 +421,8 @@ export class UserController {
   async forcePasswordReset(request: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = request.params as { id: string }
-      const user = await prisma.user.findUnique({ where: { id }, select: { id: true, email: true } })
+      const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
+      const user = await prisma.user.findFirst({ where: { id, ...orgFilter }, select: { id: true, email: true } })
       if (!user) return reply.code(404).send({ error: 'User Not Found', message: 'User with specified ID not found' })
 
       await authService.forgotPassword(user.email, request.ip)

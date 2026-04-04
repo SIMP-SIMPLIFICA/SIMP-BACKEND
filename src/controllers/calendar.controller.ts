@@ -18,7 +18,8 @@ export class CalendarController {
 
         const { start, end } = querySchema.parse(request.query);
 
-        const whereClause: any = { userId };
+        const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId };
+        const whereClause: any = { userId, ...orgFilter };
 
         if (start && end) {
             whereClause.startAt = {
@@ -48,6 +49,7 @@ export class CalendarController {
                 ...data,
                 startAt: new Date(data.startAt),
                 endAt: data.endAt ? new Date(data.endAt) : null,
+                ...(request.user.organizationId && { organization: { connect: { id: request.user.organizationId } } }),
                 user: { connect: { id: userId } },
                 attachments: attachments ? {
                     create: attachments as any
@@ -88,10 +90,10 @@ export class CalendarController {
         const { attachments, ...data } = updateCalendarEventSchema.parse(request.body);
         const userId = request.user.id;
 
-        const event = await prisma.calendarEvent.findUnique({ where: { id } });
+        const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId };
+        const event = await prisma.calendarEvent.findFirst({ where: { id, userId, ...orgFilter } });
 
         if (!event) return reply.status(404).send({ message: 'Evento não encontrado' });
-        if (event.userId !== userId) return reply.status(403).send({ message: 'Sem permissão' });
 
         const updatedEvent = await prisma.calendarEvent.update({
             where: { id },
@@ -115,10 +117,10 @@ export class CalendarController {
         const { id } = calendarEventIdSchema.parse(request.params);
         const userId = request.user.id;
 
-        const event = await prisma.calendarEvent.findUnique({ where: { id } });
+        const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId };
+        const event = await prisma.calendarEvent.findFirst({ where: { id, userId, ...orgFilter } });
 
         if (!event) return reply.status(404).send({ message: 'Evento não encontrado' });
-        if (event.userId !== userId) return reply.status(403).send({ message: 'Sem permissão' });
 
         await prisma.calendarEvent.delete({ where: { id } });
 
@@ -135,9 +137,11 @@ export class CalendarController {
         const afterTomorrow = new Date(today);
         afterTomorrow.setDate(today.getDate() + 2);
 
+        const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId };
         const events = await prisma.calendarEvent.findMany({
             where: {
                 userId,
+                ...orgFilter,
                 startAt: {
                     gte: today,
                     lt: afterTomorrow

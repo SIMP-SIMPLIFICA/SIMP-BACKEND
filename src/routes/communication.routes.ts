@@ -24,6 +24,15 @@ export async function communicationRoutes(app: FastifyInstance) {
     }
   })
 
+  // POST — Upload de anexo (multipart)
+  app.post('/messages/upload', {
+    schema: {
+      tags: ['Communication'],
+      description: 'Upload de arquivo para uso como anexo em mensagem',
+      consumes: ['multipart/form-data']
+    }
+  }, controller.uploadAttachment.bind(controller))
+
   // POST — Criar e enviar mensagem
   app.post('/messages', {
     schema: {

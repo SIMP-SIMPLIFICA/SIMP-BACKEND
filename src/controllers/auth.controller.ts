@@ -46,8 +46,9 @@ export class AuthController {
       if (result.requiresTwoFactor) {
         return reply.send({ message: 'Two-factor authentication required', requiresTwoFactor: true, tempUserId: result.user.id })
       }
+      const cookieDays = data.rememberMe ? 30 : 7
       reply.setCookie('refreshToken', result.tokens.refreshToken, {
-        httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict', maxAge: 7 * 24 * 60 * 60 * 1000
+        httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict', maxAge: cookieDays * 24 * 60 * 60 * 1000
       })
       return reply.send({ message: 'Login successful', user: result.user, tokens: { accessToken: result.tokens.accessToken, expiresIn: result.tokens.expiresIn } })
     } catch (error: unknown) {

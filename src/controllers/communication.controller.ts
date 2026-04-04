@@ -2,8 +2,11 @@ import { FastifyReply, FastifyRequest } from 'fastify'
 import { prisma } from '@/lib/prisma'
 import { CreateMessageInput, UpdateMessageInput } from '@/schemas/communication.schemas'
 import { notificationService } from '@/services/notification.service'
-import fs from 'node:fs'
 import path from 'node:path'
+import crypto from 'node:crypto'
+import r2 from '@/lib/r2.js'
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3'
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 
 export class CommunicationController {
   private getUserId(request: FastifyRequest): string {
@@ -17,6 +20,20 @@ export class CommunicationController {
     try {
       const { subject, body, recipients, attachments } = request.body
       const userId = this.getUserId(request)
+      const organizationId = request.user.organizationId
+
+      // Validar que todos os destinatários pertencem à mesma org (non-superAdmin)
+      if (!request.user.isSuperAdmin && organizationId && recipients?.length) {
+        const recipientUserIds = recipients.filter(r => r.userId !== userId).map(r => r.userId)
+        if (recipientUserIds.length > 0) {
+          const validCount = await prisma.user.count({
+            where: { id: { in: recipientUserIds }, organizationId }
+          })
+          if (validCount !== recipientUserIds.length) {
+            return reply.code(403).send({ message: 'Um ou mais destinatários não pertencem a esta organização.' })
+          }
+        }
+      }
 
       const message = await prisma.communicationDocument.create({
         data: {
@@ -25,6 +42,7 @@ export class CommunicationController {
           status: 'SENT',
           sentAt: new Date(),
           createdBy: userId,
+          organizationId,
           recipients: {
             create: recipients
               .filter(r => r.userId !== userId)
@@ -78,7 +96,8 @@ export class CommunicationController {
 
     const where: any = {
       recipients: { some: { userId } },
-      status: { in: ['SENT', 'READ', 'ARCHIVED'] }
+      status: { in: ['SENT', 'READ', 'ARCHIVED'] },
+      ...(!request.user.isSuperAdmin && { organizationId: request.user.organizationId })
     }
 
     if (startDate && endDate) {
@@ -109,7 +128,8 @@ export class CommunicationController {
 
     const where: any = {
       createdBy: userId,
-      status: { not: 'DRAFT' }
+      status: { not: 'DRAFT' },
+      ...(!request.user.isSuperAdmin && { organizationId: request.user.organizationId })
     }
 
     if (startDate && endDate) {
@@ -139,8 +159,9 @@ export class CommunicationController {
     const { id } = request.params
     const userId = this.getUserId(request)
 
-    const message = await prisma.communicationDocument.findUnique({
-      where: { id },
+    const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
+    const message = await prisma.communicationDocument.findFirst({
+      where: { id, ...orgFilter },
       include: {
         creator: { select: { id: true, firstName: true, lastName: true, avatar: true, jobTitle: true } },
         attachments: true,
@@ -185,7 +206,8 @@ export class CommunicationController {
     const userId = this.getUserId(request)
     const data = request.body as any
 
-    const existing = await prisma.communicationDocument.findUnique({ where: { id } })
+    const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
+    const existing = await prisma.communicationDocument.findFirst({ where: { id, ...orgFilter } })
     if (!existing) return reply.code(404).send({ message: 'Mensagem não encontrada' })
     if (existing.createdBy !== userId) return reply.code(403).send({ message: 'Apenas o criador pode editar' })
     if (existing.status !== 'DRAFT') return reply.code(400).send({ message: 'Apenas rascunhos podem ser editados' })
@@ -218,7 +240,8 @@ export class CommunicationController {
     const { id } = request.params
     const userId = this.getUserId(request)
 
-    const existing = await prisma.communicationDocument.findUnique({ where: { id } })
+    const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
+    const existing = await prisma.communicationDocument.findFirst({ where: { id, ...orgFilter } })
     if (!existing) return reply.code(404).send({ message: 'Mensagem não encontrada' })
     if (existing.createdBy !== userId) return reply.code(403).send({ message: 'Apenas o criador pode excluir' })
     if (existing.status !== 'DRAFT') return reply.code(400).send({ message: 'Apenas rascunhos podem ser excluídos' })
@@ -231,23 +254,10 @@ export class CommunicationController {
     const userId = this.getUserId(request)
     const { search } = request.query as { search?: string }
 
-    // Descobre os workspaces do usuário atual e retorna apenas colegas de workspace
-    const myMemberships = await prisma.workspaceMember.findMany({
-      where: { userId },
-      select: { workspaceId: true }
-    })
-    const myWorkspaceIds = myMemberships.map((m: { workspaceId: string }) => m.workspaceId)
-
-    const sharedMembers = await prisma.workspaceMember.findMany({
-      where: { workspaceId: { in: myWorkspaceIds }, userId: { not: userId } },
-      select: { userId: true },
-      distinct: ['userId']
-    })
-    const sharedUserIds = sharedMembers.map((m: { userId: string }) => m.userId)
-
     const where: any = {
       isActive: true,
-      id: { in: sharedUserIds }
+      id: { not: userId },
+      ...(!request.user.isSuperAdmin && { organizationId: request.user.organizationId })
     }
 
     if (search) {
@@ -280,12 +290,62 @@ export class CommunicationController {
     })))
   }
 
+  async uploadAttachment(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const orgId = (request.user as any).organizationId as string | null
+
+      const data = await request.file()
+      if (!data) return reply.code(400).send({ message: 'Nenhum arquivo enviado' })
+
+      const allowedMimeTypes = [
+        'image/jpeg', 'image/png', 'image/webp', 'image/gif',
+        'application/pdf',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.ms-excel',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'text/plain', 'text/csv'
+      ]
+      if (!allowedMimeTypes.includes(data.mimetype)) {
+        return reply.code(400).send({ message: 'Tipo de arquivo não permitido.' })
+      }
+
+      const buffer = await data.toBuffer()
+
+      if (buffer.length > 10 * 1024 * 1024) {
+        return reply.code(400).send({ message: 'Arquivo muito grande. O limite é 10MB.' })
+      }
+
+      const ext = path.extname(data.filename) || ''
+      const uniqueName = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`
+      const r2Key = `communication/${orgId ?? 'global'}/${uniqueName}`
+
+      await r2.send(new PutObjectCommand({
+        Bucket: process.env.R2_BUCKET_NAME,
+        Key: r2Key,
+        Body: buffer,
+        ContentType: data.mimetype
+      }))
+
+      return reply.code(201).send({
+        fileName: data.filename,
+        fileUrl: uniqueName,
+        fileType: data.mimetype,
+        fileSize: buffer.length
+      })
+    } catch (error) {
+      request.log.error(error)
+      return reply.code(500).send({ message: 'Erro ao fazer upload do arquivo' })
+    }
+  }
+
   async downloadAttachment(request: FastifyRequest<{ Params: { id: string, attachmentId: string } }>, reply: FastifyReply) {
     const { id, attachmentId } = request.params
     const userId = this.getUserId(request)
 
-    const message = await prisma.communicationDocument.findUnique({
-      where: { id },
+    const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
+    const message = await prisma.communicationDocument.findFirst({
+      where: { id, ...orgFilter },
       include: { recipients: true }
     })
 
@@ -301,15 +361,15 @@ export class CommunicationController {
 
     if (!attachment) return reply.code(404).send({ message: 'Anexo não encontrado' })
 
-    const fileUrl = attachment.fileUrl.startsWith('/') ? attachment.fileUrl.slice(1) : attachment.fileUrl
-    const filePath = path.resolve(process.cwd(), fileUrl)
+    const orgId = message.organizationId ?? 'global'
+    const r2Key = `communication/${orgId}/${attachment.fileUrl}`
 
-    if (!fs.existsSync(filePath)) {
-      return reply.code(404).send({ message: 'Arquivo não encontrado no servidor' })
-    }
+    const command = new GetObjectCommand({
+      Bucket: process.env.R2_BUCKET_NAME,
+      Key: r2Key
+    })
+    const url = await getSignedUrl(r2, command, { expiresIn: 3600 })
 
-    reply.header('Content-Disposition', `attachment; filename="${attachment.fileName}"`)
-    reply.header('Content-Type', attachment.fileType)
-    return reply.send(fs.createReadStream(filePath))
+    return reply.send({ url, fileName: attachment.fileName, fileType: attachment.fileType })
   }
 }

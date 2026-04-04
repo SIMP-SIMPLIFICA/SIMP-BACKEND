@@ -9,6 +9,8 @@ import { settingsRoutes } from '@/routes/settings.routes.js'
 import { financeRoutes } from '@/routes/finance.routes.js'
 import { calendarRoutes } from '@/routes/calendar.routes.js'
 import { notesRoutes } from '@/routes/notes.routes.js'
+import { organizationRoutes } from '@/routes/organization.routes.js'
+import { adminRoutes } from '@/routes/admin.routes.js'
 
 import { AppServer } from '@/types/server'
 import { db } from '@/utils/database.js'
@@ -93,8 +95,12 @@ export async function registerRoutes(server: AppServer) {
   await server.register(
     async server => {
       await server.register(authRoutes, { prefix: '/auth', logLevel: 'info' })
+      await server.register(organizationRoutes, { prefix: '/organizations', logLevel: 'info' })
       await server.register(userRoutes, { prefix: '/users', logLevel: 'info' })
       await server.register(roleRoutes, { prefix: '/roles', logLevel: 'info' })
+
+      // Módulo de Comunicação
+      await server.register(adminRoutes, { prefix: '/admin', logLevel: 'info' })
 
       // Módulo de Comunicação
       await server.register(communicationRoutes, { prefix: '/communication', logLevel: 'info' })

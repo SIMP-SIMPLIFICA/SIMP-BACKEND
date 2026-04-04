@@ -1,5 +1,6 @@
 import { FastifyReply, FastifyRequest } from 'fastify'
 import { Prisma } from '@prisma/client'
+import { ZodError } from 'zod'
 import { logger, logSecurity } from './logger.js'
 
 type AppError = Error & { statusCode?: number; validation?: unknown }
@@ -12,6 +13,16 @@ export const errorHandler = (
     const requestId = (request as any).id
     const statusCode = error.statusCode || 500
     const isProduction = process.env.NODE_ENV === 'production'
+
+    if (error instanceof ZodError) {
+        return reply.code(400).send({
+            statusCode: 400,
+            error: 'Bad Request',
+            message: error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; '),
+            details: error.issues,
+            requestId
+        })
+    }
 
     if (error.validation) {
         return reply.code(400).send({

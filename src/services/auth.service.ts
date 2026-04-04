@@ -29,13 +29,20 @@ export class AuthService {
     }
   }
 
-  async generateAccessToken(userId: string, permissions: string[]): Promise<string> {
+  async generateAccessToken(
+    userId: string,
+    permissions: string[],
+    organizationId: string | null,
+    isSuperAdmin: boolean
+  ): Promise<string> {
     const secret = new TextEncoder().encode(config.jwt.accessSecret)
     const jti = nanoid()
 
     return await new SignJWT({
       sub: userId,
       permissions,
+      organizationId,
+      isSuperAdmin,
       type: 'access'
     })
       .setProtectedHeader({ alg: 'HS256' })
@@ -47,9 +54,10 @@ export class AuthService {
       .sign(secret)
   }
 
-  async generateRefreshToken(userId: string): Promise<string> {
+  async generateRefreshToken(userId: string, rememberMe = false): Promise<string> {
     const secret = new TextEncoder().encode(config.jwt.refreshSecret)
     const jti = nanoid()
+    const expiry = rememberMe ? '30d' : config.jwt.refreshExpiresIn
 
     return await new SignJWT({
       sub: userId,
@@ -58,7 +66,7 @@ export class AuthService {
       .setProtectedHeader({ alg: 'HS256' })
       .setJti(jti)
       .setIssuedAt()
-      .setExpirationTime(config.jwt.refreshExpiresIn)
+      .setExpirationTime(expiry)
       .setIssuer(config.urls.app)
       .setAudience(config.urls.app)
       .sign(secret)
@@ -74,15 +82,29 @@ export class AuthService {
     }
   }
 
-  async generateTokenPair(userId: string) {
-    const permissions = await db.getUserPermissions(userId)
-    const accessToken = await this.generateAccessToken(userId, permissions)
-    const refreshToken = await this.generateRefreshToken(userId)
+  async generateTokenPair(userId: string, rememberMe = false) {
+    const [permissions, user] = await Promise.all([
+      db.getUserPermissions(userId),
+      prisma.user.findUnique({
+        where: { id: userId },
+        select: { organizationId: true, isSuperAdmin: true }
+      })
+    ])
+
+    const accessToken = await this.generateAccessToken(
+      userId,
+      permissions,
+      user?.organizationId ?? null,
+      user?.isSuperAdmin ?? false
+    )
+
+    const refreshDays = rememberMe ? 30 : 7
+    const refreshToken = await this.generateRefreshToken(userId, rememberMe)
 
     await db.createUserSession({
       userId,
       refreshToken,
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+      expiresAt: new Date(Date.now() + refreshDays * 24 * 60 * 60 * 1000)
     })
 
     return {
@@ -233,7 +255,7 @@ export class AuthService {
         data: { lastLoginAt: new Date() }
       })
 
-      const tokens = await this.generateTokenPair(user.id)
+      const tokens = await this.generateTokenPair(user.id, data.rememberMe === true)
 
       await db.createAuditLog({
         userId: user.id,

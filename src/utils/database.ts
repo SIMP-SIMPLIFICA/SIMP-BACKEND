@@ -165,6 +165,9 @@ export const db = {
           include: {
             role: true
           }
+        },
+        organization: {
+          select: { id: true, name: true, slug: true, plan: true, cnpj: true, isActive: true, createdAt: true }
         }
       }
     })

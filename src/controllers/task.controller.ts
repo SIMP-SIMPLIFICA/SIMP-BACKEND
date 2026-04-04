@@ -38,8 +38,9 @@ export class TaskController {
     const data = createTaskSchema.parse(request.body);
     const userId = request.user.id; 
 
-    // Buscamos o workspace para ter o nome na notificação
-    const workspace = await prisma.workspace.findUnique({ where: { id: workspaceId } });
+    // Buscamos o workspace para ter o nome na notificação + validar org
+    const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId };
+    const workspace = await prisma.workspace.findFirst({ where: { id: workspaceId, ...orgFilter } });
     if (!workspace) return reply.status(404).send({ message: "Workspace não encontrado" });
 
     const canCreate = await checkPermission(workspaceId, userId, ['OWNER', 'ADMIN', 'MEMBER']);

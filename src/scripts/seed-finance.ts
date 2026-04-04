@@ -81,16 +81,17 @@ async function main() {
 
     const WID = workspace.id;
     const UID = user.id;
+    const OID = workspace.organizationId;
 
     console.log(`✅ Base encontrada. Workspace: ${workspace.name} | User: ${UID}`);
 
     // 2. Limpar Lançamentos e Categorias Antigas (Reset Parcial)
     console.log('🧹 Limpando dados financeiros anteriores do Workspace...');
     await prisma.financeEntry.deleteMany({
-        where: { workspaceId: WID }
+        where: { organizationId: OID }
     });
     await prisma.financeCategory.deleteMany({
-        where: { workspaceId: WID }
+        where: { organizationId: OID }
     });
 
     // 3. Cadastrar as Categorias
@@ -100,7 +101,7 @@ async function main() {
     for (const cat of CATEGORIAS_SEED) {
         const created = await prisma.financeCategory.create({
             data: {
-                workspaceId: WID,
+                organizationId: OID,
                 name: cat.name,
                 description: cat.description
             }

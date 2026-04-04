@@ -12,13 +12,8 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 export class VirtualProcessController {
   async listProcesses(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { workspaceId } = z.object({ workspaceId: z.string().uuid() }).parse(request.params)
-      const userId = (request as any).user?.id as string
-
-      const member = await prisma.workspaceMember.findUnique({
-        where: { workspaceId_userId: { workspaceId, userId } }
-      })
-      if (!member) return reply.code(403).send({ message: 'Acesso negado ao workspace' })
+      const organizationId = (request as any).user?.organizationId as string
+      const orgFilter = (request as any).user?.isSuperAdmin ? {} : { organizationId }
 
       const querySchema = z.object({
         page: z.coerce.number().min(1).default(1),
@@ -36,7 +31,7 @@ export class VirtualProcessController {
       })
 
       const query = querySchema.parse(request.query)
-      const where: any = { workspaceId }
+      const where: any = { ...orgFilter }
 
       if (query.search) {
         where.OR = [
@@ -99,10 +94,9 @@ export class VirtualProcessController {
 
       if (!process) return reply.code(404).send({ error: 'Process Not Found', message: 'Processo não encontrado' })
 
-      const member = await prisma.workspaceMember.findUnique({
-        where: { workspaceId_userId: { workspaceId: process.workspaceId, userId } }
-      })
-      if (!member) return reply.code(403).send({ message: 'Acesso negado ao workspace' })
+      if (!(request as any).user?.isSuperAdmin && process.organizationId !== (request as any).user?.organizationId) {
+        return reply.code(404).send({ error: 'Process Not Found', message: 'Processo não encontrado' })
+      }
 
       const auditLogs = await prisma.auditLog.findMany({
         where: { resource: 'VIRTUAL_PROCESS', resourceId: id },
@@ -130,22 +124,22 @@ export class VirtualProcessController {
     try {
       const data = createVirtualProcessSchema.parse(request.body)
       const userId = (request as any).user?.id as string
+      const organizationId = (request as any).user?.organizationId as string
 
-      const member = await prisma.workspaceMember.findUnique({
-        where: { workspaceId_userId: { workspaceId: data.workspaceId, userId } }
-      })
-      if (!member) return reply.code(403).send({ message: 'Acesso negado ao workspace' })
+      if (!organizationId && !(request as any).user?.isSuperAdmin) {
+        return reply.code(403).send({ message: 'Usuário sem organização' })
+      }
 
       const existingProcess = await prisma.virtualProcess.findUnique({
-        where: { workspaceId_processNumber: { workspaceId: data.workspaceId, processNumber: data.processNumber } }
+        where: { organizationId_processNumber: { organizationId, processNumber: data.processNumber } }
       })
       if (existingProcess) {
-        return reply.code(400).send({ error: 'Conflict', message: 'Número de processo já existe neste workspace' })
+        return reply.code(400).send({ error: 'Conflict', message: 'Número de processo já existe nesta organização' })
       }
 
       const process = await prisma.virtualProcess.create({
         data: {
-          workspaceId: data.workspaceId,
+          organizationId,
           processNumber: data.processNumber,
           secretaria: data.secretaria,
           source: data.source,
@@ -193,10 +187,9 @@ export class VirtualProcessController {
       const process = await prisma.virtualProcess.findUnique({ where: { id } })
       if (!process) return reply.code(404).send({ error: 'Not Found', message: 'Processo não encontrado' })
 
-      const member = await prisma.workspaceMember.findUnique({
-        where: { workspaceId_userId: { workspaceId: process.workspaceId, userId } }
-      })
-      if (!member) return reply.code(403).send({ message: 'Acesso negado ao workspace' })
+      if (!(request as any).user?.isSuperAdmin && process.organizationId !== (request as any).user?.organizationId) {
+        return reply.code(404).send({ error: 'Not Found', message: 'Processo não encontrado' })
+      }
 
       const oldStatus = process.status
       const updatedProcess = await prisma.virtualProcess.update({ where: { id }, data: { status } })
@@ -228,10 +221,9 @@ export class VirtualProcessController {
       const process = await prisma.virtualProcess.findUnique({ where: { id } })
       if (!process) return reply.code(404).send({ error: 'Not Found', message: 'Processo não encontrado' })
 
-      const member = await prisma.workspaceMember.findUnique({
-        where: { workspaceId_userId: { workspaceId: process.workspaceId, userId } }
-      })
-      if (!member) return reply.code(403).send({ message: 'Acesso negado ao workspace' })
+      if (!(request as any).user?.isSuperAdmin && process.organizationId !== (request as any).user?.organizationId) {
+        return reply.code(404).send({ error: 'Not Found', message: 'Processo não encontrado' })
+      }
 
       const updatedProcess = await prisma.virtualProcess.update({
         where: { id },
@@ -267,10 +259,9 @@ export class VirtualProcessController {
       const process = await prisma.virtualProcess.findUnique({ where: { id } })
       if (!process) return reply.code(404).send({ error: 'Not Found', message: 'Processo não encontrado' })
 
-      const member = await prisma.workspaceMember.findUnique({
-        where: { workspaceId_userId: { workspaceId: process.workspaceId, userId } }
-      })
-      if (!member) return reply.code(403).send({ message: 'Acesso negado ao workspace' })
+      if (!(request as any).user?.isSuperAdmin && process.organizationId !== (request as any).user?.organizationId) {
+        return reply.code(404).send({ error: 'Not Found', message: 'Processo não encontrado' })
+      }
 
       if ((Date.now() - process.createdAt.getTime()) > 24 * 60 * 60 * 1000) {
         return reply.code(403).send({ error: 'Forbidden', message: 'O prazo de 24 horas para exclusão expirou' })
@@ -303,10 +294,9 @@ export class VirtualProcessController {
       const processObj = await prisma.virtualProcess.findUnique({ where: { id } })
       if (!processObj) return reply.code(404).send({ error: 'Not Found', message: 'Processo não encontrado' })
 
-      const member = await prisma.workspaceMember.findUnique({
-        where: { workspaceId_userId: { workspaceId: processObj.workspaceId, userId } }
-      })
-      if (!member) return reply.code(403).send({ message: 'Acesso negado ao workspace' })
+      if (!(request as any).user?.isSuperAdmin && processObj.organizationId !== (request as any).user?.organizationId) {
+        return reply.code(404).send({ error: 'Not Found', message: 'Processo não encontrado' })
+      }
 
       const parts = request.parts()
       let fileData: any = null
@@ -316,7 +306,7 @@ export class VirtualProcessController {
         if (part.type === 'file') {
           const extension = path.extname(part.filename)
           const uniqueName = `${randomUUID()}${extension}`
-          const fileKey = `workspaces/${processObj.workspaceId}/virtual-processes/${uniqueName}`
+          const fileKey = `organizations/${processObj.organizationId}/virtual-processes/${uniqueName}`
 
           const chunks: Buffer[] = []
           for await (const chunk of part.file) {
@@ -387,10 +377,9 @@ export class VirtualProcessController {
       const processObj = await prisma.virtualProcess.findUnique({ where: { id } })
       if (!processObj) return reply.code(404).send({ message: 'Processo não encontrado' })
 
-      const member = await prisma.workspaceMember.findUnique({
-        where: { workspaceId_userId: { workspaceId: processObj.workspaceId, userId } }
-      })
-      if (!member) return reply.code(403).send({ message: 'Acesso negado ao workspace' })
+      if (!(request as any).user?.isSuperAdmin && processObj.organizationId !== (request as any).user?.organizationId) {
+        return reply.code(404).send({ message: 'Processo não encontrado' })
+      }
 
       const command = new GetObjectCommand({
         Bucket: process.env.R2_BUCKET_NAME,
@@ -428,10 +417,9 @@ export class VirtualProcessController {
       const processObj = await prisma.virtualProcess.findUnique({ where: { id } })
       if (!processObj) return reply.code(404).send({ message: 'Processo não encontrado' })
 
-      const member = await prisma.workspaceMember.findUnique({
-        where: { workspaceId_userId: { workspaceId: processObj.workspaceId, userId } }
-      })
-      if (!member) return reply.code(403).send({ message: 'Acesso negado ao workspace' })
+      if (!(request as any).user?.isSuperAdmin && processObj.organizationId !== (request as any).user?.organizationId) {
+        return reply.code(404).send({ message: 'Processo não encontrado' })
+      }
 
       if ((Date.now() - document.uploadedAt.getTime()) > 24 * 60 * 60 * 1000) {
         return reply.code(403).send({ error: 'Forbidden', message: 'O prazo de 24 horas para exclusão deste documento expirou' })

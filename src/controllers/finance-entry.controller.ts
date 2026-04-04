@@ -11,32 +11,39 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 export class FinanceEntryController {
 
     async create(request: FastifyRequest, reply: FastifyReply) {
-        const data = createEntrySchema.parse(request.body);
+        const parsed = createEntrySchema.safeParse(request.body);
+        if (!parsed.success) {
+            const issue = parsed.error.issues[0];
+            return reply.status(400).send({
+                error: 'Validation Error',
+                field: issue.path.join('.') || 'unknown',
+                message: issue.message,
+            });
+        }
+        const data = parsed.data;
         const userId = request.user.id;
+        const organizationId = request.user.organizationId;
 
-        const member = await prisma.workspaceMember.findUnique({
-            where: { workspaceId_userId: { workspaceId: data.workspaceId, userId } }
-        });
-
-        if (!member) {
-            return reply.status(403).send({ message: 'Acesso negado ao workspace' });
+        if (!organizationId && !request.user.isSuperAdmin) {
+            return reply.status(403).send({ message: 'Usuário sem organização' });
         }
 
         const entry = await prisma.financeEntry.create({
             data: {
-                workspaceId: data.workspaceId,
+                organizationId: organizationId!,
                 occurredAt: new Date(data.occurredAt),
                 description: data.description,
                 amountCents: data.amountCents,
                 type: data.type,
                 categoryId: data.categoryId,
+                accountId: data.accountId,
                 subcategoryName: data.subcategoryName,
                 nfeNumber: data.nfeNumber,
-                issueDate: data.issueDate ? new Date(data.issueDate) : undefined,
+                issueDate: new Date(data.issueDate),
                 providerDocument: data.providerDocument,
                 empenhoNumber: data.empenhoNumber,
                 liquidacaoNumber: data.liquidacaoNumber,
-                deliveryDate: data.deliveryDate ? new Date(data.deliveryDate) : undefined,
+                deliveryDate: new Date(data.deliveryDate),
                 attachmentsStatus: data.attachmentsStatus,
                 createdById: userId,
             },
@@ -45,49 +52,33 @@ export class FinanceEntryController {
             }
         });
 
-        // Mapeando a resposta para casar com o frontend onde esperamos "categoryName" direto
-        const mappedEntry = {
+        return reply.status(201).send({
             ...entry,
             categoryName: entry.category?.name || 'Sem Categoria',
-        };
-
-        return reply.status(201).send(mappedEntry);
+        });
     }
 
     async list(request: FastifyRequest, reply: FastifyReply) {
-        // Pegando workspaceId da rota ou da query
-        const { workspaceId } = z.object({ workspaceId: z.string().uuid() }).parse(request.params);
-        const userId = request.user.id;
+        const organizationId = request.user.organizationId;
+        const orgFilter = request.user.isSuperAdmin ? {} : { organizationId };
 
-        const member = await prisma.workspaceMember.findUnique({
-            where: { workspaceId_userId: { workspaceId, userId } }
-        });
-
-        if (!member) {
-            return reply.status(403).send({ message: 'Acesso negado ao workspace' });
-        }
-
-        // Parâmetros de filtro opcionais (Ex: search por data, por tipo)
         const { startDate, endDate, type, categoryNames, page, limit, search } = z.object({
             startDate: z.string().optional(),
             endDate: z.string().optional(),
             type: z.enum(['EXPENSE', 'INCOME']).optional(),
-            categoryNames: z.string().optional(), // Comma separated Names
+            categoryNames: z.string().optional(),
             page: z.coerce.number().min(1).optional(),
             limit: z.coerce.number().min(1).max(500).optional(),
             search: z.string().optional(),
         }).parse(request.query || {});
 
         const whereClause: any = {
-            workspaceId,
-            deletedAt: null // Não buscar itens apagados (Soft delete)
+            ...orgFilter,
+            deletedAt: null
         };
 
         if (startDate && endDate) {
-            whereClause.occurredAt = {
-                gte: new Date(startDate),
-                lte: new Date(endDate)
-            };
+            whereClause.occurredAt = { gte: new Date(startDate), lte: new Date(endDate) };
         } else if (startDate) {
             whereClause.occurredAt = { gte: new Date(startDate) };
         } else if (endDate) {
@@ -98,7 +89,6 @@ export class FinanceEntryController {
         if (categoryNames) {
             whereClause.category = { name: { in: categoryNames.split(',') } };
         }
-
         if (search) {
             whereClause.OR = [
                 { description: { contains: search, mode: 'insensitive' } },
@@ -108,9 +98,7 @@ export class FinanceEntryController {
 
         const queryOptions: any = {
             where: whereClause,
-            include: {
-                category: { select: { name: true } }
-            },
+            include: { category: { select: { name: true } } },
             orderBy: { occurredAt: 'desc' }
         };
 
@@ -137,23 +125,14 @@ export class FinanceEntryController {
         if (page && limit) {
             let totalIncome = 0;
             let totalExpense = 0;
-
             aggregations.forEach(agg => {
                 const sum = agg._sum.amountCents || 0;
                 if (agg.type === 'INCOME') totalIncome += sum;
                 if (agg.type === 'EXPENSE') totalExpense += sum;
             });
-
             return reply.send({
                 data: mappedEntries,
-                meta: {
-                    total: totalCount,
-                    page,
-                    limit,
-                    totalPages: Math.ceil(totalCount / limit),
-                    totalIncome,
-                    totalExpense
-                }
+                meta: { total: totalCount, page, limit, totalPages: Math.ceil(totalCount / limit), totalIncome, totalExpense }
             });
         }
 
@@ -162,17 +141,24 @@ export class FinanceEntryController {
 
     async update(request: FastifyRequest, reply: FastifyReply) {
         const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
-        const data = updateEntrySchema.parse(request.body);
+        const parsed = updateEntrySchema.safeParse(request.body);
+        if (!parsed.success) {
+            const issue = parsed.error.issues[0];
+            return reply.status(400).send({
+                error: 'Validation Error',
+                field: issue.path.join('.') || 'unknown',
+                message: issue.message,
+            });
+        }
+        const data = parsed.data;
         const userId = request.user.id;
 
         const entry = await prisma.financeEntry.findUnique({ where: { id } });
         if (!entry) return reply.status(404).send({ message: 'Lançamento não encontrado' });
 
-        const member = await prisma.workspaceMember.findUnique({
-            where: { workspaceId_userId: { workspaceId: entry.workspaceId, userId } }
-        });
-
-        if (!member) return reply.status(403).send({ message: 'Acesso negado ao workspace' });
+        if (!request.user.isSuperAdmin && entry.organizationId !== request.user.organizationId) {
+            return reply.status(404).send({ message: 'Lançamento não encontrado' });
+        }
 
         const updatedEntry = await prisma.financeEntry.update({
             where: { id },
@@ -183,9 +169,7 @@ export class FinanceEntryController {
                 deliveryDate: data.deliveryDate ? new Date(data.deliveryDate) : undefined,
                 updatedById: userId,
             },
-            include: {
-                category: { select: { name: true } }
-            }
+            include: { category: { select: { name: true } } }
         });
 
         return reply.send({
@@ -201,19 +185,13 @@ export class FinanceEntryController {
         const entry = await prisma.financeEntry.findUnique({ where: { id } });
         if (!entry) return reply.status(404).send({ message: 'Lançamento não encontrado' });
 
-        const member = await prisma.workspaceMember.findUnique({
-            where: { workspaceId_userId: { workspaceId: entry.workspaceId, userId } }
-        });
+        if (!request.user.isSuperAdmin && entry.organizationId !== request.user.organizationId) {
+            return reply.status(404).send({ message: 'Lançamento não encontrado' });
+        }
 
-        if (!member) return reply.status(403).send({ message: 'Acesso negado ao workspace' });
-
-        // Soft delete preenchendo deletedAt
         await prisma.financeEntry.update({
             where: { id },
-            data: {
-                deletedAt: new Date(),
-                updatedById: userId
-            }
+            data: { deletedAt: new Date(), updatedById: userId }
         });
 
         return reply.status(204).send();
@@ -222,16 +200,13 @@ export class FinanceEntryController {
     // --- ATTACHMENTS ---
     async listAttachments(request: FastifyRequest, reply: FastifyReply) {
         const { entryId } = z.object({ entryId: z.string().uuid() }).parse(request.params);
-        const userId = request.user.id;
 
         const entry = await prisma.financeEntry.findUnique({ where: { id: entryId } });
         if (!entry) return reply.status(404).send({ message: 'Lançamento não encontrado' });
 
-        const member = await prisma.workspaceMember.findUnique({
-            where: { workspaceId_userId: { workspaceId: entry.workspaceId, userId } }
-        });
-
-        if (!member) return reply.status(403).send({ message: 'Acesso negado ao workspace' });
+        if (!request.user.isSuperAdmin && entry.organizationId !== request.user.organizationId) {
+            return reply.status(404).send({ message: 'Lançamento não encontrado' });
+        }
 
         const attachments = await prisma.financeAttachment.findMany({
             where: { entryId },
@@ -239,9 +214,10 @@ export class FinanceEntryController {
         });
 
         const mappedAttachments = await Promise.all(attachments.map(async att => {
+            // fileUrl stores the full R2 key (migrated from old path or set on upload)
             const command = new GetObjectCommand({
                 Bucket: process.env.R2_BUCKET_NAME,
-                Key: `workspaces/${entry.workspaceId}/finance/${att.fileUrl}`
+                Key: att.fileUrl
             });
             const url = await getSignedUrl(r2, command, { expiresIn: 3600 });
             return { ...att, url };
@@ -257,11 +233,9 @@ export class FinanceEntryController {
         const entry = await prisma.financeEntry.findUnique({ where: { id: entryId } });
         if (!entry) return reply.status(404).send({ message: 'Lançamento não encontrado' });
 
-        const member = await prisma.workspaceMember.findUnique({
-            where: { workspaceId_userId: { workspaceId: entry.workspaceId, userId } }
-        });
-
-        if (!member) return reply.status(403).send({ message: 'Acesso negado ao workspace' });
+        if (!request.user.isSuperAdmin && entry.organizationId !== request.user.organizationId) {
+            return reply.status(404).send({ message: 'Lançamento não encontrado' });
+        }
 
         const data = await request.file();
         if (!data) return reply.status(400).send({ message: 'Nenhum arquivo enviado' });
@@ -269,8 +243,7 @@ export class FinanceEntryController {
         const buffer = await data.toBuffer();
         const fileExt = path.extname(data.filename);
         const uniqueName = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${fileExt}`;
-
-        const fileKey = `workspaces/${entry.workspaceId}/finance/${uniqueName}`;
+        const fileKey = `organizations/${entry.organizationId}/finance/${uniqueName}`;
 
         await r2.send(new PutObjectCommand({
             Bucket: process.env.R2_BUCKET_NAME,
@@ -286,11 +259,10 @@ export class FinanceEntryController {
                 fileName: data.filename,
                 fileType: data.mimetype,
                 fileSize: buffer.length,
-                fileUrl: uniqueName
+                fileUrl: fileKey  // store full key
             }
         });
 
-        // Update entry status if it was NONE
         if (entry.attachmentsStatus === 'NONE' || entry.attachmentsStatus === 'none') {
             await prisma.financeEntry.update({
                 where: { id: entryId },
@@ -298,16 +270,10 @@ export class FinanceEntryController {
             });
         }
 
-        const command = new GetObjectCommand({
-            Bucket: process.env.R2_BUCKET_NAME,
-            Key: fileKey
-        });
+        const command = new GetObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: fileKey });
         const url = await getSignedUrl(r2, command, { expiresIn: 3600 });
 
-        return reply.status(201).send({
-            ...attachment,
-            url
-        });
+        return reply.status(201).send({ ...attachment, url });
     }
 
     async deleteAttachment(request: FastifyRequest, reply: FastifyReply) {
@@ -315,7 +281,6 @@ export class FinanceEntryController {
             entryId: z.string().uuid(),
             attachmentId: z.string().uuid()
         }).parse(request.params);
-        const userId = request.user.id;
 
         const attachment = await prisma.financeAttachment.findUnique({
             where: { id: attachmentId },
@@ -326,24 +291,21 @@ export class FinanceEntryController {
             return reply.status(404).send({ message: 'Anexo não encontrado' });
         }
 
-        const member = await prisma.workspaceMember.findUnique({
-            where: { workspaceId_userId: { workspaceId: attachment.entry.workspaceId, userId } }
-        });
-
-        if (!member) return reply.status(403).send({ message: 'Acesso negado ao workspace' });
+        if (!request.user.isSuperAdmin && attachment.entry.organizationId !== request.user.organizationId) {
+            return reply.status(404).send({ message: 'Anexo não encontrado' });
+        }
 
         await prisma.financeAttachment.delete({ where: { id: attachmentId } });
 
         try {
             await r2.send(new DeleteObjectCommand({
                 Bucket: process.env.R2_BUCKET_NAME,
-                Key: `workspaces/${attachment.entry.workspaceId}/finance/${attachment.fileUrl}`
+                Key: attachment.fileUrl  // full key already stored
             }));
         } catch (_e) {
             // ignore R2 delete errors
         }
 
-        // Check if there are remaining attachments, update entry status if 0
         const remaining = await prisma.financeAttachment.count({ where: { entryId } });
         if (remaining === 0) {
             await prisma.financeEntry.update({

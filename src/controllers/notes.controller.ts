@@ -9,8 +9,9 @@ export class NotesController {
             return reply.status(401).send({ message: "Não autorizado" });
         }
 
+        const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId };
         const notes = await prisma.note.findMany({
-            where: { userId },
+            where: { userId, ...orgFilter },
             orderBy: { createdAt: "desc" },
         });
 
@@ -31,6 +32,7 @@ export class NotesController {
                 content: data.content,
                 color: data.color,
                 user: { connect: { id: userId } },
+                ...(request.user.organizationId && { organization: { connect: { id: request.user.organizationId } } }),
             },
         });
 
@@ -46,9 +48,9 @@ export class NotesController {
         const { id } = request.params;
         const data = updateNoteSchema.parse(request.body);
 
-        // Verify ownership
-        const existingNote = await prisma.note.findUnique({ where: { id } });
-        if (!existingNote || existingNote.userId !== userId) {
+        const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId };
+        const existingNote = await prisma.note.findFirst({ where: { id, userId, ...orgFilter } });
+        if (!existingNote) {
             return reply.status(404).send({ message: "Anotação não encontrada" });
         }
 
@@ -68,9 +70,9 @@ export class NotesController {
 
         const { id } = request.params;
 
-        // Verify ownership
-        const existingNote = await prisma.note.findUnique({ where: { id } });
-        if (!existingNote || existingNote.userId !== userId) {
+        const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId };
+        const existingNote = await prisma.note.findFirst({ where: { id, userId, ...orgFilter } });
+        if (!existingNote) {
             return reply.status(404).send({ message: "Anotação não encontrada" });
         }
 

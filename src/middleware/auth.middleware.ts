@@ -20,13 +20,20 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
     // O plugin vai olhar: 1º Header Authorization (que acabamos de preencher se for SSE), 2º Cookies
     await request.jwtVerify()
 
-    // Correção do user.id para garantir compatibilidade
-    // O token JWT geralmente traz o ID no campo 'sub'.
-    // Aqui garantimos que request.user.id exista para os controllers usarem.
-    const user = request.user as { id?: string; sub?: string; [key: string]: unknown }
+    // Normalização do payload JWT para os controllers
+    const user = request.user as {
+      id?: string
+      sub?: string
+      organizationId?: string | null
+      isSuperAdmin?: boolean
+      [key: string]: unknown
+    }
+
     if (user?.sub && !user.id) {
       user.id = user.sub
     }
+    if (user.organizationId === undefined) user.organizationId = null
+    if (user.isSuperAdmin === undefined) user.isSuperAdmin = false
 
   } catch (err) {
     return reply.code(401).send({

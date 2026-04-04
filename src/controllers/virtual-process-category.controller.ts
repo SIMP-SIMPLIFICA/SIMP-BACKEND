@@ -9,49 +9,35 @@ import {
 export class VirtualProcessCategoryController {
   async create(request: FastifyRequest, reply: FastifyReply) {
     const data = createVirtualProcessCategorySchema.parse(request.body)
-    const userId = request.user.id
-
-    const member = await prisma.workspaceMember.findUnique({
-      where: { workspaceId_userId: { workspaceId: data.workspaceId, userId } },
-    })
-    if (!member) return reply.status(403).send({ message: 'Acesso negado ao workspace' })
-
+    const organizationId = request.user.organizationId
+    if (!organizationId && !request.user.isSuperAdmin) {
+      return reply.status(403).send({ message: 'Usuário sem organização' })
+    }
     const category = await prisma.virtualProcessCategory.create({
-      data: { workspaceId: data.workspaceId, name: data.name },
+      data: { organizationId: organizationId!, name: data.name },
     })
-
     return reply.status(201).send(category)
   }
 
   async list(request: FastifyRequest, reply: FastifyReply) {
-    const { workspaceId } = z.object({ workspaceId: z.string().uuid() }).parse(request.params)
-    const userId = request.user.id
-
-    const member = await prisma.workspaceMember.findUnique({
-      where: { workspaceId_userId: { workspaceId, userId } },
-    })
-    if (!member) return reply.status(403).send({ message: 'Acesso negado ao workspace' })
-
+    const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
     const categories = await prisma.virtualProcessCategory.findMany({
-      where: { workspaceId },
+      where: orgFilter,
       orderBy: { name: 'asc' },
     })
-
     return reply.send(categories)
   }
 
   async update(request: FastifyRequest, reply: FastifyReply) {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
     const data = updateVirtualProcessCategorySchema.parse(request.body)
-    const userId = request.user.id
 
     const category = await prisma.virtualProcessCategory.findUnique({ where: { id } })
     if (!category) return reply.status(404).send({ message: 'Categoria não encontrada' })
 
-    const member = await prisma.workspaceMember.findUnique({
-      where: { workspaceId_userId: { workspaceId: category.workspaceId, userId } },
-    })
-    if (!member) return reply.status(403).send({ message: 'Acesso negado ao workspace' })
+    if (!request.user.isSuperAdmin && category.organizationId !== request.user.organizationId) {
+      return reply.status(404).send({ message: 'Categoria não encontrada' })
+    }
 
     const updated = await prisma.virtualProcessCategory.update({ where: { id }, data })
     return reply.send(updated)
@@ -59,15 +45,13 @@ export class VirtualProcessCategoryController {
 
   async delete(request: FastifyRequest, reply: FastifyReply) {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
-    const userId = request.user.id
 
     const category = await prisma.virtualProcessCategory.findUnique({ where: { id } })
     if (!category) return reply.status(404).send({ message: 'Categoria não encontrada' })
 
-    const member = await prisma.workspaceMember.findUnique({
-      where: { workspaceId_userId: { workspaceId: category.workspaceId, userId } },
-    })
-    if (!member) return reply.status(403).send({ message: 'Acesso negado ao workspace' })
+    if (!request.user.isSuperAdmin && category.organizationId !== request.user.organizationId) {
+      return reply.status(404).send({ message: 'Categoria não encontrada' })
+    }
 
     await prisma.virtualProcessCategory.delete({ where: { id } })
     return reply.status(204).send()

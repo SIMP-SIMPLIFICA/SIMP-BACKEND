@@ -14,15 +14,23 @@
   ],
   "auth": {
     "type": "bearer",
-    "bearer": [{ "key": "token", "value": "{{meu_token}}", "type": "string" }]
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{meu_token}}",
+        "type": "string"
+      }
+    ]
   },
   "item": [
     {
       "name": "Auth",
-      "auth": { "type": "noauth" },
+      "auth": {
+        "type": "noauth"
+      },
       "item": [
         {
-          "name": "Login",
+          "name": "Login (Super Admin)",
           "event": [
             {
               "listen": "test",
@@ -31,7 +39,8 @@
                   "const res = pm.response.json();",
                   "if (res.tokens && res.tokens.accessToken) {",
                   "  pm.globals.set('meu_token', res.tokens.accessToken);",
-                  "  console.log('Token salvo:', res.tokens.accessToken);",
+                  "  pm.globals.set('token_superadmin', res.tokens.accessToken);",
+                  "  console.log('Token Super Admin salvo');",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -40,84 +49,542 @@
           ],
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"email\": \"admin@example.com\",\n  \"password\": \"Admin123!@#\"\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
-            "url": { "raw": "{{baseUrl}}/api/v1/auth/login", "host": ["{{baseUrl}}"], "path": ["api","v1","auth","login"] }
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Login (Itapevi — admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.tokens && res.tokens.accessToken) {",
+                  "  pm.globals.set('meu_token', res.tokens.accessToken);",
+                  "  pm.globals.set('token_itapevi', res.tokens.accessToken);",
+                  "  console.log('Token Itapevi salvo');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@itapevi.gov.br\",\n  \"password\": \"Admin@123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Login (Cotia — admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.tokens && res.tokens.accessToken) {",
+                  "  pm.globals.set('meu_token', res.tokens.accessToken);",
+                  "  pm.globals.set('token_cotia', res.tokens.accessToken);",
+                  "  console.log('Token Cotia salvo');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@cotia.gov.br\",\n  \"password\": \"Admin@123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            }
           }
         },
         {
           "name": "Register",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"email\": \"novo@example.com\",\n  \"password\": \"Senha123!@#\",\n  \"firstName\": \"Nome\",\n  \"lastName\": \"Sobrenome\",\n  \"username\": \"novo_usuario\"\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
-            "url": { "raw": "{{baseUrl}}/api/v1/auth/register", "host": ["{{baseUrl}}"], "path": ["api","v1","auth","register"] }
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "register"
+              ]
+            }
           }
         },
         {
           "name": "Me (perfil autenticado)",
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{meu_token}}", "type": "string" }] },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{meu_token}}",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "GET",
-            "url": { "raw": "{{baseUrl}}/api/v1/auth/me", "host": ["{{baseUrl}}"], "path": ["api","v1","auth","me"] }
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "me"
+              ]
+            }
           }
         },
         {
           "name": "Refresh Token",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/api/v1/auth/refresh-token", "host": ["{{baseUrl}}"], "path": ["api","v1","auth","refresh-token"] }
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/refresh-token",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "refresh-token"
+              ]
+            }
           }
         },
         {
           "name": "Logout",
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{meu_token}}", "type": "string" }] },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{meu_token}}",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "POST",
-            "url": { "raw": "{{baseUrl}}/api/v1/auth/logout", "host": ["{{baseUrl}}"], "path": ["api","v1","auth","logout"] }
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "logout"
+              ]
+            }
           }
         },
         {
           "name": "Forgot Password",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"email\": \"admin@example.com\"\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
-            "url": { "raw": "{{baseUrl}}/api/v1/auth/forgot-password", "host": ["{{baseUrl}}"], "path": ["api","v1","auth","forgot-password"] }
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/forgot-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "forgot-password"
+              ]
+            }
           }
         },
         {
           "name": "Change Password",
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{meu_token}}", "type": "string" }] },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{meu_token}}",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"currentPassword\": \"Admin123!@#\",\n  \"newPassword\": \"NovoAdmin123!@#\"\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
-            "url": { "raw": "{{baseUrl}}/api/v1/auth/change-password", "host": ["{{baseUrl}}"], "path": ["api","v1","auth","change-password"] }
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/change-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "change-password"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Organizations",
+      "item": [
+        {
+          "name": "Criar Organização (Onboarding)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.tokens && res.tokens.accessToken) {",
+                  "  pm.globals.set('meu_token', res.tokens.accessToken);",
+                  "  console.log('Org criada, token salvo:', res.org?.slug);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orgName\": \"Prefeitura de Osasco\",\n  \"orgSlug\": \"osasco\",\n  \"orgCnpj\": \"03.004.005/0001-06\",\n  \"adminEmail\": \"admin@osasco.gov.br\",\n  \"adminPassword\": \"Admin@123!\",\n  \"adminFirstName\": \"Roberto\",\n  \"adminLastName\": \"Silva\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organizations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "organizations"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Criar Organização — slug duplicado (409)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orgName\": \"Outra Prefeitura\",\n  \"orgSlug\": \"osasco\",\n  \"adminEmail\": \"outro@osasco.gov.br\",\n  \"adminPassword\": \"Admin@123!\",\n  \"adminFirstName\": \"Outro\",\n  \"adminLastName\": \"Admin\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organizations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "organizations"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin (Super Admin)",
+      "item": [
+        {
+          "name": "Listar Organizações",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_superadmin}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/organizations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "organizations"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Listar Organizações — usuário não super admin (403)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_itapevi}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/organizations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "organizations"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Impersonate Org Admin",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_superadmin}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/organizations/:id/impersonate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "organizations",
+                ":id",
+                "impersonate"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "ORG_ID_AQUI",
+                  "description": "ID da organização a impersonar"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Impersonate — org inexistente (404)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_superadmin}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/organizations/claaaaaaaaaaaaaaaaaaaaaa/impersonate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "organizations",
+                "claaaaaaaaaaaaaaaaaaaaaa",
+                "impersonate"
+              ]
+            }
           }
         }
       ]
     },
     {
       "name": "Communication",
-      "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{meu_token}}", "type": "string" }] },
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{meu_token}}",
+            "type": "string"
+          }
+        ]
+      },
       "item": [
         {
           "name": "Inbox (caixa de entrada)",
@@ -125,12 +592,31 @@
             "method": "GET",
             "url": {
               "raw": "{{baseUrl}}/api/v1/communication/inbox",
-              "host": ["{{baseUrl}}"],
-              "path": ["api","v1","communication","inbox"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "communication",
+                "inbox"
+              ],
               "query": [
-                { "key": "startDate", "value": "", "disabled": true },
-                { "key": "endDate", "value": "", "disabled": true },
-                { "key": "personId", "value": "", "disabled": true }
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "personId",
+                  "value": "",
+                  "disabled": true
+                }
               ]
             }
           }
@@ -141,12 +627,31 @@
             "method": "GET",
             "url": {
               "raw": "{{baseUrl}}/api/v1/communication/sent",
-              "host": ["{{baseUrl}}"],
-              "path": ["api","v1","communication","sent"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "communication",
+                "sent"
+              ],
               "query": [
-                { "key": "startDate", "value": "", "disabled": true },
-                { "key": "endDate", "value": "", "disabled": true },
-                { "key": "personId", "value": "", "disabled": true }
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "personId",
+                  "value": "",
+                  "disabled": true
+                }
               ]
             }
           }
@@ -157,25 +662,109 @@
             "method": "GET",
             "url": {
               "raw": "{{baseUrl}}/api/v1/communication/recipients",
-              "host": ["{{baseUrl}}"],
-              "path": ["api","v1","communication","recipients"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "communication",
+                "recipients"
+              ],
               "query": [
-                { "key": "search", "value": "", "disabled": true }
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true
+                }
               ]
             }
           }
         },
         {
-          "name": "Nova Mensagem",
+          "name": "Nova Mensagem (Itapevi → João)",
           "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_itapevi}}",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"subject\": \"Assunto da mensagem\",\n  \"body\": \"Corpo da mensagem aqui.\",\n  \"recipients\": [\n    { \"userId\": \"ID_DO_DESTINATARIO\", \"role\": \"TO\" }\n  ],\n  \"attachments\": []\n}",
-              "options": { "raw": { "language": "json" } }
+              "raw": "{\n  \"subject\": \"Reunião de obras — semana 15\",\n  \"body\": \"Olá João, confirme presença na reunião de obras na sexta-feira às 14h.\",\n  \"recipients\": [\n    { \"userId\": \"ID_DO_JOAO_ITAPEVI\", \"role\": \"TO\" }\n  ],\n  \"attachments\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
-            "url": { "raw": "{{baseUrl}}/api/v1/communication/messages", "host": ["{{baseUrl}}"], "path": ["api","v1","communication","messages"] }
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/communication/messages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "communication",
+                "messages"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Nova Mensagem — destinatário cross-org (403)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_itapevi}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"Teste cross-org\",\n  \"body\": \"Tentando enviar para alguém de outra org.\",\n  \"recipients\": [\n    { \"userId\": \"ID_DO_ADMIN_COTIA\", \"role\": \"TO\" }\n  ],\n  \"attachments\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/communication/messages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "communication",
+                "messages"
+              ]
+            }
           }
         },
         {
@@ -184,9 +773,22 @@
             "method": "GET",
             "url": {
               "raw": "{{baseUrl}}/api/v1/communication/messages/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api","v1","communication","messages",":id"],
-              "variable": [{ "key": "id", "value": "MESSAGE_ID" }]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "communication",
+                "messages",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "MESSAGE_ID"
+                }
+              ]
             }
           }
         },
@@ -194,17 +796,39 @@
           "name": "Atualizar Mensagem (rascunho)",
           "request": {
             "method": "PUT",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"subject\": \"Assunto atualizado\",\n  \"body\": \"Corpo atualizado.\"\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/communication/messages/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api","v1","communication","messages",":id"],
-              "variable": [{ "key": "id", "value": "MESSAGE_ID" }]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "communication",
+                "messages",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "MESSAGE_ID"
+                }
+              ]
             }
           }
         },
@@ -214,9 +838,22 @@
             "method": "DELETE",
             "url": {
               "raw": "{{baseUrl}}/api/v1/communication/messages/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api","v1","communication","messages",":id"],
-              "variable": [{ "key": "id", "value": "MESSAGE_ID" }]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "communication",
+                "messages",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "MESSAGE_ID"
+                }
+              ]
             }
           }
         },
@@ -226,11 +863,125 @@
             "method": "GET",
             "url": {
               "raw": "{{baseUrl}}/api/v1/communication/messages/:id/attachments/:attachmentId/download",
-              "host": ["{{baseUrl}}"],
-              "path": ["api","v1","communication","messages",":id","attachments",":attachmentId","download"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "communication",
+                "messages",
+                ":id",
+                "attachments",
+                ":attachmentId",
+                "download"
+              ],
               "variable": [
-                { "key": "id", "value": "MESSAGE_ID" },
-                { "key": "attachmentId", "value": "ATTACHMENT_ID" }
+                {
+                  "key": "id",
+                  "value": "MESSAGE_ID"
+                },
+                {
+                  "key": "attachmentId",
+                  "value": "ATTACHMENT_ID"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Destinatários elegíveis — busca Cotia com token Itapevi (vazio)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_itapevi}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/communication/recipients?search=maria",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "communication",
+                "recipients"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "maria"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Inbox — cross-org (Cotia não vê msgs de Itapevi)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cotia}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/communication/inbox",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "communication",
+                "inbox"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Detalhe da Mensagem — cross-org (404)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cotia}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/communication/messages/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "communication",
+                "messages",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "MESSAGE_ID_ITAPEVI"
+                }
               ]
             }
           }
@@ -239,7 +990,16 @@
     },
     {
       "name": "Users",
-      "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{meu_token}}", "type": "string" }] },
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{meu_token}}",
+            "type": "string"
+          }
+        ]
+      },
       "item": [
         {
           "name": "Listar Usuários",
@@ -247,13 +1007,33 @@
             "method": "GET",
             "url": {
               "raw": "{{baseUrl}}/api/v1/users",
-              "host": ["{{baseUrl}}"],
-              "path": ["api","v1","users"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users"
+              ],
               "query": [
-                { "key": "page", "value": "1" },
-                { "key": "limit", "value": "20" },
-                { "key": "search", "value": "", "disabled": true },
-                { "key": "isActive", "value": "", "disabled": true }
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "isActive",
+                  "value": "",
+                  "disabled": true
+                }
               ]
             }
           }
@@ -264,9 +1044,21 @@
             "method": "GET",
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api","v1","users",":id"],
-              "variable": [{ "key": "id", "value": "USER_ID" }]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "USER_ID"
+                }
+              ]
             }
           }
         },
@@ -274,30 +1066,70 @@
           "name": "Criar Usuário",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"email\": \"novo@prefeitura.gov.br\",\n  \"password\": \"Senha123!@#\",\n  \"firstName\": \"João\",\n  \"lastName\": \"Silva\",\n  \"username\": \"joao.silva\",\n  \"isActive\": true,\n  \"isVerified\": true,\n  \"roles\": []\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
-            "url": { "raw": "{{baseUrl}}/api/v1/users", "host": ["{{baseUrl}}"], "path": ["api","v1","users"] }
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users"
+              ]
+            }
           }
         },
         {
           "name": "Atualizar Usuário",
           "request": {
             "method": "PUT",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"firstName\": \"João\",\n  \"lastName\": \"Silva Atualizado\",\n  \"isActive\": true\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api","v1","users",":id"],
-              "variable": [{ "key": "id", "value": "USER_ID" }]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "USER_ID"
+                }
+              ]
             }
           }
         },
@@ -307,9 +1139,21 @@
             "method": "DELETE",
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api","v1","users",":id"],
-              "variable": [{ "key": "id", "value": "USER_ID" }]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "USER_ID"
+                }
+              ]
             }
           }
         },
@@ -317,17 +1161,39 @@
           "name": "Alterar Status do Usuário",
           "request": {
             "method": "PATCH",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"isActive\": false,\n  \"reason\": \"Conta suspensa\"\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/:id/status",
-              "host": ["{{baseUrl}}"],
-              "path": ["api","v1","users",":id","status"],
-              "variable": [{ "key": "id", "value": "USER_ID" }]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                ":id",
+                "status"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "USER_ID"
+                }
+              ]
             }
           }
         },
@@ -335,17 +1201,39 @@
           "name": "Atribuir Roles ao Usuário",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"roleIds\": [\"ROLE_ID\"]\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/:id/roles",
-              "host": ["{{baseUrl}}"],
-              "path": ["api","v1","users",":id","roles"],
-              "variable": [{ "key": "id", "value": "USER_ID" }]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                ":id",
+                "roles"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "USER_ID"
+                }
+              ]
             }
           }
         },
@@ -353,17 +1241,39 @@
           "name": "Remover Roles do Usuário",
           "request": {
             "method": "DELETE",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"roleIds\": [\"ROLE_ID\"]\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/:id/roles",
-              "host": ["{{baseUrl}}"],
-              "path": ["api","v1","users",":id","roles"],
-              "variable": [{ "key": "id", "value": "USER_ID" }]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                ":id",
+                "roles"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "USER_ID"
+                }
+              ]
             }
           }
         }
@@ -371,7 +1281,16 @@
     },
     {
       "name": "Roles",
-      "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{meu_token}}", "type": "string" }] },
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{meu_token}}",
+            "type": "string"
+          }
+        ]
+      },
       "item": [
         {
           "name": "Listar Roles",
@@ -379,12 +1298,28 @@
             "method": "GET",
             "url": {
               "raw": "{{baseUrl}}/api/v1/roles",
-              "host": ["{{baseUrl}}"],
-              "path": ["api","v1","roles"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "roles"
+              ],
               "query": [
-                { "key": "page", "value": "1" },
-                { "key": "limit", "value": "20" },
-                { "key": "search", "value": "", "disabled": true }
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true
+                }
               ]
             }
           }
@@ -395,9 +1330,21 @@
             "method": "GET",
             "url": {
               "raw": "{{baseUrl}}/api/v1/roles/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api","v1","roles",":id"],
-              "variable": [{ "key": "id", "value": "ROLE_ID" }]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "roles",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "ROLE_ID"
+                }
+              ]
             }
           }
         },
@@ -405,30 +1352,70 @@
           "name": "Criar Role",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"name\": \"secretario\",\n  \"displayName\": \"Secretário\",\n  \"description\": \"Secretário municipal\",\n  \"permissions\": [\"documents:read\", \"finance:read\"]\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
-            "url": { "raw": "{{baseUrl}}/api/v1/roles", "host": ["{{baseUrl}}"], "path": ["api","v1","roles"] }
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "roles"
+              ]
+            }
           }
         },
         {
           "name": "Atualizar Role",
           "request": {
             "method": "PUT",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"displayName\": \"Secretário Atualizado\",\n  \"permissions\": [\"documents:read\", \"documents:manage\", \"finance:read\"]\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/roles/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api","v1","roles",":id"],
-              "variable": [{ "key": "id", "value": "ROLE_ID" }]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "roles",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "ROLE_ID"
+                }
+              ]
             }
           }
         },
@@ -438,9 +1425,21 @@
             "method": "DELETE",
             "url": {
               "raw": "{{baseUrl}}/api/v1/roles/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api","v1","roles",":id"],
-              "variable": [{ "key": "id", "value": "ROLE_ID" }]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "roles",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "ROLE_ID"
+                }
+              ]
             }
           }
         },
@@ -448,40 +1447,97 @@
           "name": "Permissões Disponíveis",
           "request": {
             "method": "GET",
-            "url": { "raw": "{{baseUrl}}/api/v1/roles/permissions/available", "host": ["{{baseUrl}}"], "path": ["api","v1","roles","permissions","available"] }
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roles/permissions/available",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "roles",
+                "permissions",
+                "available"
+              ]
+            }
           }
         },
         {
           "name": "Hierarquia de Roles",
           "request": {
             "method": "GET",
-            "url": { "raw": "{{baseUrl}}/api/v1/roles/hierarchy", "host": ["{{baseUrl}}"], "path": ["api","v1","roles","hierarchy"] }
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roles/hierarchy",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "roles",
+                "hierarchy"
+              ]
+            }
           }
         }
       ]
     },
     {
       "name": "Workspaces",
-      "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{meu_token}}", "type": "string" }] },
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{meu_token}}",
+            "type": "string"
+          }
+        ]
+      },
       "item": [
         {
           "name": "Listar Workspaces",
           "request": {
             "method": "GET",
-            "url": { "raw": "{{baseUrl}}/workspaces", "host": ["{{baseUrl}}"], "path": ["workspaces"] }
+            "url": {
+              "raw": "{{baseUrl}}/workspaces",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "workspaces"
+              ]
+            }
           }
         },
         {
           "name": "Criar Workspace",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"name\": \"Obras 2024\",\n  \"description\": \"Gestão de obras municipais\"\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
-            "url": { "raw": "{{baseUrl}}/workspaces", "host": ["{{baseUrl}}"], "path": ["workspaces"] }
+            "url": {
+              "raw": "{{baseUrl}}/workspaces",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "workspaces"
+              ]
+            }
           }
         },
         {
@@ -490,9 +1546,19 @@
             "method": "GET",
             "url": {
               "raw": "{{baseUrl}}/workspaces/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["workspaces",":id"],
-              "variable": [{ "key": "id", "value": "WORKSPACE_ID" }]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "workspaces",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "WORKSPACE_ID"
+                }
+              ]
             }
           }
         },
@@ -502,9 +1568,19 @@
             "method": "DELETE",
             "url": {
               "raw": "{{baseUrl}}/workspaces/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["workspaces",":id"],
-              "variable": [{ "key": "id", "value": "WORKSPACE_ID" }]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "workspaces",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "WORKSPACE_ID"
+                }
+              ]
             }
           }
         },
@@ -514,9 +1590,20 @@
             "method": "GET",
             "url": {
               "raw": "{{baseUrl}}/workspaces/:workspaceId/tasks",
-              "host": ["{{baseUrl}}"],
-              "path": ["workspaces",":workspaceId","tasks"],
-              "variable": [{ "key": "workspaceId", "value": "WORKSPACE_ID" }]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "workspaces",
+                ":workspaceId",
+                "tasks"
+              ],
+              "variable": [
+                {
+                  "key": "workspaceId",
+                  "value": "WORKSPACE_ID"
+                }
+              ]
             }
           }
         },
@@ -524,35 +1611,133 @@
           "name": "Criar Task no Workspace",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"title\": \"Vistoriar obra Rua das Flores\",\n  \"description\": \"Vistoría programada para esta semana\",\n  \"priority\": \"HIGH\",\n  \"status\": \"TODO\"\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{baseUrl}}/workspaces/:workspaceId/tasks",
-              "host": ["{{baseUrl}}"],
-              "path": ["workspaces",":workspaceId","tasks"],
-              "variable": [{ "key": "workspaceId", "value": "WORKSPACE_ID" }]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "workspaces",
+                ":workspaceId",
+                "tasks"
+              ],
+              "variable": [
+                {
+                  "key": "workspaceId",
+                  "value": "WORKSPACE_ID"
+                }
+              ]
             }
           }
         },
         {
           "name": "Adicionar Membro",
           "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{meu_token}}",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"userId\": \"USER_ID\",\n  \"role\": \"member\"\n}",
-              "options": { "raw": { "language": "json" } }
+              "raw": "{\n  \"email\": \"joao@itapevi.gov.br\",\n  \"role\": \"MEMBER\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{baseUrl}}/workspaces/:id/members",
-              "host": ["{{baseUrl}}"],
-              "path": ["workspaces",":id","members"],
-              "variable": [{ "key": "id", "value": "WORKSPACE_ID" }]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "workspaces",
+                ":id",
+                "members"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "WORKSPACE_ID"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Adicionar Membro — cross-org (403)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_itapevi}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@cotia.gov.br\",\n  \"role\": \"MEMBER\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/workspaces/:id/members",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "workspaces",
+                ":id",
+                "members"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "WORKSPACE_ID_ITAPEVI"
+                }
+              ]
             }
           }
         }
@@ -560,109 +1745,378 @@
     },
     {
       "name": "Finance",
-      "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{meu_token}}", "type": "string" }] },
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{meu_token}}",
+            "type": "string"
+          }
+        ]
+      },
       "item": [
         {
-          "name": "Listar Categorias",
-          "request": {
-            "method": "GET",
-            "url": {
-              "raw": "{{baseUrl}}/finance/workspaces/:workspaceId/categories",
-              "host": ["{{baseUrl}}"],
-              "path": ["finance","workspaces",":workspaceId","categories"],
-              "variable": [{ "key": "workspaceId", "value": "WORKSPACE_ID" }]
-            }
-          }
-        },
-        {
-          "name": "Criar Categoria",
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"Manutenção\",\n  \"type\": \"EXPENSE\",\n  \"color\": \"#FF5733\"\n}",
-              "options": { "raw": { "language": "json" } }
+          "name": "— Contas Bancárias —",
+          "item": [
+            {
+              "name": "Criar Conta Bancária",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"workspaceId\": \"WORKSPACE_ID\",\n  \"name\": \"Caixa Econômica Federal\",\n  \"agency\": \"0042\",\n  \"accountNumber\": \"12345-6\",\n  \"initialBalanceCents\": 5000000\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/finance/workspaces/:workspaceId/accounts",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "finance",
+                    "workspaces",
+                    ":workspaceId",
+                    "accounts"
+                  ],
+                  "variable": [
+                    {
+                      "key": "workspaceId",
+                      "value": "WORKSPACE_ID"
+                    }
+                  ]
+                }
+              }
             },
-            "url": {
-              "raw": "{{baseUrl}}/finance/workspaces/:workspaceId/categories",
-              "host": ["{{baseUrl}}"],
-              "path": ["finance","workspaces",":workspaceId","categories"],
-              "variable": [{ "key": "workspaceId", "value": "WORKSPACE_ID" }]
-            }
-          }
-        },
-        {
-          "name": "Listar Lançamentos",
-          "request": {
-            "method": "GET",
-            "url": {
-              "raw": "{{baseUrl}}/finance/workspaces/:workspaceId/entries",
-              "host": ["{{baseUrl}}"],
-              "path": ["finance","workspaces",":workspaceId","entries"],
-              "variable": [{ "key": "workspaceId", "value": "WORKSPACE_ID" }]
-            }
-          }
-        },
-        {
-          "name": "Criar Lançamento",
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"description\": \"Pagamento fornecedor\",\n  \"amount\": 1500.00,\n  \"type\": \"EXPENSE\",\n  \"date\": \"2026-04-01\",\n  \"categoryId\": \"CATEGORY_ID\"\n}",
-              "options": { "raw": { "language": "json" } }
+            {
+              "name": "Listar Contas Bancárias",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/finance/workspaces/:workspaceId/accounts",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "finance",
+                    "workspaces",
+                    ":workspaceId",
+                    "accounts"
+                  ],
+                  "variable": [
+                    {
+                      "key": "workspaceId",
+                      "value": "WORKSPACE_ID"
+                    }
+                  ]
+                }
+              }
             },
-            "url": {
-              "raw": "{{baseUrl}}/finance/workspaces/:workspaceId/entries",
-              "host": ["{{baseUrl}}"],
-              "path": ["finance","workspaces",":workspaceId","entries"],
-              "variable": [{ "key": "workspaceId", "value": "WORKSPACE_ID" }]
+            {
+              "name": "Listar Contas — cross-org (404)",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token_cotia}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/finance/workspaces/:workspaceId/accounts",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "finance",
+                    "workspaces",
+                    ":workspaceId",
+                    "accounts"
+                  ],
+                  "variable": [
+                    {
+                      "key": "workspaceId",
+                      "value": "WORKSPACE_ID_ITAPEVI"
+                    }
+                  ]
+                }
+              }
             }
-          }
+          ]
         },
         {
-          "name": "Atualizar Lançamento",
-          "request": {
-            "method": "PUT",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"description\": \"Pagamento fornecedor (atualizado)\",\n  \"amount\": 1600.00\n}",
-              "options": { "raw": { "language": "json" } }
+          "name": "— Categorias —",
+          "item": [
+            {
+              "name": "Criar Categoria",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"workspaceId\": \"WORKSPACE_ID\",\n  \"name\": \"Obras e Serviços\",\n  \"description\": \"Contratos de obras municipais\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/finance/workspaces/:workspaceId/categories",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "finance",
+                    "workspaces",
+                    ":workspaceId",
+                    "categories"
+                  ],
+                  "variable": [
+                    {
+                      "key": "workspaceId",
+                      "value": "WORKSPACE_ID"
+                    }
+                  ]
+                }
+              }
             },
-            "url": {
-              "raw": "{{baseUrl}}/finance/entries/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["finance","entries",":id"],
-              "variable": [{ "key": "id", "value": "ENTRY_ID" }]
+            {
+              "name": "Listar Categorias",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/finance/workspaces/:workspaceId/categories",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "finance",
+                    "workspaces",
+                    ":workspaceId",
+                    "categories"
+                  ],
+                  "variable": [
+                    {
+                      "key": "workspaceId",
+                      "value": "WORKSPACE_ID"
+                    }
+                  ]
+                }
+              }
             }
-          }
+          ]
         },
         {
-          "name": "Deletar Lançamento",
-          "request": {
-            "method": "DELETE",
-            "url": {
-              "raw": "{{baseUrl}}/finance/entries/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["finance","entries",":id"],
-              "variable": [{ "key": "id", "value": "ENTRY_ID" }]
+          "name": "— Lançamentos —",
+          "item": [
+            {
+              "name": "Criar Lançamento",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"workspaceId\": \"WORKSPACE_ID\",\n  \"occurredAt\": \"2024-03-15T00:00:00.000Z\",\n  \"description\": \"Pagamento empreiteira Rua das Flores\",\n  \"amountCents\": 1250000,\n  \"type\": \"EXPENSE\",\n  \"categoryId\": \"CATEGORY_ID\",\n  \"empenhoNumber\": \"EMP-2024-001\",\n  \"attachmentsStatus\": \"none\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/finance/workspaces/:workspaceId/entries",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "finance",
+                    "workspaces",
+                    ":workspaceId",
+                    "entries"
+                  ],
+                  "variable": [
+                    {
+                      "key": "workspaceId",
+                      "value": "WORKSPACE_ID"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Listar Lançamentos",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/finance/workspaces/:workspaceId/entries",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "finance",
+                    "workspaces",
+                    ":workspaceId",
+                    "entries"
+                  ],
+                  "variable": [
+                    {
+                      "key": "workspaceId",
+                      "value": "WORKSPACE_ID"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Atualizar Lançamento",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"description\": \"Pagamento empreiteira (atualizado)\",\n  \"amountCents\": 1300000\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/finance/entries/:id",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "finance",
+                    "entries",
+                    ":id"
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "ENTRY_ID"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Deletar Lançamento",
+              "request": {
+                "method": "DELETE",
+                "url": {
+                  "raw": "{{baseUrl}}/finance/entries/:id",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "finance",
+                    "entries",
+                    ":id"
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "ENTRY_ID"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Listar Lançamentos — cross-org (404)",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token_cotia}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/finance/workspaces/:workspaceId/entries",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "finance",
+                    "workspaces",
+                    ":workspaceId",
+                    "entries"
+                  ],
+                  "variable": [
+                    {
+                      "key": "workspaceId",
+                      "value": "WORKSPACE_ID_ITAPEVI"
+                    }
+                  ]
+                }
+              }
             }
-          }
+          ]
         }
       ]
     },
     {
       "name": "Notifications",
-      "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{meu_token}}", "type": "string" }] },
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{meu_token}}",
+            "type": "string"
+          }
+        ]
+      },
       "item": [
         {
           "name": "Listar Notificações",
           "request": {
             "method": "GET",
-            "url": { "raw": "{{baseUrl}}/notifications", "host": ["{{baseUrl}}"], "path": ["notifications"] }
+            "url": {
+              "raw": "{{baseUrl}}/notifications",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications"
+              ]
+            }
           }
         },
         {
@@ -671,9 +2125,20 @@
             "method": "PATCH",
             "url": {
               "raw": "{{baseUrl}}/notifications/:id/read",
-              "host": ["{{baseUrl}}"],
-              "path": ["notifications",":id","read"],
-              "variable": [{ "key": "id", "value": "NOTIFICATION_ID" }]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications",
+                ":id",
+                "read"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "NOTIFICATION_ID"
+                }
+              ]
             }
           }
         },
@@ -681,7 +2146,16 @@
           "name": "Marcar Todas como Lidas",
           "request": {
             "method": "PATCH",
-            "url": { "raw": "{{baseUrl}}/notifications/read-all", "host": ["{{baseUrl}}"], "path": ["notifications","read-all"] }
+            "url": {
+              "raw": "{{baseUrl}}/notifications/read-all",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications",
+                "read-all"
+              ]
+            }
           }
         },
         {
@@ -690,9 +2164,19 @@
             "method": "DELETE",
             "url": {
               "raw": "{{baseUrl}}/notifications/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["notifications",":id"],
-              "variable": [{ "key": "id", "value": "NOTIFICATION_ID" }]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "NOTIFICATION_ID"
+                }
+              ]
             }
           }
         },
@@ -700,20 +2184,124 @@
           "name": "Deletar Todas as Notificações",
           "request": {
             "method": "DELETE",
-            "url": { "raw": "{{baseUrl}}/notifications", "host": ["{{baseUrl}}"], "path": ["notifications"] }
+            "url": {
+              "raw": "{{baseUrl}}/notifications",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications"
+              ]
+            }
           }
         }
       ]
     },
     {
       "name": "Virtual Processes",
-      "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{meu_token}}", "type": "string" }] },
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{token_itapevi}}",
+            "type": "string"
+          }
+        ]
+      },
       "item": [
         {
-          "name": "Listar Processos",
+          "name": "Listar Processos (Itapevi)",
           "request": {
             "method": "GET",
-            "url": { "raw": "{{baseUrl}}/virtual-processes", "host": ["{{baseUrl}}"], "path": ["virtual-processes"] }
+            "url": {
+              "raw": "{{baseUrl}}/virtual-processes/workspaces/:workspaceId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "virtual-processes",
+                "workspaces",
+                ":workspaceId"
+              ],
+              "variable": [
+                {
+                  "key": "workspaceId",
+                  "value": "WORKSPACE_ID"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Listar Processos — cross-org (404)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cotia}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/virtual-processes/workspaces/:workspaceId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "virtual-processes",
+                "workspaces",
+                ":workspaceId"
+              ],
+              "variable": [
+                {
+                  "key": "workspaceId",
+                  "value": "WORKSPACE_ID_ITAPEVI"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Criar Processo (Itapevi)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workspaceId\": \"WORKSPACE_ID\",\n  \"processNumber\": \"001/2024\",\n  \"subject\": \"Licitação para pavimentação Rua das Flores\",\n  \"secretaria\": \"Secretaria de Obras\",\n  \"source\": \"Prefeitura\",\n  \"category\": \"Licitação\",\n  \"status\": \"Tramitando\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/virtual-processes/workspaces/:workspaceId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "virtual-processes",
+                "workspaces",
+                ":workspaceId"
+              ],
+              "variable": [
+                {
+                  "key": "workspaceId",
+                  "value": "WORKSPACE_ID"
+                }
+              ]
+            }
           }
         },
         {
@@ -722,52 +2310,89 @@
             "method": "GET",
             "url": {
               "raw": "{{baseUrl}}/virtual-processes/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["virtual-processes",":id"],
-              "variable": [{ "key": "id", "value": "PROCESS_ID" }]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "virtual-processes",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "PROCESS_ID"
+                }
+              ]
             }
           }
         },
         {
-          "name": "Criar Processo",
+          "name": "Buscar Processo — cross-org (404)",
           "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"title\": \"Processo Licitatório 001/2024\",\n  \"description\": \"Licitação para obras de pavimentação\"\n}",
-              "options": { "raw": { "language": "json" } }
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cotia}}",
+                  "type": "string"
+                }
+              ]
             },
-            "url": { "raw": "{{baseUrl}}/virtual-processes", "host": ["{{baseUrl}}"], "path": ["virtual-processes"] }
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/virtual-processes/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "virtual-processes",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "PROCESS_ID_ITAPEVI"
+                }
+              ]
+            }
           }
         },
         {
           "name": "Atualizar Status do Processo",
           "request": {
             "method": "PATCH",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"status\": \"IN_PROGRESS\"\n}",
-              "options": { "raw": { "language": "json" } }
+              "raw": "{\n  \"status\": \"Concluído\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{baseUrl}}/virtual-processes/:id/status",
-              "host": ["{{baseUrl}}"],
-              "path": ["virtual-processes",":id","status"],
-              "variable": [{ "key": "id", "value": "PROCESS_ID" }]
-            }
-          }
-        },
-        {
-          "name": "Deletar Processo",
-          "request": {
-            "method": "DELETE",
-            "url": {
-              "raw": "{{baseUrl}}/virtual-processes/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["virtual-processes",":id"],
-              "variable": [{ "key": "id", "value": "PROCESS_ID" }]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "virtual-processes",
+                ":id",
+                "status"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "PROCESS_ID"
+                }
+              ]
             }
           }
         },
@@ -777,13 +2402,40 @@
             "method": "POST",
             "body": {
               "mode": "formdata",
-              "formdata": [{ "key": "file", "type": "file", "src": "" }]
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": ""
+                },
+                {
+                  "key": "tag",
+                  "value": "contrato",
+                  "type": "text"
+                },
+                {
+                  "key": "description",
+                  "value": "Contrato assinado",
+                  "type": "text"
+                }
+              ]
             },
             "url": {
               "raw": "{{baseUrl}}/virtual-processes/:id/documents",
-              "host": ["{{baseUrl}}"],
-              "path": ["virtual-processes",":id","documents"],
-              "variable": [{ "key": "id", "value": "PROCESS_ID" }]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "virtual-processes",
+                ":id",
+                "documents"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "PROCESS_ID"
+                }
+              ]
             }
           }
         },
@@ -793,11 +2445,25 @@
             "method": "GET",
             "url": {
               "raw": "{{baseUrl}}/virtual-processes/:id/documents/:documentId/download",
-              "host": ["{{baseUrl}}"],
-              "path": ["virtual-processes",":id","documents",":documentId","download"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "virtual-processes",
+                ":id",
+                "documents",
+                ":documentId",
+                "download"
+              ],
               "variable": [
-                { "key": "id", "value": "PROCESS_ID" },
-                { "key": "documentId", "value": "DOCUMENT_ID" }
+                {
+                  "key": "id",
+                  "value": "PROCESS_ID"
+                },
+                {
+                  "key": "documentId",
+                  "value": "DOCUMENT_ID"
+                }
               ]
             }
           }
@@ -806,7 +2472,16 @@
     },
     {
       "name": "Utilities",
-      "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{meu_token}}", "type": "string" }] },
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{meu_token}}",
+            "type": "string"
+          }
+        ]
+      },
       "item": [
         {
           "name": "Calendar",
@@ -815,37 +2490,128 @@
               "name": "Listar Eventos",
               "request": {
                 "method": "GET",
-                "url": { "raw": "{{baseUrl}}/api/v1/utilities/calendar", "host": ["{{baseUrl}}"], "path": ["api","v1","utilities","calendar"] }
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/utilities/calendar",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "utilities",
+                    "calendar"
+                  ]
+                }
               }
             },
             {
-              "name": "Criar Evento",
+              "name": "Criar Evento (Itapevi)",
               "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token_itapevi}}",
+                      "type": "string"
+                    }
+                  ]
+                },
                 "method": "POST",
-                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"title\": \"Reunião de Pauta\",\n  \"startDate\": \"2026-04-05T09:00:00Z\",\n  \"endDate\": \"2026-04-05T10:00:00Z\"\n}",
-                  "options": { "raw": { "language": "json" } }
+                  "raw": "{\n  \"title\": \"Sessão Câmara Municipal\",\n  \"startAt\": \"2026-04-10T09:00:00Z\",\n  \"endAt\": \"2026-04-10T11:00:00Z\",\n  \"color\": \"#3B82F6\",\n  \"description\": \"Sessão ordinária do mês de abril\",\n  \"attachments\": []\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
                 },
-                "url": { "raw": "{{baseUrl}}/api/v1/utilities/calendar", "host": ["{{baseUrl}}"], "path": ["api","v1","utilities","calendar"] }
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/utilities/calendar",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "utilities",
+                    "calendar"
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Listar Eventos — cross-org (Cotia não vê Itapevi)",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token_cotia}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/utilities/calendar",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "utilities",
+                    "calendar"
+                  ]
+                }
               }
             },
             {
               "name": "Atualizar Evento",
               "request": {
                 "method": "PUT",
-                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"title\": \"Reunião de Pauta (atualizada)\"\n}",
-                  "options": { "raw": { "language": "json" } }
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
                 },
                 "url": {
                   "raw": "{{baseUrl}}/api/v1/utilities/calendar/:id",
-                  "host": ["{{baseUrl}}"],
-                  "path": ["api","v1","utilities","calendar",":id"],
-                  "variable": [{ "key": "id", "value": "EVENT_ID" }]
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "utilities",
+                    "calendar",
+                    ":id"
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "EVENT_ID"
+                    }
+                  ]
                 }
               }
             },
@@ -855,9 +2621,22 @@
                 "method": "DELETE",
                 "url": {
                   "raw": "{{baseUrl}}/api/v1/utilities/calendar/:id",
-                  "host": ["{{baseUrl}}"],
-                  "path": ["api","v1","utilities","calendar",":id"],
-                  "variable": [{ "key": "id", "value": "EVENT_ID" }]
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "utilities",
+                    "calendar",
+                    ":id"
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "EVENT_ID"
+                    }
+                  ]
                 }
               }
             },
@@ -865,7 +2644,19 @@
               "name": "Alertas de Hoje",
               "request": {
                 "method": "GET",
-                "url": { "raw": "{{baseUrl}}/api/v1/utilities/calendar/today-alerts", "host": ["{{baseUrl}}"], "path": ["api","v1","utilities","calendar","today-alerts"] }
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/utilities/calendar/today-alerts",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "utilities",
+                    "calendar",
+                    "today-alerts"
+                  ]
+                }
               }
             }
           ]
@@ -877,37 +2668,128 @@
               "name": "Listar Notas",
               "request": {
                 "method": "GET",
-                "url": { "raw": "{{baseUrl}}/api/v1/utilities/notes", "host": ["{{baseUrl}}"], "path": ["api","v1","utilities","notes"] }
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/utilities/notes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "utilities",
+                    "notes"
+                  ]
+                }
               }
             },
             {
-              "name": "Criar Nota",
+              "name": "Criar Nota (Itapevi)",
               "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token_itapevi}}",
+                      "type": "string"
+                    }
+                  ]
+                },
                 "method": "POST",
-                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"title\": \"Minha Nota\",\n  \"content\": \"Conteúdo da nota aqui.\"\n}",
-                  "options": { "raw": { "language": "json" } }
+                  "raw": "{\n  \"title\": \"Reunião com secretário\",\n  \"content\": \"Pauta: revisão do orçamento 2024 e obras prioritárias.\",\n  \"color\": \"#fef08a\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
                 },
-                "url": { "raw": "{{baseUrl}}/api/v1/utilities/notes", "host": ["{{baseUrl}}"], "path": ["api","v1","utilities","notes"] }
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/utilities/notes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "utilities",
+                    "notes"
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Listar Notas — cross-org (Cotia não vê Itapevi)",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token_cotia}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/utilities/notes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "utilities",
+                    "notes"
+                  ]
+                }
               }
             },
             {
               "name": "Atualizar Nota",
               "request": {
                 "method": "PUT",
-                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"content\": \"Conteúdo atualizado.\"\n}",
-                  "options": { "raw": { "language": "json" } }
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
                 },
                 "url": {
                   "raw": "{{baseUrl}}/api/v1/utilities/notes/:id",
-                  "host": ["{{baseUrl}}"],
-                  "path": ["api","v1","utilities","notes",":id"],
-                  "variable": [{ "key": "id", "value": "NOTE_ID" }]
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "utilities",
+                    "notes",
+                    ":id"
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "NOTE_ID"
+                    }
+                  ]
                 }
               }
             },
@@ -917,9 +2799,22 @@
                 "method": "DELETE",
                 "url": {
                   "raw": "{{baseUrl}}/api/v1/utilities/notes/:id",
-                  "host": ["{{baseUrl}}"],
-                  "path": ["api","v1","utilities","notes",":id"],
-                  "variable": [{ "key": "id", "value": "NOTE_ID" }]
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "utilities",
+                    "notes",
+                    ":id"
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "NOTE_ID"
+                    }
+                  ]
                 }
               }
             }
@@ -929,7 +2824,16 @@
     },
     {
       "name": "Upload",
-      "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{meu_token}}", "type": "string" }] },
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{meu_token}}",
+            "type": "string"
+          }
+        ]
+      },
       "item": [
         {
           "name": "Upload de Arquivo",
@@ -937,12 +2841,526 @@
             "method": "POST",
             "body": {
               "mode": "formdata",
-              "formdata": [{ "key": "file", "type": "file", "src": "" }]
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
             },
-            "url": { "raw": "{{baseUrl}}/api/v1/upload", "host": ["{{baseUrl}}"], "path": ["api","v1","upload"] }
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "upload"
+              ]
+            }
           }
         }
       ]
+    },
+    {
+      "name": "🔥 Smoke Test — Isolamento Cross-Org",
+      "item": [
+        {
+          "name": "[Users] Cotia lista usuários → só vê Cotia (sem Itapevi)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_cotia}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users"
+              ]
+            }
+          }
+        },
+        {
+          "name": "[Workspaces] Cotia lista workspaces → lista vazia",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_cotia}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/workspaces",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "workspaces"
+              ]
+            }
+          }
+        },
+        {
+          "name": "[Workspaces] Cotia acessa workspace de Itapevi por ID → 404",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_cotia}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/workspaces/:workspaceId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "workspaces",
+                ":workspaceId"
+              ],
+              "variable": [
+                {
+                  "key": "workspaceId",
+                  "value": "ID_WORKSPACE_ITAPEVI"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "[Tasks] Cotia acessa task de Itapevi por ID → 404",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_cotia}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/tasks/:taskId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tasks",
+                ":taskId"
+              ],
+              "variable": [
+                {
+                  "key": "taskId",
+                  "value": "ID_TASK_ITAPEVI"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "[Notes] Cotia lista notas → lista vazia",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_cotia}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/utilities/notes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "utilities",
+                "notes"
+              ]
+            }
+          }
+        },
+        {
+          "name": "[Calendar] Cotia lista eventos → lista vazia",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_cotia}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/utilities/calendar",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "utilities",
+                "calendar"
+              ]
+            }
+          }
+        },
+        {
+          "name": "[Communication] Cotia — inbox → lista vazia",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_cotia}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/communication/inbox",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "communication",
+                "inbox"
+              ]
+            }
+          }
+        },
+        {
+          "name": "[Communication] Cotia acessa mensagem de Itapevi → 404",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_cotia}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/communication/messages/:messageId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "communication",
+                "messages",
+                ":messageId"
+              ],
+              "variable": [
+                {
+                  "key": "messageId",
+                  "value": "ID_MENSAGEM_ITAPEVI"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "[Communication] Cotia busca destinatários de Itapevi → lista vazia",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_cotia}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/communication/recipients?workspaceId=ID_WORKSPACE_ITAPEVI",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "communication",
+                "recipients"
+              ],
+              "query": [
+                {
+                  "key": "workspaceId",
+                  "value": "ID_WORKSPACE_ITAPEVI"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "[Communication] Cotia tenta enviar mensagem para destinatário de Itapevi → 403",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_cotia}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"Teste cross-org\",\n  \"body\": \"Tentativa de envio cross-org\",\n  \"recipients\": [\n    {\n      \"userId\": \"ID_USER_ITAPEVI\",\n      \"role\": \"TO\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/communication/messages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "communication",
+                "messages"
+              ]
+            }
+          }
+        },
+        {
+          "name": "[Finance] Cotia lista contas usando workspaceId de Itapevi → 404",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_cotia}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/finance/workspaces/:workspaceId/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "workspaces",
+                ":workspaceId",
+                "accounts"
+              ],
+              "variable": [
+                {
+                  "key": "workspaceId",
+                  "value": "ID_WORKSPACE_ITAPEVI"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "[Finance] Cotia lista lançamentos usando workspaceId de Itapevi → 404",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_cotia}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/finance/workspaces/:workspaceId/entries",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "workspaces",
+                ":workspaceId",
+                "entries"
+              ],
+              "variable": [
+                {
+                  "key": "workspaceId",
+                  "value": "ID_WORKSPACE_ITAPEVI"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "[Finance] Cotia tenta criar conta em workspace de Itapevi → 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_cotia}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Conta Invasora\",\n  \"bankName\": \"BB\",\n  \"workspaceId\": \"ID_WORKSPACE_ITAPEVI\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/finance/workspaces/ID_WORKSPACE_ITAPEVI/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "workspaces",
+                "ID_WORKSPACE_ITAPEVI",
+                "accounts"
+              ]
+            }
+          }
+        },
+        {
+          "name": "[VirtualProcess] Cotia lista processos de workspace de Itapevi → 404",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_cotia}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/virtual-processes/workspaces/:workspaceId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "virtual-processes",
+                "workspaces",
+                ":workspaceId"
+              ],
+              "variable": [
+                {
+                  "key": "workspaceId",
+                  "value": "ID_WORKSPACE_ITAPEVI"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "[VirtualProcess] Cotia acessa processo de Itapevi por ID → 404",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_cotia}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/virtual-processes/:processId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "virtual-processes",
+                ":processId"
+              ],
+              "variable": [
+                {
+                  "key": "processId",
+                  "value": "ID_PROCESSO_ITAPEVI"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "[Roles] Cotia lista roles → não vê roles de Itapevi",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_cotia}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "roles"
+              ]
+            }
+          }
+        },
+        {
+          "name": "[Admin] Usuário comum (Itapevi) tenta listar orgs → 403",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_itapevi}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/organizations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "organizations"
+              ]
+            }
+          }
+        }
+      ],
+      "auth": {
+        "type": "noauth"
+      }
     }
   ]
 }

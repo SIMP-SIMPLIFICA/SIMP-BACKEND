@@ -1,7 +1,6 @@
 import { z } from 'zod'
 
 export const createVirtualProcessSchema = z.object({
-  workspaceId: z.string().uuid(),
   processNumber: z.string().regex(/^\d+\/\d{4}$/, 'O número deve estar no formato NUMERO/ANO (ex: 001/2026)'),
   secretaria: z.string().min(1),
   source: z.string().min(1),
@@ -35,7 +34,6 @@ export const uploadDocumentSchema = z.object({
 }).strip()
 
 export const createVirtualProcessCategorySchema = z.object({
-  workspaceId: z.string().uuid(),
   name: z.string().min(1).max(100),
 }).strip()
 
@@ -48,7 +46,6 @@ export const updateVirtualProcessCategorySchema = z.object({
 export type UpdateVirtualProcessCategoryInput = z.infer<typeof updateVirtualProcessCategorySchema>
 
 export const createVirtualProcessSourceSchema = z.object({
-  workspaceId: z.string().uuid(),
   name: z.string().min(1).max(100),
 }).strip()
 
@@ -61,7 +58,6 @@ export const updateVirtualProcessSourceSchema = z.object({
 export type UpdateVirtualProcessSourceInput = z.infer<typeof updateVirtualProcessSourceSchema>
 
 export const createVirtualProcessCompanySchema = z.object({
-  workspaceId: z.string().uuid(),
   name: z.string().min(1).max(150),
   cnpj: z.string().max(20).optional().nullable(),
 }).strip()

@@ -8,6 +8,37 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  cnpj      String?  @unique
+  plan      String   @default("basic")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users                  User[]
+  roles                  Role[]
+  departments            Department[]
+  workspaces             Workspace[]
+  communicationDocuments CommunicationDocument[]
+  notes                  Note[]
+  calendarEvents         CalendarEvent[]
+  auditLogs              AuditLog[]
+  settings               Setting[]
+  notifications          Notification[]
+  bankAccounts           BankAccount[]
+  financeCategories      FinanceCategory[]
+  financeEntries         FinanceEntry[]
+  virtualProcesses       VirtualProcess[]
+  virtualProcessCategories VirtualProcessCategory[]
+  virtualProcessSources  VirtualProcessSource[]
+  virtualProcessCompanies VirtualProcessCompany[]
+
+  @@map("organizations")
+}
+
 model User {
   id                   String    @id @default(nanoid())
   email                String    @unique
@@ -28,8 +59,12 @@ model User {
   backupCodes          String[]
   metadata             Json?
   preferences          Json?
+  isSuperAdmin         Boolean   @default(false) @map("is_super_admin")
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
+
+  organizationId String?       @map("organization_id")
+  organization   Organization? @relation(fields: [organizationId], references: [id])
 
   auditLogs AuditLog[]
   roles     UserRole[]
@@ -75,6 +110,9 @@ model Role {
   metadata    Json?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  organizationId String?       @map("organization_id")
+  organization   Organization? @relation(fields: [organizationId], references: [id])
 
   parent   Role?      @relation("RoleHierarchy", fields: [parentId], references: [id])
   children Role[]     @relation("RoleHierarchy")
@@ -139,6 +177,9 @@ model AuditLog {
 
   user User? @relation(fields: [userId], references: [id])
 
+  organizationId String?       @map("organization_id")
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+
   @@index([userId])
   @@index([action])
   @@index([resource])
@@ -170,6 +211,9 @@ model Setting {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  organizationId String?       @map("organization_id")
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+
   @@map("settings")
 }
 
@@ -180,6 +224,9 @@ model Department {
   description String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  organizationId String?       @map("organization_id")
+  organization   Organization? @relation(fields: [organizationId], references: [id])
 
   users User[]
 
@@ -216,15 +263,11 @@ model Workspace {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  members                   WorkspaceMember[]
-  tasks                     Task[]
-  financeCategories         FinanceCategory[]
-  financeEntries            FinanceEntry[]
-  bankAccounts              BankAccount[]
-  virtualProcesses          VirtualProcess[]
-  virtualProcessCategories  VirtualProcessCategory[]
-  virtualProcessSources     VirtualProcessSource[]
-  virtualProcessCompanies   VirtualProcessCompany[]
+  organizationId String?       @map("organization_id")
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+
+  members WorkspaceMember[]
+  tasks   Task[]
 }
 
 model WorkspaceMember {
@@ -332,6 +375,9 @@ model Notification {
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  organizationId String?       @map("organization_id")
+  organization   Organization? @relation(fields: [organizationId], references: [id])
 }
 
 enum DocumentStatus {
@@ -360,6 +406,9 @@ model CommunicationDocument {
 
   createdBy String @map("created_by")
   creator   User   @relation("DocumentCreator", fields: [createdBy], references: [id])
+
+  organizationId String?       @map("organization_id")
+  organization   Organization? @relation(fields: [organizationId], references: [id])
 
   recipients  DocumentRecipient[]
   attachments CommunicationAttachment[]
@@ -405,7 +454,7 @@ enum FinanceEntryType {
 
 model BankAccount {
   id                  String   @id @default(uuid())
-  workspaceId         String
+  organizationId      String   @map("organization_id")
   name                String
   agency              String?
   accountNumber       String?
@@ -413,30 +462,30 @@ model BankAccount {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
-  workspace Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  entries   FinanceEntry[]
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  entries      FinanceEntry[]
 
   @@map("bank_accounts")
 }
 
 model FinanceCategory {
-  id          String   @id @default(uuid())
-  workspaceId String
-  name        String
-  description String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  name           String
+  description    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  workspace Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  entries   FinanceEntry[]
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  entries      FinanceEntry[]
 
-  @@unique([workspaceId, name])
+  @@unique([organizationId, name])
   @@map("finance_categories")
 }
 
 model FinanceEntry {
   id                String           @id @default(uuid())
-  workspaceId       String
+  organizationId    String           @map("organization_id")
   occurredAt        DateTime
   description       String
   amountCents       Int
@@ -457,14 +506,14 @@ model FinanceEntry {
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 
-  attachments FinanceAttachment[]
-  workspace   Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  category    FinanceCategory?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  account     BankAccount?        @relation(fields: [accountId], references: [id], onDelete: Restrict)
-  createdBy   User                @relation("FinanceEntryCreator", fields: [createdById], references: [id])
-  updatedBy   User?               @relation("FinanceEntryUpdater", fields: [updatedById], references: [id])
+  attachments  FinanceAttachment[]
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  category     FinanceCategory?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  account      BankAccount?        @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  createdBy    User                @relation("FinanceEntryCreator", fields: [createdById], references: [id])
+  updatedBy    User?               @relation("FinanceEntryUpdater", fields: [updatedById], references: [id])
 
-  @@index([workspaceId, occurredAt])
+  @@index([organizationId, occurredAt])
   @@index([categoryId])
   @@index([accountId])
   @@map("finance_entries")
@@ -488,69 +537,69 @@ model FinanceAttachment {
 }
 
 model VirtualProcess {
-  id            String    @id @default(uuid())
-  workspaceId   String    @map("workspace_id")
-  processNumber String    @map("process_number")
-  secretaria    String
-  source        String
-  sourceDetail  String?   @map("source_detail")
-  bankAccount   String?   @map("bank_account")
-  agency        String?
-  bankName      String?   @map("bank_name")
-  companyCnpj   String?   @map("company_cnpj")
-  companyName   String?   @map("company_name")
-  startDate     DateTime? @map("start_date")
-  endDate       DateTime? @map("end_date")
-  subject       String    @db.Text
-  status        String    @default("Tramitando")
-  category      String    @default("Outros")
+  id             String    @id @default(uuid())
+  organizationId String    @map("organization_id")
+  processNumber  String    @map("process_number")
+  secretaria     String
+  source         String
+  sourceDetail   String?   @map("source_detail")
+  bankAccount    String?   @map("bank_account")
+  agency         String?
+  bankName       String?   @map("bank_name")
+  companyCnpj    String?   @map("company_cnpj")
+  companyName    String?   @map("company_name")
+  startDate      DateTime? @map("start_date")
+  endDate        DateTime? @map("end_date")
+  subject        String    @db.Text
+  status         String    @default("Tramitando")
+  category       String    @default("Outros")
 
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
   createdById String   @map("created_by_id")
 
-  workspace Workspace                @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  creator   User                     @relation("ProcessCreator", fields: [createdById], references: [id])
-  documents VirtualProcessDocument[]
+  organization Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  creator      User                     @relation("ProcessCreator", fields: [createdById], references: [id])
+  documents    VirtualProcessDocument[]
 
-  @@unique([workspaceId, processNumber])
+  @@unique([organizationId, processNumber])
   @@map("virtual_processes")
 }
 
 model VirtualProcessCategory {
-  id          String   @id @default(uuid())
-  workspaceId String   @map("workspace_id")
-  name        String
-  createdAt   DateTime @default(now()) @map("created_at")
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  name           String
+  createdAt      DateTime @default(now()) @map("created_at")
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  @@unique([workspaceId, name])
+  @@unique([organizationId, name])
   @@map("virtual_process_categories")
 }
 
 model VirtualProcessSource {
-  id          String   @id @default(uuid())
-  workspaceId String   @map("workspace_id")
-  name        String
-  createdAt   DateTime @default(now()) @map("created_at")
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  name           String
+  createdAt      DateTime @default(now()) @map("created_at")
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  @@unique([workspaceId, name])
+  @@unique([organizationId, name])
   @@map("virtual_process_sources")
 }
 
 model VirtualProcessCompany {
-  id          String   @id @default(uuid())
-  workspaceId String   @map("workspace_id")
-  name        String
-  cnpj        String?
-  createdAt   DateTime @default(now()) @map("created_at")
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  name           String
+  cnpj           String?
+  createdAt      DateTime @default(now()) @map("created_at")
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  @@unique([workspaceId, name])
+  @@unique([organizationId, name])
   @@map("virtual_process_companies")
 }
 
@@ -586,6 +635,9 @@ model CalendarEvent {
   userId String @map("user_id")
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  organizationId String?       @map("organization_id")
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+
   attachments CalendarAttachment[]
 
   @@index([userId, startAt])
@@ -617,6 +669,9 @@ model Note {
 
   userId String @map("user_id")
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  organizationId String?       @map("organization_id")
+  organization   Organization? @relation(fields: [organizationId], references: [id])
 
   @@index([userId])
   @@map("notes")

@@ -12,6 +12,37 @@ async function hashPassword(password: string): Promise<string> {
   })
 }
 
+async function seedOrganizations() {
+  console.log('🏛️  Seeding organizations...')
+
+  const orgs = [
+    {
+      name: 'Prefeitura de Itapevi',
+      slug: 'itapevi',
+      cnpj: '01.002.003/0001-04'
+    },
+    {
+      name: 'Prefeitura de Cotia',
+      slug: 'cotia',
+      cnpj: '02.003.004/0001-05'
+    }
+  ]
+
+  const created: Record<string, string> = {}
+
+  for (const orgData of orgs) {
+    const org = await prisma.organization.upsert({
+      where: { slug: orgData.slug },
+      update: { name: orgData.name },
+      create: orgData
+    })
+    created[org.slug] = org.id
+    console.log(`✅ Organization '${org.name}' seeded (id: ${org.id})`)
+  }
+
+  return created
+}
+
 async function seedRoles() {
   console.log('🔐 Seeding roles...')
 
@@ -101,10 +132,73 @@ async function seedRoles() {
   }
 }
 
-async function seedUsers() {
+async function seedUsers(orgIds: Record<string, string>) {
   console.log('👥 Seeding users...')
 
   const users = [
+    // Org: Itapevi
+    {
+      email: 'admin@itapevi.gov.br',
+      username: 'admin_itapevi',
+      firstName: 'Carlos',
+      lastName: 'Mendes',
+      password: 'Admin@123',
+      isActive: true,
+      isVerified: true,
+      isSuperAdmin: false,
+      organizationId: orgIds['itapevi'],
+      roles: ['admin']
+    },
+    {
+      email: 'joao@itapevi.gov.br',
+      username: 'joao_itapevi',
+      firstName: 'João',
+      lastName: 'Silva',
+      password: 'Admin@123',
+      isActive: true,
+      isVerified: true,
+      isSuperAdmin: false,
+      organizationId: orgIds['itapevi'],
+      roles: ['user']
+    },
+    {
+      email: 'ana@itapevi.gov.br',
+      username: 'ana_itapevi',
+      firstName: 'Ana',
+      lastName: 'Costa',
+      password: 'Admin@123',
+      isActive: true,
+      isVerified: true,
+      isSuperAdmin: false,
+      organizationId: orgIds['itapevi'],
+      roles: ['user']
+    },
+    // Org: Cotia
+    {
+      email: 'admin@cotia.gov.br',
+      username: 'admin_cotia',
+      firstName: 'Roberto',
+      lastName: 'Souza',
+      password: 'Admin@123',
+      isActive: true,
+      isVerified: true,
+      isSuperAdmin: false,
+      organizationId: orgIds['cotia'],
+      roles: ['admin']
+    },
+    {
+      email: 'maria@cotia.gov.br',
+      username: 'maria_cotia',
+      firstName: 'Maria',
+      lastName: 'Oliveira',
+      password: 'Admin@123',
+      isActive: true,
+      isVerified: true,
+      isSuperAdmin: false,
+      organizationId: orgIds['cotia'],
+      roles: ['user']
+    },
+    // Super Admin (sem org)
     {
       email: 'admin@example.com',
       username: 'admin',
@@ -113,8 +207,11 @@ async function seedUsers() {
       password: 'Admin123!@#',
       isActive: true,
       isVerified: true,
+      isSuperAdmin: true,
+      organizationId: null,
       roles: ['admin']
     },
+    // Usuários legados de dev
     {
       email: 'moderator@example.com',
       username: 'moderator',
@@ -123,6 +220,8 @@ async function seedUsers() {
       password: 'Moderator123!',
       isActive: true,
       isVerified: true,
+      isSuperAdmin: false,
+      organizationId: null,
       roles: ['moderator']
     },
     {
@@ -133,27 +232,9 @@ async function seedUsers() {
       password: 'User123!',
       isActive: true,
       isVerified: true,
+      isSuperAdmin: false,
+      organizationId: null,
       roles: ['user']
-    },
-    {
-      email: 'john.doe@example.com',
-      username: 'johndoe',
-      firstName: 'John',
-      lastName: 'Doe',
-      password: 'JohnDoe123!',
-      isActive: true,
-      isVerified: false,
-      roles: ['user']
-    },
-    {
-      email: 'jane.smith@example.com',
-      username: 'janesmith',
-      firstName: 'Jane',
-      lastName: 'Smith',
-      password: 'JaneSmith123!',
-      isActive: false,
-      isVerified: false,
-      roles: ['guest']
     }
   ]
 
@@ -163,7 +244,22 @@ async function seedUsers() {
     })
 
     if (existingUser) {
-      console.log(`⚠️  User '${userData.email}' already exists, skipping...`)
+      // Atualizar organizationId e isSuperAdmin se necessário
+      if (
+        existingUser.organizationId !== userData.organizationId ||
+        existingUser.isSuperAdmin !== userData.isSuperAdmin
+      ) {
+        await prisma.user.update({
+          where: { id: existingUser.id },
+          data: {
+            organizationId: userData.organizationId,
+            isSuperAdmin: userData.isSuperAdmin
+          }
+        })
+        console.log(`🔄 User '${userData.email}' updated with organizationId`)
+      } else {
+        console.log(`⚠️  User '${userData.email}' already exists, skipping...`)
+      }
       continue
     }
 
@@ -178,10 +274,12 @@ async function seedUsers() {
         password: hashedPassword,
         isActive: userData.isActive,
         isVerified: userData.isVerified,
+        isSuperAdmin: userData.isSuperAdmin,
+        organizationId: userData.organizationId,
         verifyToken: userData.isVerified ? null : nanoid(32),
         preferences: {
           theme: 'light',
-          language: 'en',
+          language: 'pt-BR',
           notifications: {
             email: true,
             push: false,
@@ -593,8 +691,9 @@ async function main() {
   console.log('🌱 Starting database seeding...')
 
   try {
+    const orgIds = await seedOrganizations()
     await seedRoles()
-    await seedUsers()
+    await seedUsers(orgIds)
     await seedSettings()
     await seedAuditLogs()
     await seedUserSessions()

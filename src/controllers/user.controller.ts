@@ -1,6 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { authService } from '@/services/auth.service.js'
 import { db, prisma } from '@/utils/database.js'
+import { Prisma } from '@prisma/client'
 import { authLogger } from '@/utils/logger.js'
 import { assignRoleSchema, createUserSchema, updateUserSchema, userQuerySchema } from '@/schemas/auth.schemas.js'
 import { certificateService } from '@/services/certificate.service.js'
@@ -22,12 +23,25 @@ export class UserController {
       }
 
       if (query.search) {
-        where.OR = [
-          { email: { contains: query.search, mode: 'insensitive' } },
-          { firstName: { contains: query.search, mode: 'insensitive' } },
-          { lastName: { contains: query.search, mode: 'insensitive' } },
-          { username: { contains: query.search, mode: 'insensitive' } }
-        ]
+        // Use unaccent for accent-insensitive search ("joao" finds "João")
+        const pattern = `%${query.search}%`
+        const orgCondition = !request.user.isSuperAdmin
+          ? Prisma.sql`AND "organizationId" = ${request.user.organizationId}`
+          : Prisma.sql``
+        const matched = await prisma.$queryRaw<{ id: string }[]>`
+          SELECT id FROM "User"
+          WHERE (
+            unaccent(lower(email)) LIKE unaccent(lower(${pattern}))
+            OR unaccent(lower(COALESCE("firstName", ''))) LIKE unaccent(lower(${pattern}))
+            OR unaccent(lower(COALESCE("lastName", ''))) LIKE unaccent(lower(${pattern}))
+            OR unaccent(lower(COALESCE(username, ''))) LIKE unaccent(lower(${pattern}))
+          )
+          ${orgCondition}
+        `
+        if (matched.length === 0) {
+          return reply.send(db.paginate([], query.page, query.limit, 0))
+        }
+        where.id = { in: matched.map((u) => u.id) }
       }
 
       if (query.isActive !== undefined) where.isActive = query.isActive

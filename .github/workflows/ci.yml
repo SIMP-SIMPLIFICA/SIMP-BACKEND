@@ -175,11 +175,15 @@ jobs:
 
     steps:
       - name: Deploy to Staging (develop)
-        if: github.ref == 'refs/heads/develop' && secrets.RENDER_STAGING_DEPLOY_HOOK != ''
-        run: curl -s "${{ secrets.RENDER_STAGING_DEPLOY_HOOK }}"
-        continue-on-error: true
+        if: github.ref == 'refs/heads/develop'
+        run: |
+          if [ -n "$HOOK" ]; then curl -s "$HOOK"; fi
+        env:
+          HOOK: ${{ secrets.RENDER_STAGING_DEPLOY_HOOK }}
 
       - name: Deploy to Production (main)
-        if: github.ref == 'refs/heads/main' && secrets.RENDER_DEPLOY_HOOK != ''
-        run: curl -s "${{ secrets.RENDER_DEPLOY_HOOK }}"
-        continue-on-error: true
+        if: github.ref == 'refs/heads/main'
+        run: |
+          if [ -n "$HOOK" ]; then curl -s "$HOOK"; fi
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}

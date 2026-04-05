@@ -120,8 +120,10 @@ jobs:
       # 5. Notificar Discord
       # ─────────────────────────────────────────────
       - name: Notificar Discord
-        if: ${{ secrets.DISCORD_WEBHOOK_URL != '' }}
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then exit 0; fi
           ANALYSIS=$(cat /tmp/analysis.txt | head -20)
           BRANCH="${{ github.event.workflow_run.head_branch }}"
           COMMIT="${{ github.event.workflow_run.display_title }}"

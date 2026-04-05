@@ -23,7 +23,9 @@ export function taskRoutes(app: FastifyInstance) {
   // Sub-recursos (Checklist, Notas)
   app.post('/:id/checklist', taskController.addChecklistItem)
   app.put('/checklist/:itemId', taskController.updateChecklistItem)
+  app.delete('/checklist/:itemId', taskController.deleteChecklistItem)
   app.post('/:id/notes', taskController.addNote)
+  app.delete('/:taskId/notes/:noteId', taskController.deleteNote)
   
   // Anexos
   app.post('/:id/attachments', taskController.uploadAttachment)

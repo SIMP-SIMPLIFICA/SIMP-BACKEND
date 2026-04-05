@@ -549,4 +549,49 @@ export class TaskController {
       await prisma.task.delete({ where: { id } });
       return reply.status(204).send();
   }
+
+  // --- DELETE CHECKLIST ITEM ---
+  async deleteChecklistItem(request: FastifyRequest, reply: FastifyReply) {
+      const { itemId } = z.object({ itemId: z.string() }).parse(request.params);
+      const userId = request.user.id;
+
+      const item = await prisma.checklistItem.findUnique({
+          where: { id: itemId },
+          include: { task: { include: { assignees: true, workspace: true } } }
+      });
+      if (!item) return reply.status(404).send();
+
+      const canDelete = await checkPermission(item.task.workspaceId, userId, ['OWNER', 'ADMIN', 'MEMBER']);
+      if (!canDelete) return reply.status(403).send();
+
+      await prisma.checklistItem.delete({ where: { id: itemId } });
+      await prisma.taskHistory.create({
+          data: { taskId: item.taskId, userId, action: `Removeu do checklist: "${item.title}"` }
+      });
+
+      return reply.status(204).send();
+  }
+
+  // --- DELETE NOTE ---
+  async deleteNote(request: FastifyRequest, reply: FastifyReply) {
+      const { taskId, noteId } = z.object({ taskId: z.string(), noteId: z.string() }).parse(request.params);
+      const userId = request.user.id;
+
+      const note = await prisma.taskNote.findUnique({
+          where: { id: noteId },
+          include: { task: { include: { workspace: true } } }
+      });
+      if (!note || note.taskId !== taskId) return reply.status(404).send();
+
+      const isAuthor = note.authorId === userId;
+      const canDelete = isAuthor || await checkPermission(note.task.workspaceId, userId, ['OWNER', 'ADMIN']);
+      if (!canDelete) return reply.status(403).send();
+
+      await prisma.taskNote.delete({ where: { id: noteId } });
+      await prisma.taskHistory.create({
+          data: { taskId, userId, action: 'Removeu um comentário' }
+      });
+
+      return reply.status(204).send();
+  }
 }

@@ -4,9 +4,11 @@ import { db, prisma } from '@/utils/database.js'
 import { authLogger } from '@/utils/logger.js'
 import { assignRoleSchema, createUserSchema, updateUserSchema, userQuerySchema } from '@/schemas/auth.schemas.js'
 import { certificateService } from '@/services/certificate.service.js'
-import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
+import r2 from '@/lib/r2.js'
+import { PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 
 export class UserController {
   async getUsers(request: FastifyRequest, reply: FastifyReply) {
@@ -526,41 +528,44 @@ export class UserController {
         return reply.code(400).send({ message: 'Arquivo muito grande. O limite é 5MB.' })
       }
 
-      // Cria diretório de logos se não existir
-      const logoDir = path.join(process.cwd(), 'uploads', 'logos')
-      if (!fs.existsSync(logoDir)) {
-        fs.mkdirSync(logoDir, { recursive: true })
-      }
-
-      // Remove logo antiga se existir
+      // Remove logo antiga do R2 se existir
       const existingUser = await prisma.user.findUnique({ where: { id: userId } })
       const existingMeta = (existingUser?.metadata as any) || {}
-      if (existingMeta?.logoUrl) {
-        const oldRelative = existingMeta.logoUrl.startsWith('/') ? existingMeta.logoUrl.slice(1) : existingMeta.logoUrl
-        const oldAbsolute = path.resolve(process.cwd(), oldRelative)
-        if (fs.existsSync(oldAbsolute)) {
-          try { fs.unlinkSync(oldAbsolute) } catch (_e) { /* ignora */ }
-        }
+      if (existingMeta?.logoKey) {
+        try {
+          await r2.send(new DeleteObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: existingMeta.logoKey }))
+        } catch (_e) { /* ignora */ }
       }
 
-      // Gera nome único para o arquivo
+      // Gera nome único e faz upload para R2
       const originalExt = path.extname(data.filename)
       const ext = originalExt || `.${data.mimetype.split('/')[1]}`
       const fileHash = crypto.randomBytes(16).toString('hex')
       const fileName = `${userId}_${fileHash}${ext}`
-      const savePath = path.join(logoDir, fileName)
+      const orgId = (request.user as any)?.organizationId ?? 'global'
+      const logoKey = `organizations/${orgId}/logos/${fileName}`
 
-      // Salva o arquivo em disco
-      fs.writeFileSync(savePath, fileBuffer)
+      await r2.send(new PutObjectCommand({
+        Bucket: process.env.R2_BUCKET_NAME,
+        Key: logoKey,
+        Body: fileBuffer,
+        ContentType: data.mimetype,
+      }))
 
-      const logoUrl = `/uploads/logos/${fileName}`
+      // Gera presigned URL (30 dias)
+      const logoUrl = await getSignedUrl(
+        r2,
+        new GetObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: logoKey }),
+        { expiresIn: 2592000 }
+      )
 
-      // Atualiza metadata do usuário com a URL da nova logo
+      // Atualiza metadata com key (para deleção futura) e URL pública
       await prisma.user.update({
         where: { id: userId },
         data: {
           metadata: {
             ...existingMeta,
+            logoKey,
             logoUrl
           }
         }
@@ -595,17 +600,15 @@ export class UserController {
 
       const existingMeta = (existingUser.metadata as any) || {}
 
-      // Remove arquivo físico se existir
-      if (existingMeta?.logoUrl) {
-        const oldRelative = existingMeta.logoUrl.startsWith('/') ? existingMeta.logoUrl.slice(1) : existingMeta.logoUrl
-        const oldAbsolute = path.resolve(process.cwd(), oldRelative)
-        if (fs.existsSync(oldAbsolute)) {
-          try { fs.unlinkSync(oldAbsolute) } catch (_e) { /* ignora */ }
-        }
+      // Remove do R2 se existir
+      if (existingMeta?.logoKey) {
+        try {
+          await r2.send(new DeleteObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: existingMeta.logoKey }))
+        } catch (_e) { /* ignora */ }
       }
 
-      // Remove logoUrl da metadata
-      const { logoUrl: _removed, ...restMeta } = existingMeta
+      // Remove logoKey e logoUrl da metadata
+      const { logoKey: _key, logoUrl: _url, ...restMeta } = existingMeta
       await prisma.user.update({
         where: { id: userId },
         data: { metadata: restMeta }

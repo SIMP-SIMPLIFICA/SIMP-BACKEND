@@ -44,24 +44,20 @@ export function loadLogoBase64(): string | undefined {
 }
 
 /**
- * Carrega a logo de um usuário a partir de uma URL relativa armazenada em user.metadata.logoUrl.
- * Ex: "/uploads/logos/abc123.png" -> Base64 string
- * @param logoUrl URL relativa armazenada no banco (ex: "/uploads/logos/abc.png")
+ * Carrega a logo de um usuário a partir de uma URL HTTP (presigned R2 ou outro).
+ * @param logoUrl URL armazenada em user.metadata.logoUrl
  * @returns String Base64 da imagem ou undefined se não encontrar.
  */
-export function loadLogoFromPath(logoUrl: string | undefined | null): string | undefined {
+export async function loadLogoFromPath(logoUrl: string | undefined | null): Promise<string | undefined> {
     if (!logoUrl) return undefined;
 
-    // Remove a barra inicial para construir o caminho absoluto a partir do CWD
-    const relativePath = logoUrl.startsWith('/') ? logoUrl.slice(1) : logoUrl;
-    const absolutePath = path.resolve(process.cwd(), relativePath);
-
     try {
-        if (fs.existsSync(absolutePath)) {
-            return fs.readFileSync(absolutePath).toString('base64');
-        }
+        const res = await fetch(logoUrl);
+        if (!res.ok) return undefined;
+        const arrayBuffer = await res.arrayBuffer();
+        return Buffer.from(arrayBuffer).toString('base64');
     } catch (error) {
-        console.warn(`Erro ao tentar carregar logo do usuário em ${absolutePath}:`, error);
+        console.warn(`Erro ao carregar logo do usuário em ${logoUrl}:`, error);
     }
 
     return undefined;

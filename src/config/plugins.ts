@@ -9,8 +9,6 @@ import cookie from '@fastify/cookie'
 import formbody from '@fastify/formbody'
 import multipart from '@fastify/multipart'
 import jwt from '@fastify/jwt'
-import fastifyStatic from '@fastify/static'
-import { join } from 'node:path'
 import { jsonSchemaTransform, validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod'
 
 import { config } from './config.js'
@@ -134,12 +132,6 @@ export async function registerPlugins(server: AppServer) {
   // --- ARQUIVOS ---
   await server.register(multipart, {
     limits: { fileSize: 10 * 1024 * 1024 }
-  })
-
-  await server.register(fastifyStatic, {
-    root: join(process.cwd(), 'uploads'),
-    prefix: '/uploads/',
-    decorateReply: false
   })
 
   if (config.features.swagger && config.isDevelopment) {

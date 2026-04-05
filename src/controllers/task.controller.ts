@@ -3,12 +3,11 @@ import { prisma } from '../lib/prisma.js';
 import { createChecklistItemSchema, createTaskSchema, updateChecklistItemSchema, updateTaskSchema } from '../schemas/task.schemas.js';
 import { notificationService } from '../services/notification.service.js';
 import { z } from 'zod';
-import { pipeline } from 'node:stream/promises';
-import { createWriteStream } from 'node:fs';
-import { join } from 'node:path';
-import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
+import r2 from '../lib/r2.js';
+import { PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 // --- HELPERS ---
 
@@ -123,7 +122,23 @@ export class TaskController {
     });
     if (!member) return reply.status(403).send({ message: 'Sem permissão.' });
 
-    return reply.send(task);
+    // Gera presigned URLs para cada anexo
+    const attachmentsWithUrls = await Promise.all(
+      task.attachments.map(async (att) => {
+        try {
+          const url = await getSignedUrl(
+            r2,
+            new GetObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: att.fileUrl }),
+            { expiresIn: 3600 }
+          );
+          return { ...att, signedUrl: url };
+        } catch {
+          return { ...att, signedUrl: null };
+        }
+      })
+    );
+
+    return reply.send({ ...task, attachments: attachmentsWithUrls });
   }
 
   // --- UPDATE ---
@@ -335,15 +350,21 @@ export class TaskController {
     const data = await request.file();
     if (!data) return reply.status(400).send();
 
-    const uploadDir = join(process.cwd(), 'uploads');
-    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+    const chunks: Buffer[] = [];
+    for await (const chunk of data.file) chunks.push(chunk);
+    const fileBuffer = Buffer.concat(chunks);
 
     const fileExt = path.extname(data.filename);
     const uniqueName = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${fileExt}`;
-    const uploadPath = join(uploadDir, uniqueName);
+    const orgId = request.user.organizationId ?? 'global';
+    const r2Key = `organizations/${orgId}/tasks/${uniqueName}`;
 
-    await pipeline(data.file, createWriteStream(uploadPath));
-    const stats = fs.statSync(uploadPath);
+    await r2.send(new PutObjectCommand({
+        Bucket: process.env.R2_BUCKET_NAME,
+        Key: r2Key,
+        Body: fileBuffer,
+        ContentType: data.mimetype,
+    }));
 
     const attachment = await prisma.taskAttachment.create({
         data: {
@@ -351,8 +372,8 @@ export class TaskController {
             uploaderId: userId,
             fileName: data.filename,
             fileType: data.mimetype,
-            fileSize: stats.size,
-            fileUrl: uniqueName
+            fileSize: fileBuffer.length,
+            fileUrl: r2Key
         }
     });
 
@@ -394,8 +415,7 @@ export class TaskController {
 
     await prisma.taskAttachment.delete({ where: { id: attachmentId } });
     try {
-        const filePath = join(process.cwd(), 'uploads', attachment.fileUrl);
-        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        await r2.send(new DeleteObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: attachment.fileUrl }));
     } catch (_e) { /* ignore */ }
     
     await prisma.taskHistory.create({

@@ -5,8 +5,8 @@ services:
     region: oregon
     plan: free
     branch: develop
-    buildCommand: npm ci --include=dev && npx prisma generate && npm run build
-    startCommand: npx prisma migrate deploy && node dist/src/index.js
+    buildCommand: npm ci --include=dev && npx prisma generate && npm run build && npx prisma migrate deploy
+    startCommand: node dist/src/index.js
     healthCheckPath: /health
     autoDeploy: true
 

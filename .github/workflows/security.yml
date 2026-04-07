@@ -55,15 +55,13 @@ jobs:
   codeql:
     name: CodeQL Static Analysis
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: typescript
-          # security-extended inclui mais queries que o padrão
           queries: security-extended
 
       - uses: actions/setup-node@v4
@@ -75,21 +73,9 @@ jobs:
       - run: npx prisma generate
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
         with:
           category: backend
-          # upload:false — GitHub Advanced Security requer plano pago para repos privados
-          # SARIF salvo como artifact abaixo
-          upload: false
-          output: results/
-
-      - name: Upload SARIF as artifact
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: codeql-results-backend
-          path: results/
-          retention-days: 30
 
   # ─────────────────────────────────────────────────────────────
   # 3. Secret Scan — garante que nenhum segredo foi comitado

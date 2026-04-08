@@ -62,6 +62,7 @@ export class UserController {
           id: true, email: true, username: true, firstName: true, lastName: true,
           avatar: true, isActive: true, isVerified: true, twoFactorEnabled: true,
           lastLoginAt: true, createdAt: true, updatedAt: true,
+          organization: { select: { id: true, name: true } },
           roles: { select: { role: { select: { id: true, name: true, displayName: true, color: true } } } }
         }
       })

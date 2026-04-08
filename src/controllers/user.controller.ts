@@ -48,8 +48,12 @@ export class UserController {
       if (query.isVerified !== undefined) where.isVerified = query.isVerified
       if (query.createdAfter) where.createdAt = { gte: query.createdAfter }
       if (query.createdBefore) where.createdAt = { ...where.createdAt, lte: query.createdBefore }
-
       if (query.role) where.roles = { some: { role: { name: query.role } } }
+
+      // Super admin pode filtrar por organização específica
+      if (request.user.isSuperAdmin && query.organizationId) {
+        where.organizationId = query.organizationId
+      }
 
       const orderBy: any = {}
       if (query.sortBy) orderBy[query.sortBy] = query.sortOrder

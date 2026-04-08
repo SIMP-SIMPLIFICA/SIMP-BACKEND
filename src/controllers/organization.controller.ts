@@ -31,6 +31,21 @@ function zodErrorMessage(error: unknown): string {
 }
 
 export class OrganizationController {
+  async list(request: FastifyRequest, reply: FastifyReply) {
+    if (!request.user.isSuperAdmin) {
+      return reply.code(403).send({ error: 'Forbidden', message: 'Acesso restrito a super admins.' })
+    }
+    try {
+      const orgs = await prisma.organization.findMany({
+        select: { id: true, name: true, slug: true },
+        orderBy: { name: 'asc' }
+      })
+      return reply.send({ data: orgs })
+    } catch (error: unknown) {
+      return reply.code(500).send({ error: 'Internal Server Error', message: zodErrorMessage(error) })
+    }
+  }
+
   async create(request: FastifyRequest, reply: FastifyReply) {
     try {
       const data = createOrgSchema.parse(request.body)

@@ -178,6 +178,7 @@ export const userQuerySchema = paginationSchema.extend({
   isActive: z.coerce.boolean().optional(),
   isVerified: z.coerce.boolean().optional(),
   role: z.string().optional(),
+  organizationId: z.string().optional(),
   createdAfter: z.coerce.date().optional(),
   createdBefore: z.coerce.date().optional()
 })

@@ -350,9 +350,39 @@ export class RoleController {
 
   async getAvailablePermissions(request: FastifyRequest, reply: FastifyReply) {
     try {
+      const isSuperAdmin = request.user?.isSuperAdmin ?? false
+
+      if (isSuperAdmin) {
+        return reply.send({
+          permissions: AVAILABLE_PERMISSIONS,
+          categories: Object.keys(AVAILABLE_PERMISSIONS),
+        })
+      }
+
+      // Org admins: strip super-admin-only permissions
+      // - system:admin  → not a real role permission (it's a User field)
+      // - audit:*        → system-level audit logs, not org-scoped
+      // - backup:*       → infrastructure ops, not available to orgs
+      const SUPER_ADMIN_ONLY_PERMS = new Set([
+        'system:admin',
+        'audit:read',
+        'audit:export',
+        'backup:create',
+        'backup:restore',
+      ])
+
+      const filtered: Record<string, typeof AVAILABLE_PERMISSIONS[keyof typeof AVAILABLE_PERMISSIONS]> = {}
+
+      for (const [catKey, cat] of Object.entries(AVAILABLE_PERMISSIONS)) {
+        const visiblePerms = cat.permissions.filter(p => !SUPER_ADMIN_ONLY_PERMS.has(p.key))
+        if (visiblePerms.length > 0) {
+          filtered[catKey] = { ...cat, permissions: visiblePerms }
+        }
+      }
+
       return reply.send({
-        permissions: AVAILABLE_PERMISSIONS,
-        categories: Object.keys(AVAILABLE_PERMISSIONS)
+        permissions: filtered,
+        categories: Object.keys(filtered),
       })
     } catch (error: any) {
       authLogger.error(error, 'Failed to get available permissions')

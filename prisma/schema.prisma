@@ -36,8 +36,25 @@ model Organization {
   virtualProcessCategories VirtualProcessCategory[]
   virtualProcessSources  VirtualProcessSource[]
   virtualProcessCompanies VirtualProcessCompany[]
+  modules                OrganizationModule[]
 
   @@map("organizations")
+}
+
+model OrganizationModule {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  module         String
+  isEnabled      Boolean  @default(true) @map("is_enabled")
+  enabledById    String?  @map("enabled_by_id")
+  notes          String?
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, module])
+  @@index([organizationId])
+  @@map("organization_modules")
 }
 
 model User {

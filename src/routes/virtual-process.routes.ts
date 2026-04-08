@@ -2,9 +2,12 @@ import { FastifyInstance } from 'fastify'
 import { virtualProcessController } from '@/controllers/virtual-process.controller.js'
 import { virtualProcessCategoryController } from '@/controllers/virtual-process-category.controller.js'
 import { sourceController, companyController } from '@/controllers/virtual-process-config.controller.js'
-import { authMiddleware, requireAnyPermission } from '@/middleware/auth.middleware.js'
+import { authMiddleware, requireAnyPermission, requireModule } from '@/middleware/auth.middleware.js'
 
 export async function virtualProcessRoutes(app: FastifyInstance) {
+  // Auth deve rodar primeiro (preHandler), depois requireModule verifica o módulo
+  app.addHook('preHandler', authMiddleware)
+  app.addHook('preHandler', requireModule('virtual_processes'))
   // --- Category routes ---
   app.post('/categories', { preHandler: [authMiddleware] }, virtualProcessCategoryController.create.bind(virtualProcessCategoryController))
   app.get('/categories', { preHandler: [authMiddleware] }, virtualProcessCategoryController.list.bind(virtualProcessCategoryController))

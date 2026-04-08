@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client'
 import { hash } from '@node-rs/argon2'
 import { nanoid } from 'nanoid'
+import { ALL_MODULES, DEFAULT_MODULES } from '../../src/constants/modules'
 
 const prisma = new PrismaClient()
 
@@ -311,6 +312,22 @@ async function seedUsers(orgIds: Record<string, string>) {
     }
 
     console.log(`✅ User '${userData.email}' seeded with roles: ${userData.roles.join(', ')}`)
+  }
+}
+
+async function seedModules(orgIds: Record<string, string>) {
+  console.log('🧩 Seeding organization modules...')
+
+  for (const [slug, orgId] of Object.entries(orgIds)) {
+    for (const module of ALL_MODULES) {
+      const isEnabled = DEFAULT_MODULES.includes(module as typeof DEFAULT_MODULES[number])
+      await prisma.organizationModule.upsert({
+        where: { organizationId_module: { organizationId: orgId, module } },
+        update: {},
+        create: { organizationId: orgId, module, isEnabled },
+      })
+    }
+    console.log(`✅ Modules seeded for org '${slug}'`)
   }
 }
 
@@ -694,6 +711,7 @@ async function main() {
     const orgIds = await seedOrganizations()
     await seedRoles()
     await seedUsers(orgIds)
+    await seedModules(orgIds)
     await seedSettings()
     await seedAuditLogs()
     await seedUserSessions()

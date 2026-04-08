@@ -511,6 +511,98 @@
           }
         },
         {
+          "name": "Criar Organização",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_superadmin}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orgName\": \"Prefeitura de Osasco\",\n  \"orgSlug\": \"osasco\",\n  \"orgCnpj\": \"03.004.005/0001-06\",\n  \"plan\": \"basic\",\n  \"enabledModules\": [\"tasks\", \"finance\", \"communication\", \"calendar\", \"notes\", \"departments\"],\n  \"adminEmail\": \"admin@osasco.gov.br\",\n  \"adminFirstName\": \"Roberto\",\n  \"adminLastName\": \"Silva\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/organizations",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "organizations"]
+            }
+          }
+        },
+        {
+          "name": "Detalhe Organização",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_superadmin}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/organizations/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "organizations", ":id"],
+              "variable": [{ "key": "id", "value": "ORG_ID_AQUI" }]
+            }
+          }
+        },
+        {
+          "name": "Atualizar Organização",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_superadmin}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Prefeitura de Osasco (atualizado)\",\n  \"plan\": \"pro\",\n  \"isActive\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/organizations/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "organizations", ":id"],
+              "variable": [{ "key": "id", "value": "ORG_ID_AQUI" }]
+            }
+          }
+        },
+        {
+          "name": "Listar Módulos da Organização",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_superadmin}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/organizations/:id/modules",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "organizations", ":id", "modules"],
+              "variable": [{ "key": "id", "value": "ORG_ID_AQUI" }]
+            }
+          }
+        },
+        {
+          "name": "Toggle Módulo (habilitar/desabilitar)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_superadmin}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"isEnabled\": false,\n  \"notes\": \"Bug #42 — aguardando fix\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/organizations/:id/modules/:module",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "organizations", ":id", "modules", ":module"],
+              "variable": [
+                { "key": "id", "value": "ORG_ID_AQUI" },
+                { "key": "module", "value": "virtual_processes", "description": "tasks | finance | communication | virtual_processes | calendar | notes | departments" }
+              ]
+            }
+          }
+        },
+        {
           "name": "Impersonate Org Admin",
           "request": {
             "method": "POST",

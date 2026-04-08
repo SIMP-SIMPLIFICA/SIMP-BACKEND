@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { FinanceCategoryController } from '../controllers/finance-category.controller.js';
 import { FinanceEntryController } from '../controllers/finance-entry.controller.js';
 import { FinanceBankAccountController } from '../controllers/finance-bank-account.controller.js';
-import { authMiddleware, requirePermission } from '../middleware/auth.middleware.js';
+import { authMiddleware, requirePermission, requireModule } from '../middleware/auth.middleware.js';
 
 const categoryController = new FinanceCategoryController();
 const entryController = new FinanceEntryController();
@@ -11,6 +11,7 @@ const bankAccountController = new FinanceBankAccountController();
 export function financeRoutes(app: FastifyInstance) {
     // Todas as rotas de finanças requerem autenticação
     app.addHook('preHandler', authMiddleware);
+    app.addHook('preHandler', requireModule('finance'));
 
     // --- Rotas de Contas Bancárias (org-scoped) ---
     app.post('/accounts', bankAccountController.create.bind(bankAccountController));

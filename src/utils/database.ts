@@ -167,7 +167,10 @@ export const db = {
           }
         },
         organization: {
-          select: { id: true, name: true, slug: true, plan: true, cnpj: true, isActive: true, createdAt: true }
+          select: {
+            id: true, name: true, slug: true, plan: true, cnpj: true, isActive: true, createdAt: true,
+            modules: { select: { module: true, isEnabled: true } },
+          }
         }
       }
     })

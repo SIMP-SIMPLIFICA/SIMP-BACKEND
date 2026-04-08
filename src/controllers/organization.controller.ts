@@ -3,6 +3,7 @@ import { z, ZodError } from 'zod'
 import { hash } from '@node-rs/argon2'
 import { prisma } from '@/lib/prisma.js'
 import { authService } from '@/services/auth.service.js'
+import { ALL_MODULES, DEFAULT_MODULES } from '@/constants/modules.js'
 
 const createOrgSchema = z.object({
   orgName: z.string().min(3, 'Nome da organização deve ter ao menos 3 caracteres'),
@@ -105,6 +106,15 @@ export class OrganizationController {
             data: { userId: adminUser.id, roleId: adminRole.id, assignedBy: 'system' }
           })
         }
+
+        // Criar módulos padrão para a nova organização
+        await tx.organizationModule.createMany({
+          data: ALL_MODULES.map(module => ({
+            organizationId: org.id,
+            module,
+            isEnabled: DEFAULT_MODULES.includes(module as typeof DEFAULT_MODULES[number]),
+          })),
+        })
 
         return { org, adminUser }
       })

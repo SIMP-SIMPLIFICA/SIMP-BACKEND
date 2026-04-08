@@ -101,10 +101,18 @@ export class AuthController {
         })
       }
 
+      const enabledModules: string[] = (user as any).organization?.modules
+        ?.filter((m: { isEnabled: boolean }) => m.isEnabled)
+        .map((m: { module: string }) => m.module) ?? []
+
       // IMPORTANTE: Retorna { user: ... }
       return reply.send({
         user: {
           ...user,
+          organization: user.organization
+            ? { ...(user.organization as any), modules: undefined }
+            : null,
+          enabledModules,
           password: undefined,
           twoFactorSecret: undefined,
           verifyToken: undefined,

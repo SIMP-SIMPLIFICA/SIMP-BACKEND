@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { CommunicationController } from '@/controllers/communication.controller'
+import { requireModule } from '@/middleware/auth.middleware.js'
 import { createMessageSchema, updateMessageSchema, messageIdSchema } from '@/schemas/communication.schemas'
 
 const listFiltersSchema = z.object({
@@ -23,6 +24,7 @@ export async function communicationRoutes(app: FastifyInstance) {
       reply.send(err)
     }
   })
+  app.addHook('preHandler', requireModule('communication'))
 
   // POST — Upload de anexo (multipart)
   app.post('/messages/upload', {

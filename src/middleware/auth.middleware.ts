@@ -108,3 +108,63 @@ export function requirePermission(permissions: string[]) {
 
 // Alias para compatibilidade
 export { requirePermission as requireAnyPermission }
+
+// ---------------------------------------------------------------------------
+// requireModule — feature flag por organização
+// ---------------------------------------------------------------------------
+
+// Cache simples em memória: orgId → { módulos habilitados, expiração }
+const moduleCache = new Map<string, { modules: Set<string>; expiry: number }>()
+const MODULE_CACHE_TTL = 5 * 60 * 1000 // 5 minutos
+
+/** Invalida o cache de módulos de uma org (chamar ao habilitar/desabilitar módulo). */
+export function invalidateModuleCache(orgId: string) {
+  moduleCache.delete(orgId)
+}
+
+/**
+ * Middleware factory: verifica se o módulo está habilitado para a org do usuário.
+ * Super admin bypassa sempre. Usuários sem org recebem 403.
+ */
+export function requireModule(module: string) {
+  return async (request: FastifyRequest, reply: FastifyReply) => {
+    const user = request.user as any
+    if (!user?.id) {
+      return reply.code(401).send({ error: 'Unauthorized', message: 'Não autenticado.' })
+    }
+
+    if (user.isSuperAdmin) return
+
+    const orgId = user.organizationId as string | undefined
+    if (!orgId) {
+      return reply.code(403).send({ error: 'Forbidden', message: 'Usuário sem organização.' })
+    }
+
+    // Tenta cache
+    const cached = moduleCache.get(orgId)
+    if (cached && cached.expiry > Date.now()) {
+      if (!cached.modules.has(module)) {
+        return reply.code(403).send({
+          error: 'MODULE_DISABLED',
+          message: 'Este módulo não está disponível para sua organização.',
+        })
+      }
+      return
+    }
+
+    // Cache miss — busca no banco
+    const rows = await prisma.organizationModule.findMany({
+      where: { organizationId: orgId, isEnabled: true },
+      select: { module: true },
+    })
+    const enabledSet = new Set(rows.map(r => r.module))
+    moduleCache.set(orgId, { modules: enabledSet, expiry: Date.now() + MODULE_CACHE_TTL })
+
+    if (!enabledSet.has(module)) {
+      return reply.code(403).send({
+        error: 'MODULE_DISABLED',
+        message: 'Este módulo não está disponível para sua organização.',
+      })
+    }
+  }
+}

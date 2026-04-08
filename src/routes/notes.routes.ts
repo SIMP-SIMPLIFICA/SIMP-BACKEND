@@ -1,5 +1,6 @@
 import { FastifyInstance } from "fastify";
 import { NotesController } from "../controllers/notes.controller";
+import { requireModule } from "../middleware/auth.middleware.js";
 
 export async function notesRoutes(app: FastifyInstance) {
     const controller = new NotesController();
@@ -15,6 +16,7 @@ export async function notesRoutes(app: FastifyInstance) {
             reply.send(err)
         }
     })
+    app.addHook('preHandler', requireModule('notes'))
 
     app.get("/", controller.findMany.bind(controller));
     app.post("/", controller.create.bind(controller));

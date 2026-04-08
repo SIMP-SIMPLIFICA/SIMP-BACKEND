@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify'
 import { CalendarController } from '@/controllers/calendar.controller'
+import { requireModule } from '@/middleware/auth.middleware.js'
 
 export async function calendarRoutes(app: FastifyInstance) {
     const controller = new CalendarController()
@@ -16,6 +17,7 @@ export async function calendarRoutes(app: FastifyInstance) {
             reply.send(err)
         }
     })
+    app.addHook('preHandler', requireModule('calendar'))
 
     app.get('/', {
         schema: {

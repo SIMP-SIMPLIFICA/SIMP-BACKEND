@@ -12,6 +12,7 @@
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
     "db:seed": "tsx prisma/seeds/seed.ts",
+    "db:seed:finance": "tsx src/scripts/seed-finance.ts",
     "db:reset": "prisma migrate reset",
     "test": "vitest",
     "test:ui": "vitest --ui",

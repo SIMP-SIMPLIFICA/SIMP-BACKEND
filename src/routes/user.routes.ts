@@ -21,6 +21,7 @@ export async function userRoutes(server: FastifyInstance) {
           isActive: z.coerce.boolean().optional(),
           isVerified: z.coerce.boolean().optional(),
           role: z.string().optional(),
+          organizationId: z.string().optional(),
           sortBy: z.enum(['createdAt', 'email', 'firstName', 'lastName']).optional(),
           sortOrder: z.enum(['asc', 'desc']).default('desc')
         })

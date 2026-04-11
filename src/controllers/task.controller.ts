@@ -195,7 +195,7 @@ export class TaskController {
   // --- TOGGLE STATUS ---
   async toggleStatus(request: FastifyRequest, reply: FastifyReply) {
     const { id } = z.object({ id: z.string() }).parse(request.params);
-    const { status } = z.object({ status: z.enum(['TODO', 'IN_PROGRESS', 'IN_REVIEW', 'DONE', 'CANCELED']) }).parse(request.body);
+    const { status } = z.object({ status: z.enum(['TODO', 'IN_PROGRESS', 'IN_REVIEW', 'DONE', 'EXPIRED']) }).parse(request.body);
     const userId = request.user.id;
 
     // Incluindo Workspace

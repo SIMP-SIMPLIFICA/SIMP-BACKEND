@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(printf '-- Init script for local development\\\\n-- The database is created by Docker via POSTGRES_DB env var.\\\\n-- Prisma migrations handle all schema creation.\\\\n')",
+      "Bash(docker exec fastify-postgres:*)",
+      "Bash(obsidian help:*)",
+      "Bash(where obsidian:*)",
+      "Read(//c/Users/carma/AppData/Local/Programs/**)",
+      "Read(//c/Program Files/Obsidian/**)"
+    ]
+  }
+}

@@ -4,7 +4,7 @@ export const createTaskSchema = z.object({
   title: z.string().min(1, "Título é obrigatório"),
   description: z.string().optional(),
   priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).default('MEDIUM'),
-  status: z.enum(['TODO', 'IN_PROGRESS', 'IN_REVIEW', 'DONE', 'CANCELED']).default('TODO'),
+  status: z.enum(['TODO', 'IN_PROGRESS', 'IN_REVIEW', 'DONE', 'EXPIRED']).default('TODO'),
   dueDate: z.string().datetime().optional(), // Recebe string ISO do front
   assigneeIds: z.array(z.string()).optional(),
 });

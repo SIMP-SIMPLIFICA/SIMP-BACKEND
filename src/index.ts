@@ -10,6 +10,7 @@ import { AppServer } from '@/types/server'
 import * as crypto from 'node:crypto'
 import { registerRoutes } from './config/routes.js'
 import { registerPlugins } from './config/plugins.js'
+import { startExpireTasksJob } from './jobs/expire-tasks.job.js'
 
 // Import da rota de upload
 import { uploadRoutes } from './routes/upload.routes.js'
@@ -37,6 +38,8 @@ async function start() {
     logger.info('🗄️ Connecting to database...')
     await db.connect()
     logger.info('✅ Database connected successfully')
+
+    startExpireTasksJob()
 
     logger.info('🛣️ Registering routes...')
     await registerRoutes(server)

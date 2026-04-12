@@ -4,8 +4,14 @@ import { redisClient } from '@/utils/redis.js'
 import { logger } from '@/utils/logger.js'
 import type { Worker } from 'bullmq'
 import { emailNotificationQueue } from '@/lib/email-queue.js'
+import { documentOcrQueue } from '@/lib/document-queue.js'
 
-export const gracefulShutdown = (app: AppServer, emailWorker: Worker, signal: string = 'SIGTERM') => {
+export const gracefulShutdown = (
+  app: AppServer,
+  emailWorker: Worker,
+  ocrWorker: Worker,
+  signal: string = 'SIGTERM'
+) => {
   return async () => {
     logger.info(`Received ${signal}, starting graceful shutdown...`)
 
@@ -15,6 +21,9 @@ export const gracefulShutdown = (app: AppServer, emailWorker: Worker, signal: st
 
       await emailWorker.close()
       await emailNotificationQueue.close()
+
+      await ocrWorker.close()
+      await documentOcrQueue.close()
 
       if (redisClient.isOpen) {
         await redisClient.quit()

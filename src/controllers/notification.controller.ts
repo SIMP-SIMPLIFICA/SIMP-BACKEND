@@ -8,19 +8,18 @@ export class NotificationController {
   stream(request: FastifyRequest, reply: FastifyReply) {
     const userId = request.user.id
 
-    const origin = request.headers.origin || '*'
+    // reply.hijack() bypassa o @fastify/cors — precisamos setar os headers CORS manualmente
+    // via reply.raw.setHeader() antes de writeHead() para garantir que sejam incluídos
+    reply.hijack()
+    reply.raw.setHeader('Access-Control-Allow-Origin', request.headers.origin ?? '*')
+    reply.raw.setHeader('Access-Control-Allow-Credentials', 'true')
 
-    const headers = {
+    reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
       'X-Accel-Buffering': 'no',
-      'Access-Control-Allow-Origin': origin,
-      'Access-Control-Allow-Credentials': 'true'
-    }
-
-    reply.hijack()
-    reply.raw.writeHead(200, headers)
+    })
     reply.raw.write('retry: 10000\n\n')
 
     notificationService.addClient(userId, reply)

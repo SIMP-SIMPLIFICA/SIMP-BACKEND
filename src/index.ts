@@ -13,6 +13,8 @@ import { registerPlugins } from './config/plugins.js'
 import { startExpireTasksJob } from './jobs/expire-tasks.job.js'
 import { startClearNotificationsJob } from './jobs/clear-notifications.job.js'
 import { createEmailNotificationWorker } from './lib/email-queue.js'
+import { createDocumentOcrWorker, documentOcrQueue } from './lib/document-queue.js'
+import { libraryRoutes } from './routes/library.routes.js'
 
 // Import da rota de upload
 import { uploadRoutes } from './routes/upload.routes.js'
@@ -47,12 +49,16 @@ async function start() {
     const emailWorker = createEmailNotificationWorker()
     logger.info('📧 Email notification worker started')
 
+    const ocrWorker = createDocumentOcrWorker()
+    logger.info('📄 Document OCR worker started')
+
     logger.info('🛣️ Registering routes...')
     await registerRoutes(server)
 
     // Registramos APENAS a rota de upload aqui
     // (O prefixo /api/v1 garante que fique padronizado com o resto)
     await server.register(uploadRoutes, { prefix: '/api/v1' })
+    await server.register(libraryRoutes, { prefix: '/api/v1/library' })
 
     logger.info('✅ Routes registered successfully')
 
@@ -69,7 +75,7 @@ async function start() {
       logger.info(`🔍 Health check available at ${serverUrl}/health`)
     }
 
-    const shutdown = gracefulShutdown(server, emailWorker)
+    const shutdown = gracefulShutdown(server, emailWorker, ocrWorker)
     // eslint-disable-next-line @typescript-eslint/no-misused-promises
     process.on('SIGINT', shutdown)
     // eslint-disable-next-line @typescript-eslint/no-misused-promises

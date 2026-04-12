@@ -69,6 +69,15 @@ const AVAILABLE_PERMISSIONS = {
       { key: 'processes:download', description: 'Baixar documentos de processos', level: 'read' },
       { key: 'processes:manage', description: 'Gerenciar todos os processos', level: 'admin' }
     ]
+  },
+  library: {
+    displayName: 'Biblioteca Digital (GED)',
+    permissions: [
+      { key: 'library:read',   description: 'Visualizar e baixar documentos da biblioteca', level: 'read' },
+      { key: 'library:write',  description: 'Fazer upload de documentos',                   level: 'write' },
+      { key: 'library:delete', description: 'Excluir documentos da biblioteca',              level: 'delete' },
+      { key: 'library:logs',   description: 'Visualizar histórico de auditoria da biblioteca', level: 'read' }
+    ]
   }
 }
 

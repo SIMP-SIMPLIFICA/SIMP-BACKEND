@@ -37,6 +37,8 @@ model Organization {
   virtualProcessSources  VirtualProcessSource[]
   virtualProcessCompanies VirtualProcessCompany[]
   modules                OrganizationModule[]
+  libraryDocuments       LibraryDocument[]
+  documentCategories     DocumentCategory[]
 
   @@map("organizations")
 }
@@ -80,6 +82,7 @@ model User {
   isSuperAdmin         Boolean   @default(false) @map("is_super_admin")
   emailNotifications   Boolean   @default(true)  @map("email_notifications")
   autoClearDays        Int       @default(30)     @map("auto_clear_days")
+  clearanceLevel       Int       @default(1)      @map("clearance_level")
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
@@ -113,6 +116,8 @@ model User {
 
   createdProcesses         VirtualProcess[]         @relation("ProcessCreator")
   uploadedProcessDocuments VirtualProcessDocument[] @relation("ProcessDocumentUploader")
+
+  uploadedLibraryDocs      LibraryDocument[]        @relation("LibraryDocumentUploader")
 
   @@map("users")
 }
@@ -696,4 +701,49 @@ model Note {
 
   @@index([userId])
   @@map("notes")
+}
+
+// ─── Biblioteca Digital (GED) ────────────────────────────────────────────────
+
+model LibraryDocument {
+  id           String    @id @default(nanoid())
+  title        String    @db.VarChar(500)
+  fileName     String    @map("file_name")
+  fileKey      String    @map("file_key")          // chave no R2: organizations/{orgId}/library/{name}
+  fileSize     Int       @map("file_size")          // bytes
+  mimeType     String    @default("application/pdf") @map("mime_type")
+  accessLevel  Int       @default(1)                @map("access_level") // 1 | 2 | 3
+  textContent  String?   @db.Text                   @map("text_content") // OCR para busca profunda
+
+  uploaderId     String   @map("uploader_id")
+  organizationId String   @map("organization_id")
+  categoryId     String?  @map("category_id")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt      @map("updated_at")
+  deletedAt DateTime?                 @map("deleted_at")
+
+  uploader     User              @relation("LibraryDocumentUploader", fields: [uploaderId], references: [id])
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  category     DocumentCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, accessLevel])
+  @@index([organizationId, deletedAt])
+  @@index([uploaderId])
+  @@index([categoryId])
+  @@map("library_documents")
+}
+
+model DocumentCategory {
+  id             String   @id @default(nanoid())
+  name           String
+  organizationId String   @map("organization_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt      @map("updated_at")
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  documents    LibraryDocument[]
+
+  @@unique([organizationId, name])
+  @@map("document_categories")
 }

@@ -69,7 +69,11 @@ async function seedRoles() {
         'settings:write',
         'sessions:manage',
         'backup:create',
-        'backup:restore'
+        'backup:restore',
+        'library:read',
+        'library:write',
+        'library:delete',
+        'library:logs'
       ],
       isSystem: true
     },

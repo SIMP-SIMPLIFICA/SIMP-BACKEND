@@ -11,6 +11,8 @@ import * as crypto from 'node:crypto'
 import { registerRoutes } from './config/routes.js'
 import { registerPlugins } from './config/plugins.js'
 import { startExpireTasksJob } from './jobs/expire-tasks.job.js'
+import { startClearNotificationsJob } from './jobs/clear-notifications.job.js'
+import { createEmailNotificationWorker } from './lib/email-queue.js'
 
 // Import da rota de upload
 import { uploadRoutes } from './routes/upload.routes.js'
@@ -40,6 +42,10 @@ async function start() {
     logger.info('✅ Database connected successfully')
 
     startExpireTasksJob()
+    startClearNotificationsJob()
+
+    const emailWorker = createEmailNotificationWorker()
+    logger.info('📧 Email notification worker started')
 
     logger.info('🛣️ Registering routes...')
     await registerRoutes(server)
@@ -63,7 +69,7 @@ async function start() {
       logger.info(`🔍 Health check available at ${serverUrl}/health`)
     }
 
-    const shutdown = gracefulShutdown(server)
+    const shutdown = gracefulShutdown(server, emailWorker)
     // eslint-disable-next-line @typescript-eslint/no-misused-promises
     process.on('SIGINT', shutdown)
     // eslint-disable-next-line @typescript-eslint/no-misused-promises

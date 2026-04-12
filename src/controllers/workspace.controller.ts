@@ -3,6 +3,7 @@ import { prisma } from '../lib/prisma.js';
 import { z } from 'zod';
 import { createWorkspaceSchema } from '../schemas/workspace.schemas.js';
 import { notificationService } from '../services/notification.service.js';
+import { userHasPermission, getUsersWithPermission, PERMISSION_MISSING_MESSAGE } from '../services/rbac.service.js';
 
 export class WorkspaceController {
   
@@ -76,6 +77,12 @@ export class WorkspaceController {
     // REGRA: usuário convidado deve pertencer à mesma organização
     if (!request.user.isSuperAdmin && userToAdd.organizationId !== request.user.organizationId) {
         return reply.status(403).send({ message: 'Usuário não pertence a esta organização.' });
+    }
+
+    // RBAC: usuário alvo deve ter permissão mínima de workspaces:read
+    const canUseWorkspaces = await userHasPermission(userToAdd.id, 'workspaces:read');
+    if (!canUseWorkspaces) {
+      return reply.status(400).send({ message: PERMISSION_MISSING_MESSAGE });
     }
 
     const member = await prisma.workspaceMember.create({
@@ -171,6 +178,8 @@ export class WorkspaceController {
       include: { user: { select: { id: true, firstName: true, lastName: true, email: true, avatar: true } } },
       orderBy: { user: { firstName: 'asc' } }
     });
-    return reply.send(members.map(m => m.user));
+    const users = members.map(m => m.user);
+    const permitted = await getUsersWithPermission(users.map(u => u.id), 'tasks:read');
+    return reply.send(users.map(u => ({ ...u, hasPermission: permitted.has(u.id) })));
   }
 }

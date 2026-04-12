@@ -2,6 +2,7 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { prisma } from '../lib/prisma.js';
 import { createChecklistItemSchema, createTaskSchema, updateChecklistItemSchema, updateTaskSchema } from '../schemas/task.schemas.js';
 import { notificationService } from '../services/notification.service.js';
+import { userHasPermission, PERMISSION_MISSING_MESSAGE } from '../services/rbac.service.js';
 import { z } from 'zod';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
@@ -242,6 +243,12 @@ export class TaskController {
 
     const canAssign = await checkPermission(task.workspaceId, requesterId, ['OWNER', 'ADMIN', 'MEMBER']);
     if (!canAssign) return reply.status(403).send({ message: 'Sem permissão.' });
+
+    // RBAC: usuário alvo deve ter permissão mínima de tasks:read
+    const targetCanUseTasks = await userHasPermission(userId, 'tasks:read');
+    if (!targetCanUseTasks) {
+      return reply.status(400).send({ message: PERMISSION_MISSING_MESSAGE });
+    }
 
     const assignee = await prisma.taskAssignee.create({
       data: { taskId: id, userId },

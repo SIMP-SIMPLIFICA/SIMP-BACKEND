@@ -2,6 +2,7 @@ import { FastifyReply, FastifyRequest } from 'fastify'
 import { prisma } from '@/lib/prisma'
 import { CreateMessageInput, UpdateMessageInput } from '@/schemas/communication.schemas'
 import { notificationService } from '@/services/notification.service'
+import { getUsersWithPermission, PERMISSION_MISSING_MESSAGE } from '@/services/rbac.service.js'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import r2 from '@/lib/r2.js'
@@ -31,6 +32,13 @@ export class CommunicationController {
           })
           if (validCount !== recipientUserIds.length) {
             return reply.code(403).send({ message: 'Um ou mais destinatários não pertencem a esta organização.' })
+          }
+
+          // RBAC: todos os destinatários devem ter communication:read
+          const permitted = await getUsersWithPermission(recipientUserIds, 'communication:read')
+          const unauthorized = recipientUserIds.filter(id => !permitted.has(id))
+          if (unauthorized.length > 0) {
+            return reply.code(400).send({ message: PERMISSION_MISSING_MESSAGE })
           }
         }
       }
@@ -282,13 +290,16 @@ export class CommunicationController {
       take: 20
     })
 
+    const permitted = await getUsersWithPermission(users.map(u => u.id), 'communication:read')
+
     return reply.send(users.map(u => ({
       id: u.id,
       name: `${u.firstName} ${u.lastName}`,
       username: u.username,
       email: u.email,
       avatar: u.avatar,
-      role: u.roles[0]?.role?.displayName || 'Usuário'
+      role: u.roles[0]?.role?.displayName || 'Usuário',
+      hasPermission: permitted.has(u.id)
     })))
   }
 

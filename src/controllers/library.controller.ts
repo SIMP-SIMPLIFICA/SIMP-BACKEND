@@ -351,7 +351,10 @@ export class LibraryController {
             // transformToByteArray() é a API oficial do SDK v3 para extrair o corpo completo
             // como Uint8Array — evita incompatibilidades silenciosas entre SdkStream e archiver
             const byteArray = await r2Response.Body.transformToByteArray()
-            archive.append(Buffer.from(byteArray), { name: doc.fileName })
+            // path.basename() remove qualquer componente de diretório (../) do nome do arquivo
+            // prevenindo Zip Slip — CodeQL js/zip-slip
+            const safeName = path.basename(doc.fileName)
+            archive.append(Buffer.from(byteArray), { name: safeName })
           }
         }
         await archive.finalize()

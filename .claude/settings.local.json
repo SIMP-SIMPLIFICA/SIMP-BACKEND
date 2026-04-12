@@ -20,7 +20,11 @@
       "Bash(npx prisma:*)",
       "Read(//d/PROJECTS/SIMP-FRONTEND/**)",
       "Bash(npx tsc:*)",
-      "Skill(gsd-fast)"
+      "Skill(gsd-fast)",
+      "Bash(npm run:*)",
+      "Bash(./node_modules/.bin/eslint src:*)",
+      "Bash(npm audit:*)",
+      "Bash(node:*)"
     ]
   }
 }

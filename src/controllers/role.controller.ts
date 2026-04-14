@@ -78,6 +78,14 @@ const AVAILABLE_PERMISSIONS = {
       { key: 'library:delete', description: 'Excluir documentos da biblioteca',              level: 'delete' },
       { key: 'library:logs',   description: 'Visualizar histórico de auditoria da biblioteca', level: 'read' }
     ]
+  },
+  covenants: {
+    displayName: 'Convênios, Emendas e Transferências',
+    permissions: [
+      { key: 'covenants:read',   description: 'Visualizar convênios e transferências', level: 'read' },
+      { key: 'covenants:write',  description: 'Criar e editar convênios',              level: 'write' },
+      { key: 'covenants:delete', description: 'Excluir convênios',                     level: 'delete' },
+    ]
   }
 }
 

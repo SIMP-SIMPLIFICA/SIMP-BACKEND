@@ -39,6 +39,10 @@ model Organization {
   modules                OrganizationModule[]
   libraryDocuments       LibraryDocument[]
   documentCategories     DocumentCategory[]
+  covenants              Covenant[]
+  covenantTypes          CovenantType[]
+  convenentes            Convenente[]
+  concedentes            Concedente[]
 
   @@map("organizations")
 }
@@ -579,6 +583,7 @@ model VirtualProcess {
   subject        String    @db.Text
   status         String    @default("Tramitando")
   category       String    @default("Outros")
+  covenantId     String?   @map("covenant_id")
 
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
@@ -587,8 +592,10 @@ model VirtualProcess {
   organization Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   creator      User                     @relation("ProcessCreator", fields: [createdById], references: [id])
   documents    VirtualProcessDocument[]
+  covenant     Covenant?                @relation(fields: [covenantId], references: [id], onDelete: SetNull)
 
   @@unique([organizationId, processNumber])
+  @@index([covenantId])
   @@map("virtual_processes")
 }
 
@@ -624,6 +631,7 @@ model VirtualProcessCompany {
   createdAt      DateTime @default(now()) @map("created_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  covenants    Covenant[]
 
   @@unique([organizationId, name])
   @@map("virtual_process_companies")
@@ -718,6 +726,7 @@ model LibraryDocument {
   uploaderId     String   @map("uploader_id")
   organizationId String   @map("organization_id")
   categoryId     String?  @map("category_id")
+  covenantId     String?  @map("covenant_id")
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt      @map("updated_at")
@@ -726,11 +735,13 @@ model LibraryDocument {
   uploader     User              @relation("LibraryDocumentUploader", fields: [uploaderId], references: [id])
   organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   category     DocumentCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  covenant     Covenant?         @relation(fields: [covenantId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, accessLevel])
   @@index([organizationId, deletedAt])
   @@index([uploaderId])
   @@index([categoryId])
+  @@index([covenantId])
   @@map("library_documents")
 }
 
@@ -746,4 +757,100 @@ model DocumentCategory {
 
   @@unique([organizationId, name])
   @@map("document_categories")
+}
+
+// ─── Convênios, Emendas e Transferências ─────────────────────────────────────
+
+model CovenantType {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  name           String
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  covenants    Covenant[]
+
+  @@unique([organizationId, name])
+  @@map("covenant_types")
+}
+
+model Convenente {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  name           String
+  cnpj           String?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  covenants    Covenant[]
+
+  @@unique([organizationId, name])
+  @@map("convenentes")
+}
+
+model Concedente {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  name           String
+  cnpj           String?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  covenants    Covenant[]
+
+  @@unique([organizationId, name])
+  @@map("concedentes")
+}
+
+enum CovenantStatus {
+  EM_ANALISE
+  APROVADO
+  EM_EXECUCAO
+  PRESTACAO_CONTAS
+  CONCLUIDO
+  DEVOLVIDO
+}
+
+model Covenant {
+  id             String  @id @default(uuid())
+  organizationId String  @map("organization_id")
+  number         String
+
+  typeId         String?  @map("type_id")
+  proponentId    String?  @map("proponent_id")
+  convenenteId   String?  @map("convenente_id")
+  concedenteId   String?  @map("concedente_id")
+
+  processObject   String  @db.Text @map("process_object")
+  budgetaryAction String? @map("budgetary_action")
+
+  executionStartDate DateTime?  @map("execution_start_date")
+  validityStartDate  DateTime?  @map("validity_start_date")
+  validityEndDate    DateTime?  @map("validity_end_date")
+  termDays           Int?       @map("term_days")
+
+  transferValue    Decimal?  @db.Decimal(15, 2) @map("transfer_value")
+  counterpartValue Decimal?  @db.Decimal(15, 2) @map("counterpart_value")
+
+  status       CovenantStatus @default(EM_ANALISE)
+
+  bankName     String?  @map("bank_name")
+  bankAgency   String?  @map("bank_agency")
+  bankAccount  String?  @map("bank_account")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  organization     Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  covenantType     CovenantType?          @relation(fields: [typeId], references: [id], onDelete: SetNull)
+  proponent        VirtualProcessCompany? @relation(fields: [proponentId], references: [id], onDelete: SetNull)
+  convenente       Convenente?            @relation(fields: [convenenteId], references: [id], onDelete: SetNull)
+  concedente       Concedente?            @relation(fields: [concedenteId], references: [id], onDelete: SetNull)
+  virtualProcesses VirtualProcess[]
+  libraryDocuments LibraryDocument[]
+
+  @@unique([organizationId, number])
+  @@index([organizationId, status])
+  @@index([organizationId, typeId])
+  @@map("covenants")
 }

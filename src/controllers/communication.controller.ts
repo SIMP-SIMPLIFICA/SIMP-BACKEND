@@ -83,12 +83,19 @@ export class CommunicationController {
       const recipientIds = recipients.filter(r => r.userId !== userId).map(r => r.userId)
       if (recipientIds.length > 0) {
         const distinctIds = [...new Set(recipientIds)] as string[]
+        const senderFirstName = request.user['firstName'] as string | undefined ?? ''
+        const senderLastName = request.user['lastName'] as string | undefined ?? ''
+        const senderName = `${senderFirstName} ${senderLastName}`.trim() || undefined
+
         await notificationService.notifyMany(distinctIds, {
           title: 'Nova Mensagem',
           message: `Você recebeu uma nova mensagem: ${subject}`,
           type: 'DOCUMENT_RECEIVED',
-          link: `/communication/${message.id}`,
+          link: `/communication?msgId=${message.id}`,
           entityId: message.id,
+          senderName,
+          messageSubject: subject,
+          messageBody: body,
         }).catch(err => request.log.error({ err }, 'Falha ao enviar notificações'))
       }
 

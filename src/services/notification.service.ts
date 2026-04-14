@@ -32,6 +32,9 @@ class NotificationService extends EventEmitter {
     type: string
     link?: string
     entityId?: string
+    senderName?: string
+    messageSubject?: string
+    messageBody?: string
   }) {
     // 1. Salvar no banco
     const notification = await prisma.notification.create({
@@ -56,16 +59,24 @@ class NotificationService extends EventEmitter {
     // 3. Enfileirar e-mail em background (sem bloquear o event loop)
     const user = await prisma.user.findUnique({
       where: { id: data.userId },
-      select: { email: true, emailNotifications: true }
+      select: { email: true, emailNotifications: true, firstName: true, lastName: true }
     })
 
     if (user?.emailNotifications) {
+      const recipientName = user.firstName
+        ? `${user.firstName}${user.lastName ? ` ${user.lastName}` : ''}`
+        : undefined
+
       await emailNotificationQueue.add('send-notification-email', {
         to: user.email,
         subject: data.title,
         title: data.title,
         message: data.message,
-        link: data.link
+        link: data.link,
+        recipientName,
+        senderName: data.senderName,
+        messageSubject: data.messageSubject,
+        messageBody: data.messageBody,
       })
     }
 
@@ -75,7 +86,16 @@ class NotificationService extends EventEmitter {
   // Helper para notificar múltiplos usuários
   async notifyMany(
     userIds: string[],
-    data: { title: string; message: string; type: string; link?: string; entityId?: string }
+    data: {
+      title: string
+      message: string
+      type: string
+      link?: string
+      entityId?: string
+      senderName?: string
+      messageSubject?: string
+      messageBody?: string
+    }
   ) {
     return Promise.all(userIds.map(id => this.notify({ ...data, userId: id })))
   }

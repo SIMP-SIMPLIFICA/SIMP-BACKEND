@@ -4,6 +4,7 @@ import {
   covenantTypeController,
   convenenteController,
   concedenteController,
+  covenantProcessController,
 } from '@/controllers/covenant.controller.js'
 import { authMiddleware, requireAnyPermission, requireModule } from '@/middleware/auth.middleware.js'
 
@@ -87,5 +88,17 @@ export async function covenantRoutes(app: FastifyInstance) {
     '/:id',
     { preHandler: [requireAnyPermission(['covenants:delete'])] },
     covenantController.delete.bind(covenantController)
+  )
+
+  // ── Process link / unlink ─────────────────────────────────────────────────
+  app.post(
+    '/:id/processes',
+    { preHandler: [requireAnyPermission(['covenants:write'])] },
+    covenantProcessController.link
+  )
+  app.delete(
+    '/:id/processes/:processId',
+    { preHandler: [requireAnyPermission(['covenants:write'])] },
+    covenantProcessController.unlink
   )
 }

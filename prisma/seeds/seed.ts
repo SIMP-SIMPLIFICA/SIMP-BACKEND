@@ -73,7 +73,10 @@ async function seedRoles() {
         'library:read',
         'library:write',
         'library:delete',
-        'library:logs'
+        'library:logs',
+        'covenants:read',
+        'covenants:write',
+        'covenants:delete'
       ],
       isSystem: true
     },

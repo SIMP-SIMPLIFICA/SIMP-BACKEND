@@ -88,6 +88,10 @@ export class VirtualProcessController {
           documents: {
             include: { uploader: { select: { id: true, firstName: true, lastName: true } } },
             orderBy: { uploadedAt: 'desc' }
+          },
+          covenants: {
+            select: { id: true, number: true, status: true, processObject: true,
+              covenantType: { select: { id: true, name: true } } }
           }
         }
       })

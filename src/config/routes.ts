@@ -16,6 +16,8 @@ import { AppServer } from '@/types/server'
 import { db } from '@/utils/database.js'
 import { logger } from '@/utils/logger.js'
 import { virtualProcessRoutes } from '@/routes/virtual-process.routes.js'
+import { covenantRoutes } from '@/routes/covenant.routes.js'
+import { protocolRoutes } from '@/routes/protocol.routes.js'
 import { errorHandler } from '@/utils/error-handler.js'
 
 import { publicRoutes } from '@/routes/public.routes.js'
@@ -127,6 +129,8 @@ export async function registerRoutes(server: AppServer) {
   // Módulo Financeiro
   await server.register(financeRoutes, { prefix: '/finance', logLevel: 'info' })
   await server.register(virtualProcessRoutes, { prefix: '/virtual-processes', logLevel: 'info' })
+  await server.register(covenantRoutes, { prefix: '/covenants', logLevel: 'info' })
+  await server.register(protocolRoutes, { prefix: '/protocols', logLevel: 'info' })
 
   // --- TEST ENDPOINT ---
   server.get('/test', (request, reply) => {

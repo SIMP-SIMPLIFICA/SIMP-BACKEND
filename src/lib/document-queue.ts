@@ -1,13 +1,7 @@
 import { Queue, Worker } from 'bullmq'
 import type { Job } from 'bullmq'
 import { config } from '@/config/config.js'
-import { prisma } from '@/lib/prisma.js'
 import { logger } from '@/utils/logger.js'
-import r2 from '@/lib/r2.js'
-import { GetObjectCommand } from '@aws-sdk/client-s3'
-// pdf-parse tem problemas crônicos de exportação CJS/ESM — força require e detecta a forma em runtime
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const pdfParse = require('pdf-parse')
 
 export interface OcrJobData {
   documentId: string
@@ -36,59 +30,13 @@ export const documentOcrQueue = new Queue<OcrJobData>('document-ocr', {
 })
 
 export function createDocumentOcrWorker() {
+  // OCR temporariamente desabilitado — pdf-parse instável + custo de CPU no servidor principal
   const worker = new Worker<OcrJobData>(
     'document-ocr',
     async (job: Job<OcrJobData>) => {
-      const { documentId, fileKey } = job.data
-
-      // 1. Baixa o PDF do R2
-      const command = new GetObjectCommand({
-        Bucket: process.env.R2_BUCKET_NAME,
-        Key: fileKey
-      })
-      const response = await r2.send(command)
-
-      if (!response.Body) {
-        throw new Error(`R2 returned empty body for key: ${fileKey}`)
-      }
-
-      // Converte o stream do R2 para Buffer
-      const chunks: Uint8Array[] = []
-      for await (const chunk of response.Body as AsyncIterable<Uint8Array>) {
-        chunks.push(chunk)
-      }
-      const buffer = Buffer.concat(chunks)
-
-      // 2. Extrai texto com pdf-parse — detecta forma de exportação em runtime
-      let ocrText: string
-      try {
-        let data: { text: string }
-        if (typeof pdfParse === 'function') {
-          data = await pdfParse(buffer)
-        } else if (pdfParse && typeof pdfParse.default === 'function') {
-          data = await pdfParse.default(buffer)
-        } else {
-          throw new Error(
-            `pdfParse export is uncallable. Type: ${typeof pdfParse}, Keys: ${Object.keys(pdfParse ?? {}).join(',')}`
-          )
-        }
-        ocrText = data.text.trim()
-      } catch (err) {
-        logger.error({ err, documentId }, 'OCR extraction failed')
-        throw err
-      }
-
-      const trimmed = ocrText
-
-      // 3. Salva textContent no banco
-      await prisma.libraryDocument.update({
-        where: { id: documentId },
-        data: { textContent: trimmed || null }
-      })
-
-      logger.info({ documentId, chars: trimmed.length }, 'OCR completed for library document')
+      logger.info({ jobId: job.id }, 'OCR disabled — job discarded')
     },
-    { connection, concurrency: 2 }
+    { connection, concurrency: 1 }
   )
 
   worker.on('completed', (job: Job) => {

@@ -86,6 +86,14 @@ const AVAILABLE_PERMISSIONS = {
       { key: 'covenants:write',  description: 'Criar e editar convênios',              level: 'write' },
       { key: 'covenants:delete', description: 'Excluir convênios',                     level: 'delete' },
     ]
+  },
+  protocols: {
+    displayName: 'Protocolos e Ofícios',
+    permissions: [
+      { key: 'protocols:read',  description: 'Visualizar documentos oficiais emitidos',           level: 'read' },
+      { key: 'protocols:write', description: 'Gerar números de protocolo',                        level: 'write' },
+      { key: 'protocols:admin', description: 'Ver todos os setores, cancelar e gerenciar números', level: 'admin' },
+    ]
   }
 }
 

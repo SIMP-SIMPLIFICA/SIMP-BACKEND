@@ -252,6 +252,15 @@ export const covenantTypeController = {
       const { organizationId } = (request as unknown as RequestUser).user
       const { name } = z.object({ name: z.string().min(1) }).parse(request.body)
       const type = await prisma.covenantType.create({ data: { organizationId, name } })
+
+      // Sync: new covenant type → virtual process source (unidirectional)
+      const existingSource = await prisma.virtualProcessSource.findFirst({
+        where: { organizationId, name },
+      })
+      if (!existingSource) {
+        await prisma.virtualProcessSource.create({ data: { organizationId, name } })
+      }
+
       return reply.code(201).send(type)
     } catch (error: unknown) {
       if (error instanceof z.ZodError) return reply.code(400).send({ error: 'Validation Error', issues: error.issues })
@@ -346,3 +355,44 @@ export const concedenteController = {
 }
 
 export const covenantController = new CovenantController()
+
+// ─── Process link/unlink ──────────────────────────────────────────────────────
+
+export const covenantProcessController = {
+  async link(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { organizationId } = (request as unknown as RequestUser).user
+      const { id } = idParam.parse(request.params)
+      const { processId } = z.object({ processId: z.string() }).parse(request.body)
+
+      const covenant = await prisma.covenant.findFirst({ where: { id, organizationId } })
+      if (!covenant) return reply.code(404).send({ error: 'Not Found', message: 'Convênio não encontrado' })
+
+      await prisma.covenant.update({
+        where: { id },
+        data: { virtualProcesses: { connect: { id: processId } } },
+      })
+      return reply.send({ message: 'Processo vinculado com sucesso.' })
+    } catch (error: unknown) {
+      return reply.code(500).send({ error: 'Link Failed', message: (error as Error).message })
+    }
+  },
+
+  async unlink(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { organizationId } = (request as unknown as RequestUser).user
+      const { id, processId } = z.object({ id: z.string(), processId: z.string() }).parse(request.params)
+
+      const covenant = await prisma.covenant.findFirst({ where: { id, organizationId } })
+      if (!covenant) return reply.code(404).send({ error: 'Not Found', message: 'Convênio não encontrado' })
+
+      await prisma.covenant.update({
+        where: { id },
+        data: { virtualProcesses: { disconnect: { id: processId } } },
+      })
+      return reply.code(204).send()
+    } catch (error: unknown) {
+      return reply.code(500).send({ error: 'Unlink Failed', message: (error as Error).message })
+    }
+  },
+}

@@ -200,7 +200,14 @@ export class AdminController {
 
     if (!org) return reply.code(404).send({ error: 'Not Found', message: 'Organização não encontrada.' })
 
-    return reply.send({ data: org })
+    // Merge DB module rows with ALL_MODULES so newly added modules are always visible
+    const dbModules = org.modules
+    const mergedModules = ALL_MODULES.map(m => {
+      const found = dbModules.find((d) => d.module === m)
+      return found ?? { module: m, isEnabled: false, notes: null, updatedAt: new Date().toISOString() }
+    })
+
+    return reply.send({ data: { ...org, modules: mergedModules } })
   }
 
   // PATCH /admin/organizations/:id
@@ -241,10 +248,16 @@ export class AdminController {
     const org = await prisma.organization.findUnique({ where: { id }, select: { id: true, name: true } })
     if (!org) return reply.code(404).send({ error: 'Not Found', message: 'Organização não encontrada.' })
 
-    const modules = await prisma.organizationModule.findMany({
+    const dbModules = await prisma.organizationModule.findMany({
       where: { organizationId: id },
       orderBy: { module: 'asc' },
       select: { module: true, isEnabled: true, notes: true, updatedAt: true },
+    })
+
+    // Merge with ALL_MODULES so new modules are always visible even without a DB row
+    const modules = ALL_MODULES.map(m => {
+      const found = dbModules.find(d => d.module === m)
+      return found ?? { module: m, isEnabled: false, notes: null, updatedAt: new Date().toISOString() }
     })
 
     return reply.send({ data: { org, modules } })

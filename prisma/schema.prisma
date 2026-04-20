@@ -43,6 +43,8 @@ model Organization {
   covenantTypes          CovenantType[]
   convenentes            Convenente[]
   concedentes            Concedente[]
+  officialDocuments      OfficialDocument[]
+  sequenceControls       SequenceControl[]
 
   @@map("organizations")
 }
@@ -122,6 +124,7 @@ model User {
   uploadedProcessDocuments VirtualProcessDocument[] @relation("ProcessDocumentUploader")
 
   uploadedLibraryDocs      LibraryDocument[]        @relation("LibraryDocumentUploader")
+  officialDocuments        OfficialDocument[]
 
   @@map("users")
 }
@@ -583,8 +586,6 @@ model VirtualProcess {
   subject        String    @db.Text
   status         String    @default("Tramitando")
   category       String    @default("Outros")
-  covenantId     String?   @map("covenant_id")
-
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
   createdById String   @map("created_by_id")
@@ -592,10 +593,9 @@ model VirtualProcess {
   organization Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   creator      User                     @relation("ProcessCreator", fields: [createdById], references: [id])
   documents    VirtualProcessDocument[]
-  covenant     Covenant?                @relation(fields: [covenantId], references: [id], onDelete: SetNull)
+  covenants    Covenant[]
 
   @@unique([organizationId, processNumber])
-  @@index([covenantId])
   @@map("virtual_processes")
 }
 
@@ -735,7 +735,8 @@ model LibraryDocument {
   uploader     User              @relation("LibraryDocumentUploader", fields: [uploaderId], references: [id])
   organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   category     DocumentCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  covenant     Covenant?         @relation(fields: [covenantId], references: [id], onDelete: SetNull)
+  covenant         Covenant?         @relation(fields: [covenantId], references: [id], onDelete: SetNull)
+  officialDocument OfficialDocument?
 
   @@index([organizationId, accessLevel])
   @@index([organizationId, deletedAt])
@@ -853,4 +854,72 @@ model Covenant {
   @@index([organizationId, status])
   @@index([organizationId, typeId])
   @@map("covenants")
+}
+
+// ─── Protocolos e Numeração Oficial ───────────────────────────────────────────
+
+enum OfficialDocumentCategory {
+  COMUNICACAO
+  NORMATIVO
+}
+
+enum OfficialDocumentNumberingType {
+  SEQUENTIAL
+  RANDOM
+}
+
+enum OfficialDocumentStatus {
+  RESERVADO
+  EMITIDO
+  CANCELADO
+}
+
+model SequenceControl {
+  id               String   @id @default(uuid())
+  organizationId   String   @map("organization_id")
+  documentCategory OfficialDocumentCategory @map("document_category")
+  documentType     String   @map("document_type")
+  sector           String
+  year             Int
+  currentNumber    Int      @default(0) @map("current_number")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, documentCategory, documentType, sector, year])
+  @@map("sequence_controls")
+}
+
+model OfficialDocument {
+  id               String   @id @default(uuid())
+  organizationId   String   @map("organization_id")
+  creatorId        String   @map("creator_id")
+
+  documentCategory    OfficialDocumentCategory    @map("document_category")
+  documentType        String                       @map("document_type")
+  numberingType       OfficialDocumentNumberingType @map("numbering_type")
+
+  sequenceNumber      Int?     @map("sequence_number")
+  year                Int
+  formattedNumber     String   @map("formatted_number")
+
+  subject             String   @db.Text
+  recipient           String?
+
+  sector              String
+
+  status              OfficialDocumentStatus @default(RESERVADO)
+  cancelReason        String?  @db.Text @map("cancel_reason")
+
+  libraryDocumentId   String?  @unique @map("library_document_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  creator         User            @relation(fields: [creatorId], references: [id])
+  libraryDocument LibraryDocument? @relation(fields: [libraryDocumentId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, documentCategory, year])
+  @@index([organizationId, status])
+  @@map("official_documents")
 }

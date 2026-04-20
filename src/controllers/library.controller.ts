@@ -7,7 +7,6 @@ import * as stream from 'node:stream'
 import r2 from '@/lib/r2.js'
 import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
-import { documentOcrQueue } from '@/lib/document-queue.js'
 import { logger } from '@/utils/logger.js'
 import archiver from 'archiver'
 
@@ -76,6 +75,9 @@ export class LibraryController {
     }
 
     const { title, accessLevel, categoryId } = parsed.data
+    const covenantId = fields['covenantId'] && fields['covenantId'] !== 'null' && fields['covenantId'] !== 'undefined'
+      ? fields['covenantId']
+      : undefined
     const orgId = organizationId ?? 'global'
 
     // Gera chave única no R2
@@ -102,7 +104,8 @@ export class LibraryController {
         accessLevel,
         uploaderId: userId,
         organizationId: orgId,
-        ...(categoryId ? { categoryId } : {})
+        ...(categoryId  ? { categoryId }  : {}),
+        ...(covenantId  ? { covenantId }  : {}),
       }
     })
 
@@ -120,13 +123,7 @@ export class LibraryController {
       }
     })
 
-    // Enfileira OCR assíncrono
-    await documentOcrQueue.add('extract-text', {
-      documentId: document.id,
-      fileKey
-    })
-
-    logger.info({ documentId: document.id }, 'Library document uploaded, OCR job queued')
+    logger.info({ documentId: document.id }, 'Library document uploaded')
 
     return reply.status(201).send(document)
   }
@@ -137,9 +134,10 @@ export class LibraryController {
     const clearanceLevel = (request.user as any).clearanceLevel as number ?? 1
     const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId! }
 
-    const { search, page, limit, categoryId } = z.object({
+    const { search, page, limit, categoryId, covenantId } = z.object({
       search:     z.string().optional(),
       categoryId: z.string().optional(),
+      covenantId: z.string().optional(),
       page:  z.coerce.number().int().min(1).default(1),
       limit: z.coerce.number().int().min(1).max(100).default(20),
     }).parse(request.query)
@@ -153,7 +151,8 @@ export class LibraryController {
       ]
     }
 
-    if (categoryId) where.categoryId = categoryId
+    if (categoryId)  where.categoryId  = categoryId
+    if (covenantId)  where.covenantId  = covenantId
 
     if (search) {
       where.AND = [{

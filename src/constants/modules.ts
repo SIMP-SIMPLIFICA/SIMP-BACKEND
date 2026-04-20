@@ -7,6 +7,8 @@ export const MODULES = {
   NOTES: 'notes',
   DEPARTMENTS: 'departments',
   LIBRARY: 'library',
+  COVENANTS: 'covenants',
+  PROTOCOLS: 'protocols',
 } as const
 
 export type ModuleKey = typeof MODULES[keyof typeof MODULES]
@@ -23,4 +25,5 @@ export const DEFAULT_MODULES: ModuleKey[] = [
   MODULES.NOTES,
   MODULES.DEPARTMENTS,
   MODULES.LIBRARY,
+  MODULES.COVENANTS,
 ]

@@ -252,8 +252,9 @@ model Setting {
 model Department {
   id          String   @id @default(nanoid())
   name        String
-  code        String   @unique
+  code        String
   description String?
+  isActive    Boolean  @default(true) @map("is_active")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -262,6 +263,7 @@ model Department {
 
   users User[]
 
+  @@unique([organizationId, code])
   @@map("departments")
 }
 

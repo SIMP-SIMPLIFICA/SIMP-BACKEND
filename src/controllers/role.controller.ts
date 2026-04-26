@@ -94,6 +94,14 @@ const AVAILABLE_PERMISSIONS = {
       { key: 'protocols:write', description: 'Gerar números de protocolo',                        level: 'write' },
       { key: 'protocols:admin', description: 'Ver todos os setores, cancelar e gerenciar números', level: 'admin' },
     ]
+  },
+  departments: {
+    displayName: 'Departamentos e Setores',
+    permissions: [
+      { key: 'departments:read',   description: 'Visualizar departamentos e secretarias', level: 'read' },
+      { key: 'departments:write',  description: 'Criar e editar departamentos',           level: 'write' },
+      { key: 'departments:delete', description: 'Excluir departamentos',                  level: 'delete' },
+    ]
   }
 }
 

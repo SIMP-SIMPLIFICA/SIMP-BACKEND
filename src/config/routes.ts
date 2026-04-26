@@ -18,6 +18,7 @@ import { logger } from '@/utils/logger.js'
 import { virtualProcessRoutes } from '@/routes/virtual-process.routes.js'
 import { covenantRoutes } from '@/routes/covenant.routes.js'
 import { protocolRoutes } from '@/routes/protocol.routes.js'
+import { departmentRoutes } from '@/routes/department.routes.js'
 import { errorHandler } from '@/utils/error-handler.js'
 
 import { publicRoutes } from '@/routes/public.routes.js'
@@ -131,6 +132,7 @@ export async function registerRoutes(server: AppServer) {
   await server.register(virtualProcessRoutes, { prefix: '/virtual-processes', logLevel: 'info' })
   await server.register(covenantRoutes, { prefix: '/covenants', logLevel: 'info' })
   await server.register(protocolRoutes, { prefix: '/protocols', logLevel: 'info' })
+  await server.register(departmentRoutes, { prefix: '/departments', logLevel: 'info' })
 
   // --- TEST ENDPOINT ---
   server.get('/test', (request, reply) => {

@@ -11,6 +11,7 @@ interface RequestUser {
     id: string
     organizationId: string
     isSuperAdmin: boolean
+    permissions?: string[]
   }
 }
 
@@ -86,14 +87,23 @@ export const protocolController = {
       const year = currentYear()
 
       // Normativos: sector sempre CENTRAL (centralizado por org+ano)
+      // Para COMUNICACAO: usar o código do departamento enviado pelo cliente
       const effectiveSector =
-        body.documentCategory === OfficialDocumentCategory.NORMATIVO ? 'CENTRAL' : body.sector
+        body.documentCategory === OfficialDocumentCategory.NORMATIVO
+          ? 'CENTRAL'
+          : body.sector.trim().toUpperCase()
+
+      if (body.documentCategory !== OfficialDocumentCategory.NORMATIVO && !effectiveSector) {
+        return reply.code(400).send({ error: 'Validation Error', message: 'sector é obrigatório para documentos de comunicação' })
+      }
 
       let sequenceNumber: number | null = null
 
       if (body.numberingType === OfficialDocumentNumberingType.SEQUENTIAL) {
-        // Incremento atômico dentro de transação para evitar race condition
+        // Upsert atômico com SELECT FOR UPDATE via Prisma $transaction para serializar
+        // escritas concorrentes no mesmo setor/tipo/ano
         const result = await prisma.$transaction(async (tx) => {
+          // Tenta inserir; em conflito incrementa — PostgreSQL executa como operação única
           const control = await tx.sequenceControl.upsert({
             where: {
               organizationId_documentCategory_documentType_sector_year: {
@@ -117,7 +127,7 @@ export const protocolController = {
             },
           })
           return control
-        })
+        }, { isolationLevel: 'Serializable' })
         sequenceNumber = result.currentNumber
       }
 
@@ -152,18 +162,17 @@ export const protocolController = {
       return reply.code(201).send(doc)
     } catch (err: unknown) {
       if (err instanceof z.ZodError) return reply.code(400).send({ error: 'Validation Error', issues: err.issues })
-      return reply.code(500).send({ error: 'Generate Failed', message: (err as Error).message })
+      const message = err instanceof Error ? err.message : 'Erro interno'
+      return reply.code(500).send({ error: 'Generate Failed', message })
     }
   },
 
   async list(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { organizationId, isSuperAdmin } = (request as unknown as RequestUser).user
+      const { organizationId, id: userId, isSuperAdmin, permissions } = (request as unknown as RequestUser).user
       const query = listQuerySchema.parse(request.query)
 
-      const { id: userId } = (request as unknown as RequestUser).user
-      const hasAdmin = (request as unknown as { user: { permissions?: string[] } })
-        .user.permissions?.includes('protocols:admin') || isSuperAdmin
+      const hasAdmin = permissions?.includes('protocols:admin') || isSuperAdmin
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const where: any = { organizationId }
@@ -173,8 +182,21 @@ export const protocolController = {
       if (query.year)             where.year             = query.year
       if (query.sector)           where.sector           = query.sector
 
-      // Non-admins only see their own documents
-      if (!hasAdmin) where.creatorId = userId
+      if (!hasAdmin) {
+        // Regra de "caixa compartilhada do setor": usuários não-admin veem todos
+        // os documentos do próprio setor (departamento), não apenas os que criaram.
+        // Se o usuário não pertence a nenhum departamento, vê apenas os próprios.
+        const userRecord = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { department: { select: { code: true } } },
+        })
+        const deptCode = userRecord?.department?.code
+        if (deptCode) {
+          where.sector = deptCode.toUpperCase()
+        } else {
+          where.creatorId = userId
+        }
+      }
 
       // Full-text search on formattedNumber and subject
       if (query.search) {
@@ -201,7 +223,8 @@ export const protocolController = {
       })
     } catch (err: unknown) {
       if (err instanceof z.ZodError) return reply.code(400).send({ error: 'Validation Error', issues: err.issues })
-      return reply.code(500).send({ error: 'List Failed', message: (err as Error).message })
+      const message = err instanceof Error ? err.message : 'Erro interno'
+      return reply.code(500).send({ error: 'List Failed', message })
     }
   },
 

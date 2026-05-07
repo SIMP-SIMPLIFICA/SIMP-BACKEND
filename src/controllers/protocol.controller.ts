@@ -244,9 +244,9 @@ export const protocolController = {
       const hasAdmin = (request as unknown as { user: { permissions?: string[] } })
         .user.permissions?.includes('protocols:admin') || isSuperAdmin
       const isCreator = existing.creatorId === (request as unknown as RequestUser).user.id
-      // Admins can change any status; creators can only mark their own as EMITIDO
-      if (!hasAdmin && !(isCreator && body.status === 'EMITIDO')) {
-        return reply.code(403).send({ error: 'Forbidden', message: 'protocols:admin required to cancel or change others documents' })
+      // Admin: qualquer mudança. Criador: pode EMITIR ou CANCELAR o próprio. Outros: bloqueado.
+      if (!hasAdmin && !isCreator) {
+        return reply.code(403).send({ error: 'Forbidden', message: 'Apenas o criador ou um administrador pode alterar o status deste documento.' })
       }
 
       const updated = await prisma.officialDocument.update({

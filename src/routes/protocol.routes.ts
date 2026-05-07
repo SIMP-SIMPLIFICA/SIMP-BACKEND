@@ -20,19 +20,17 @@ export async function protocolRoutes(app: FastifyInstance) {
     protocolController.list,
   )
 
-  // Atualizar status (EMITIDO / CANCELADO)
-  // Criador pode marcar o próprio como EMITIDO; apenas admin pode cancelar.
-  // A lógica fina fica no controller — aqui abrimos para quem tem write.
+  // Atualizar status — lógica fina (admin vs. criador) fica no controller
   app.patch(
     '/:id/status',
-    { preHandler: [requireAnyPermission(['protocols:write', 'protocols:admin'])] },
+    { preHandler: [requireAnyPermission(['protocols:read', 'protocols:write', 'protocols:admin'])] },
     protocolController.updateStatus,
   )
 
-  // Excluir documento — permitido para criador (apenas RESERVADO) ou admin
+  // Excluir documento — lógica fina (admin vs. criador, apenas RESERVADO) fica no controller
   app.delete(
     '/:id',
-    { preHandler: [requireAnyPermission(['protocols:write', 'protocols:admin'])] },
+    { preHandler: [requireAnyPermission(['protocols:read', 'protocols:write', 'protocols:admin'])] },
     protocolController.delete,
   )
 

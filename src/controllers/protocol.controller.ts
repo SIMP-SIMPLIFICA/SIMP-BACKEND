@@ -188,9 +188,9 @@ export const protocolController = {
         // Se o usuário não pertence a nenhum departamento, vê apenas os próprios.
         const userRecord = await prisma.user.findUnique({
           where: { id: userId },
-          select: { department: { select: { code: true } } },
+          select: { departments: { take: 1, select: { code: true } } },
         })
-        const deptCode = userRecord?.department?.code
+        const deptCode = userRecord?.departments[0]?.code
         if (deptCode) {
           where.sector = deptCode.toUpperCase()
         } else {
@@ -262,6 +262,34 @@ export const protocolController = {
     } catch (err: unknown) {
       if (err instanceof z.ZodError) return reply.code(400).send({ error: 'Validation Error', issues: err.issues })
       return reply.code(500).send({ error: 'Update Failed', message: (err as Error).message })
+    }
+  },
+
+  async delete(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { organizationId, isSuperAdmin } = (request as unknown as RequestUser).user
+      const userId = (request as unknown as RequestUser).user.id
+      const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+
+      const existing = await prisma.officialDocument.findFirst({ where: { id, organizationId } })
+      if (!existing) return reply.code(404).send({ error: 'Not Found' })
+
+      const hasAdmin = (request as unknown as { user: { permissions?: string[] } }).user.permissions?.includes('protocols:admin') || isSuperAdmin
+      const isCreator = existing.creatorId === userId
+
+      if (!hasAdmin && !isCreator) {
+        return reply.code(403).send({ error: 'Forbidden', message: 'Apenas o criador ou um administrador pode excluir este documento.' })
+      }
+
+      if (existing.status !== OfficialDocumentStatus.RESERVADO) {
+        return reply.code(422).send({ error: 'Unprocessable', message: 'Apenas documentos com status RESERVADO podem ser excluídos.' })
+      }
+
+      await prisma.officialDocument.delete({ where: { id } })
+      return reply.code(204).send()
+    } catch (err: unknown) {
+      if (err instanceof z.ZodError) return reply.code(400).send({ error: 'Validation Error', issues: err.issues })
+      return reply.code(500).send({ error: 'Delete Failed', message: (err as Error).message })
     }
   },
 

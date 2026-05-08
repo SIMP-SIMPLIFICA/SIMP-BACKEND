@@ -234,10 +234,6 @@ export const protocolController = {
       const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
       const body = updateStatusSchema.parse(request.body)
 
-      if (body.status === 'CANCELADO' && !body.cancelReason?.trim()) {
-        return reply.code(400).send({ error: 'cancelReason is required when cancelling a document' })
-      }
-
       const existing = await prisma.officialDocument.findFirst({ where: { id, organizationId } })
       if (!existing) return reply.code(404).send({ error: 'Not Found' })
 

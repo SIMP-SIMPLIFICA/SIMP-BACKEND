@@ -112,8 +112,8 @@ model User {
   calendarEvents     CalendarEvent[]
   notes              Note[]
 
-  department   Department? @relation(fields: [departmentId], references: [id])
-  departmentId String?
+  departments        Department[] @relation("DepartmentMembers")
+  managedDepartments Department[] @relation("DepartmentManager")
 
   // --- RELAÇÕES FINANCEIRAS ---
   createdFinanceEntries FinanceEntry[]      @relation("FinanceEntryCreator")
@@ -261,7 +261,12 @@ model Department {
   organizationId String?       @map("organization_id")
   organization   Organization? @relation(fields: [organizationId], references: [id])
 
-  users User[]
+  managerId String? @map("manager_id")
+  manager   User?   @relation("DepartmentManager", fields: [managerId], references: [id])
+
+  members           User[]             @relation("DepartmentMembers")
+  workspaces        Workspace[]
+  officialDocuments OfficialDocument[]
 
   @@unique([organizationId, code])
   @@map("departments")
@@ -299,6 +304,9 @@ model Workspace {
 
   organizationId String?       @map("organization_id")
   organization   Organization? @relation(fields: [organizationId], references: [id])
+
+  departmentId String?     @map("department_id")
+  department   Department? @relation(fields: [departmentId], references: [id])
 
   members WorkspaceMember[]
   tasks   Task[]
@@ -882,12 +890,13 @@ model SequenceControl {
   documentCategory OfficialDocumentCategory @map("document_category")
   documentType     String   @map("document_type")
   sector           String
+  departmentId     String?  @map("department_id")
   year             Int
   currentNumber    Int      @default(0) @map("current_number")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  @@unique([organizationId, documentCategory, documentType, sector, year])
+  @@unique([organizationId, sector, documentType, year])
   @@map("sequence_controls")
 }
 
@@ -908,6 +917,7 @@ model OfficialDocument {
   recipient           String?
 
   sector              String
+  departmentId        String?  @map("department_id")
 
   status              OfficialDocumentStatus @default(RESERVADO)
   cancelReason        String?  @db.Text @map("cancel_reason")
@@ -919,6 +929,7 @@ model OfficialDocument {
 
   organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   creator         User            @relation(fields: [creatorId], references: [id])
+  department      Department?     @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   libraryDocument LibraryDocument? @relation(fields: [libraryDocumentId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, documentCategory, year])

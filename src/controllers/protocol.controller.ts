@@ -23,7 +23,8 @@ const generateSchema = z.object({
   numberingType:    z.nativeEnum(OfficialDocumentNumberingType).default('SEQUENTIAL'),
   subject:          z.string().min(1).max(500),
   recipient:        z.string().max(300).optional(),
-  sector:           z.string().min(1).max(100),
+  // COMUNICACAO: departmentId obrigatório. NORMATIVO: omitir (salvo como null).
+  departmentId:     z.string().uuid().optional(),
 })
 
 const updateStatusSchema = z.object({
@@ -41,6 +42,7 @@ const listQuerySchema = z.object({
   sector:           z.string().optional(),
   status:           z.nativeEnum(OfficialDocumentStatus).optional(),
   year:             z.coerce.number().int().optional(),
+  month:            z.coerce.number().int().min(1).max(12).optional(),
 })
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -63,16 +65,13 @@ function buildFormattedNumber(
   const type = documentType.toUpperCase()
   if (sequenceNumber !== null) {
     const num = formatNumber(sequenceNumber)
-    if (category === OfficialDocumentCategory.NORMATIVO || sector === 'CENTRAL') {
+    if (category === OfficialDocumentCategory.NORMATIVO) {
       return `${type} Nº ${num}/${year}`
     }
     return `${type} Nº ${num}/${year} - ${sector.toUpperCase()}`
   }
-  // RANDOM: 6 hex chars = 16M+ possibilidades, sem colisão previsível
+  // RANDOM: 6 hex chars — nunca usado em normativos
   const ref = randomBytes(3).toString('hex').toUpperCase()
-  if (category === OfficialDocumentCategory.NORMATIVO || sector === 'CENTRAL') {
-    return `${type} Nº ${ref}/${year}`
-  }
   return `${type} Nº ${ref}/${year} - ${sector.toUpperCase()}`
 }
 
@@ -86,31 +85,43 @@ export const protocolController = {
       const body = generateSchema.parse(request.body)
       const year = currentYear()
 
-      // Normativos: sector sempre CENTRAL (centralizado por org+ano)
-      // Para COMUNICACAO: usar o código do departamento enviado pelo cliente
-      const effectiveSector =
-        body.documentCategory === OfficialDocumentCategory.NORMATIVO
-          ? 'CENTRAL'
-          : body.sector.trim().toUpperCase()
+      const isNormativo = body.documentCategory === OfficialDocumentCategory.NORMATIVO
 
-      if (body.documentCategory !== OfficialDocumentCategory.NORMATIVO && !effectiveSector) {
-        return reply.code(400).send({ error: 'Validation Error', message: 'sector é obrigatório para documentos de comunicação' })
+      // Normativos: sector = 'CENTRAL', departmentId = null, sempre SEQUENTIAL
+      let effectiveSector: string
+      let resolvedDepartmentId: string | null = null
+
+      if (isNormativo) {
+        effectiveSector = 'CENTRAL'
+        // Forçar SEQUENTIAL independente do que vier no body
+        body.numberingType = OfficialDocumentNumberingType.SEQUENTIAL
+      } else {
+        // COMUNICACAO: departmentId é obrigatório
+        if (!body.departmentId) {
+          return reply.code(400).send({ error: 'Validation Error', message: 'departmentId é obrigatório para documentos de comunicação' })
+        }
+        const dept = await prisma.department.findFirst({
+          where: { id: body.departmentId, organizationId },
+          select: { id: true, code: true },
+        })
+        if (!dept) {
+          return reply.code(404).send({ error: 'Not Found', message: 'Departamento não encontrado nesta organização' })
+        }
+        effectiveSector = dept.code.toUpperCase()
+        resolvedDepartmentId = dept.id
       }
 
       let sequenceNumber: number | null = null
 
       if (body.numberingType === OfficialDocumentNumberingType.SEQUENTIAL) {
-        // Upsert atômico com SELECT FOR UPDATE via Prisma $transaction para serializar
-        // escritas concorrentes no mesmo setor/tipo/ano
+        // Upsert atômico com transação Serializable para evitar race condition
         const result = await prisma.$transaction(async (tx) => {
-          // Tenta inserir; em conflito incrementa — PostgreSQL executa como operação única
-          const control = await tx.sequenceControl.upsert({
+          return tx.sequenceControl.upsert({
             where: {
-              organizationId_documentCategory_documentType_sector_year: {
+              organizationId_sector_documentType_year: {
                 organizationId,
-                documentCategory: body.documentCategory,
-                documentType:     body.documentType,
-                sector:           effectiveSector,
+                sector:       effectiveSector,
+                documentType: body.documentType,
                 year,
               },
             },
@@ -119,6 +130,7 @@ export const protocolController = {
               documentCategory: body.documentCategory,
               documentType:     body.documentType,
               sector:           effectiveSector,
+              departmentId:     resolvedDepartmentId,
               year,
               currentNumber:    1,
             },
@@ -126,7 +138,6 @@ export const protocolController = {
               currentNumber: { increment: 1 },
             },
           })
-          return control
         }, { isolationLevel: 'Serializable' })
         sequenceNumber = result.currentNumber
       }
@@ -152,6 +163,7 @@ export const protocolController = {
           subject:          body.subject,
           recipient:        body.recipient ?? null,
           sector:           effectiveSector,
+          departmentId:     resolvedDepartmentId,
           status:           OfficialDocumentStatus.RESERVADO,
         },
         include: {
@@ -173,6 +185,7 @@ export const protocolController = {
       const query = listQuerySchema.parse(request.query)
 
       const hasAdmin = permissions?.includes('protocols:admin') || isSuperAdmin
+      const effectiveYear = query.year ?? currentYear()
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const where: any = { organizationId }
@@ -182,23 +195,31 @@ export const protocolController = {
       if (query.year)             where.year             = query.year
       if (query.sector)           where.sector           = query.sector
 
+      // Filtro de mês (server-side range em createdAt)
+      if (query.month) {
+        const start = new Date(effectiveYear, query.month - 1, 1)
+        const end   = new Date(effectiveYear, query.month, 1)
+        where.createdAt = { gte: start, lt: end }
+      }
+
       if (!hasAdmin) {
-        // Regra de "caixa compartilhada do setor": usuários não-admin veem todos
-        // os documentos do próprio setor (departamento), não apenas os que criaram.
-        // Se o usuário não pertence a nenhum departamento, vê apenas os próprios.
+        // Caixa compartilhada do setor: vê docs do próprio departamento.
+        // Inclui docs legados (departmentId=null) identificados pelo sector snapshot.
         const userRecord = await prisma.user.findUnique({
           where: { id: userId },
-          select: { departments: { take: 1, select: { code: true } } },
+          select: { departments: { take: 1, select: { id: true, code: true } } },
         })
-        const deptCode = userRecord?.departments[0]?.code
-        if (deptCode) {
-          where.sector = deptCode.toUpperCase()
+        const dept = userRecord?.departments[0]
+        if (dept) {
+          where.OR = [
+            { departmentId: dept.id },
+            { departmentId: null, sector: dept.code.toUpperCase() },
+          ]
         } else {
           where.creatorId = userId
         }
       }
 
-      // Full-text search on formattedNumber and subject
       if (query.search) {
         where.OR = [
           { formattedNumber: { contains: query.search, mode: 'insensitive' } },
@@ -240,9 +261,13 @@ export const protocolController = {
       const hasAdmin = (request as unknown as { user: { permissions?: string[] } })
         .user.permissions?.includes('protocols:admin') || isSuperAdmin
       const isCreator = existing.creatorId === (request as unknown as RequestUser).user.id
-      // Admin: qualquer mudança. Criador: pode EMITIR ou CANCELAR o próprio. Outros: bloqueado.
+
       if (!hasAdmin && !isCreator) {
         return reply.code(403).send({ error: 'Forbidden', message: 'Apenas o criador ou um administrador pode alterar o status deste documento.' })
+      }
+
+      if (body.status === 'CANCELADO' && !body.cancelReason) {
+        return reply.code(400).send({ error: 'Validation Error', message: 'cancelReason é obrigatório ao cancelar um documento.' })
       }
 
       const updated = await prisma.officialDocument.update({

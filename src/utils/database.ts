@@ -171,6 +171,9 @@ export const db = {
             id: true, name: true, slug: true, plan: true, cnpj: true, isActive: true, createdAt: true,
             modules: { select: { module: true, isEnabled: true } },
           }
+        },
+        departments: {
+          select: { id: true, name: true, code: true, managerId: true }
         }
       }
     })

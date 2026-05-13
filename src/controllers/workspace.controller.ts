@@ -11,6 +11,19 @@ export class WorkspaceController {
     const data = createWorkspaceSchema.parse(request.body);
     const userId = request.user.id;
     
+    if (data.departmentId) {
+      const dept = await prisma.department.findFirst({
+        where: { id: data.departmentId, organizationId: request.user.organizationId },
+      });
+      if (!dept) return reply.status(404).send({ message: 'Departamento não encontrado.' });
+
+      const isManager = dept.managerId === userId;
+      const isAdmin   = await userHasPermission(userId, 'system:admin');
+      if (!isManager && !isAdmin) {
+        return reply.status(403).send({ message: 'Apenas o Chefe do setor ou um Administrador pode criar workspaces setoriais.' });
+      }
+    }
+
     const baseSlug = data.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
     const uniqueSuffix = Date.now().toString().slice(-4);
     const slug = `${baseSlug}-${uniqueSuffix}`;
@@ -21,6 +34,7 @@ export class WorkspaceController {
         description: data.description,
         slug,
         organizationId: request.user.organizationId,
+        departmentId: data.departmentId ?? null,
         members: { create: { userId, role: 'OWNER' } }
       }
     });
@@ -30,10 +44,22 @@ export class WorkspaceController {
   async list(request: FastifyRequest, reply: FastifyReply) {
     const userId = request.user.id;
     const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId };
+
+    const userRecord = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { departments: { select: { id: true } } },
+    });
+
+    const deptIds = userRecord?.departments.map(d => d.id) ?? [];
+    const whereOr: object[] = [{ members: { some: { userId } }, ...orgFilter }];
+    if (deptIds.length > 0) {
+      whereOr.push({ departmentId: { in: deptIds }, ...orgFilter });
+    }
+
     const workspaces = await prisma.workspace.findMany({
-      where: { members: { some: { userId } }, ...orgFilter },
+      where: { OR: whereOr },
       include: { _count: { select: { members: true, tasks: true } } },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
     });
     return reply.send(workspaces);
   }

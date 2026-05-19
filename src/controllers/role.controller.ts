@@ -102,6 +102,15 @@ const AVAILABLE_PERMISSIONS = {
       { key: 'departments:write',  description: 'Criar e editar departamentos',           level: 'write' },
       { key: 'departments:delete', description: 'Excluir departamentos',                  level: 'delete' },
     ]
+  },
+  councils: {
+    displayName: 'Conselhos Municipais',
+    permissions: [
+      { key: 'councils:read',  description: 'Visualizar conselhos, reuniões e documentos',                      level: 'read' },
+      { key: 'councils:write', description: 'Criar e editar conselhos, membros, reuniões e fazer upload de atas', level: 'write' },
+      { key: 'councils:admin', description: 'Gerenciar todos os conselhos (excluir, alterar qualquer status)',    level: 'admin' },
+      { key: 'councils:sign',  description: 'Assinar documentos de conselhos via Gov.br',                        level: 'write' },
+    ]
   }
 }
 

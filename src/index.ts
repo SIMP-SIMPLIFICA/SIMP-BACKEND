@@ -12,6 +12,7 @@ import { registerRoutes } from './config/routes.js'
 import { registerPlugins } from './config/plugins.js'
 import { startExpireTasksJob } from './jobs/expire-tasks.job.js'
 import { startClearNotificationsJob } from './jobs/clear-notifications.job.js'
+import { startCleanupGovBrStatesJob } from './jobs/cleanup-govbr-states.job.js'
 import { createEmailNotificationWorker } from './lib/email-queue.js'
 import { createDocumentOcrWorker, documentOcrQueue } from './lib/document-queue.js'
 import { libraryRoutes } from './routes/library.routes.js'
@@ -45,6 +46,7 @@ async function start() {
 
     startExpireTasksJob()
     startClearNotificationsJob()
+    startCleanupGovBrStatesJob()
 
     const emailWorker = createEmailNotificationWorker()
     logger.info('📧 Email notification worker started')

@@ -1,0 +1,283 @@
+import type { FastifyReply, FastifyRequest } from 'fastify'
+import { prisma } from '@/lib/prisma.js'
+import { z } from 'zod'
+import { MeetingStatus } from '@prisma/client'
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface RequestUser {
+  user: {
+    id: string
+    organizationId: string
+    isSuperAdmin: boolean
+    permissions?: string[]
+  }
+}
+
+// ─── Validation ───────────────────────────────────────────────────────────────
+
+const createMeetingSchema = z.object({
+  title:       z.string().min(3).max(300),
+  description: z.string().max(2000).optional(),
+  location:    z.string().max(500).optional(),
+  scheduledAt: z.coerce.date(),
+})
+
+const updateMeetingSchema = createMeetingSchema.partial().extend({
+  endedAt: z.coerce.date().optional(),
+  quorum:  z.number().int().positive().optional(),
+})
+
+const updateStatusSchema = z.object({
+  status: z.nativeEnum(MeetingStatus),
+})
+
+const addAgendaItemSchema = z.object({
+  order:       z.number().int().positive(),
+  title:       z.string().min(1).max(300),
+  description: z.string().max(2000).optional(),
+})
+
+const updateAgendaItemSchema = z.object({
+  order:       z.number().int().positive().optional(),
+  title:       z.string().min(1).max(300).optional(),
+  description: z.string().max(2000).optional(),
+  approved:    z.boolean().nullable().optional(),
+})
+
+const councilParam  = z.object({ councilId: z.string().min(1) })
+const meetingParam  = z.object({ councilId: z.string().min(1), id: z.string().min(1) })
+const agendaParam   = z.object({ councilId: z.string().min(1), id: z.string().min(1), itemId: z.string().min(1) })
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+async function resolveCouncil(councilId: string, organizationId: string) {
+  return prisma.council.findFirst({ where: { id: councilId, organizationId } })
+}
+
+// ─── Controller ───────────────────────────────────────────────────────────────
+
+export const meetingController = {
+
+  // ─── Reuniões ───────────────────────────────────────────────────────────────
+
+  async list(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { organizationId } = (request as unknown as RequestUser).user
+      const { councilId } = councilParam.parse(request.params)
+
+      const council = await resolveCouncil(councilId, organizationId)
+      if (!council) return reply.code(404).send({ error: 'Not Found', message: 'Conselho não encontrado.' })
+
+      const meetings = await prisma.councilMeeting.findMany({
+        where: { councilId, organizationId },
+        orderBy: { scheduledAt: 'desc' },
+        include: {
+          createdBy: { select: { id: true, firstName: true, lastName: true } },
+          _count:    { select: { agendaItems: true, documents: true } },
+        },
+      })
+
+      return reply.send({ data: meetings })
+    } catch (err) {
+      if (err instanceof z.ZodError) return reply.code(400).send({ error: 'Validation Error', issues: err.issues })
+      return reply.code(500).send({ error: 'List Meetings Failed', message: (err as Error).message })
+    }
+  },
+
+  async create(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { organizationId, id: userId } = (request as unknown as RequestUser).user
+      const { councilId } = councilParam.parse(request.params)
+      const body = createMeetingSchema.parse(request.body)
+
+      const council = await resolveCouncil(councilId, organizationId)
+      if (!council) return reply.code(404).send({ error: 'Not Found', message: 'Conselho não encontrado.' })
+
+      const meeting = await prisma.councilMeeting.create({
+        data: {
+          organizationId,
+          councilId,
+          createdById: userId,
+          title:       body.title,
+          description: body.description ?? null,
+          location:    body.location    ?? null,
+          scheduledAt: body.scheduledAt,
+        },
+      })
+
+      return reply.code(201).send(meeting)
+    } catch (err) {
+      if (err instanceof z.ZodError) return reply.code(400).send({ error: 'Validation Error', issues: err.issues })
+      return reply.code(500).send({ error: 'Create Meeting Failed', message: (err as Error).message })
+    }
+  },
+
+  async get(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { organizationId } = (request as unknown as RequestUser).user
+      const { councilId, id } = meetingParam.parse(request.params)
+
+      const council = await resolveCouncil(councilId, organizationId)
+      if (!council) return reply.code(404).send({ error: 'Not Found', message: 'Conselho não encontrado.' })
+
+      const meeting = await prisma.councilMeeting.findFirst({
+        where: { id, councilId, organizationId },
+        include: {
+          createdBy:  { select: { id: true, firstName: true, lastName: true } },
+          agendaItems: { orderBy: { order: 'asc' } },
+          documents:   {
+            include: {
+              uploadedBy:       { select: { id: true, firstName: true, lastName: true } },
+              signatureRequests: { select: { id: true, status: true, signedAt: true, requestedById: true } },
+            },
+          },
+        },
+      })
+
+      if (!meeting) return reply.code(404).send({ error: 'Not Found', message: 'Reunião não encontrada.' })
+
+      return reply.send(meeting)
+    } catch (err) {
+      if (err instanceof z.ZodError) return reply.code(400).send({ error: 'Validation Error', issues: err.issues })
+      return reply.code(500).send({ error: 'Get Meeting Failed', message: (err as Error).message })
+    }
+  },
+
+  async update(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { organizationId } = (request as unknown as RequestUser).user
+      const { councilId, id } = meetingParam.parse(request.params)
+      const body = updateMeetingSchema.parse(request.body)
+
+      const council = await resolveCouncil(councilId, organizationId)
+      if (!council) return reply.code(404).send({ error: 'Not Found', message: 'Conselho não encontrado.' })
+
+      const existing = await prisma.councilMeeting.findFirst({ where: { id, councilId, organizationId } })
+      if (!existing) return reply.code(404).send({ error: 'Not Found', message: 'Reunião não encontrada.' })
+
+      const updated = await prisma.councilMeeting.update({ where: { id }, data: body })
+      return reply.send(updated)
+    } catch (err) {
+      if (err instanceof z.ZodError) return reply.code(400).send({ error: 'Validation Error', issues: err.issues })
+      return reply.code(500).send({ error: 'Update Meeting Failed', message: (err as Error).message })
+    }
+  },
+
+  async remove(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { organizationId } = (request as unknown as RequestUser).user
+      const { councilId, id } = meetingParam.parse(request.params)
+
+      const council = await resolveCouncil(councilId, organizationId)
+      if (!council) return reply.code(404).send({ error: 'Not Found', message: 'Conselho não encontrado.' })
+
+      const existing = await prisma.councilMeeting.findFirst({ where: { id, councilId, organizationId } })
+      if (!existing) return reply.code(404).send({ error: 'Not Found', message: 'Reunião não encontrada.' })
+
+      await prisma.councilMeeting.delete({ where: { id } })
+      return reply.code(204).send()
+    } catch (err) {
+      if (err instanceof z.ZodError) return reply.code(400).send({ error: 'Validation Error', issues: err.issues })
+      return reply.code(500).send({ error: 'Remove Meeting Failed', message: (err as Error).message })
+    }
+  },
+
+  async updateStatus(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { organizationId } = (request as unknown as RequestUser).user
+      const { councilId, id } = meetingParam.parse(request.params)
+      const { status } = updateStatusSchema.parse(request.body)
+
+      const council = await resolveCouncil(councilId, organizationId)
+      if (!council) return reply.code(404).send({ error: 'Not Found', message: 'Conselho não encontrado.' })
+
+      const existing = await prisma.councilMeeting.findFirst({ where: { id, councilId, organizationId } })
+      if (!existing) return reply.code(404).send({ error: 'Not Found', message: 'Reunião não encontrada.' })
+
+      const data: { status: MeetingStatus; endedAt?: Date } = { status }
+      if (status === MeetingStatus.CONCLUIDA && !existing.endedAt) data.endedAt = new Date()
+
+      const updated = await prisma.councilMeeting.update({ where: { id }, data })
+      return reply.send(updated)
+    } catch (err) {
+      if (err instanceof z.ZodError) return reply.code(400).send({ error: 'Validation Error', issues: err.issues })
+      return reply.code(500).send({ error: 'Update Status Failed', message: (err as Error).message })
+    }
+  },
+
+  // ─── Pautas ─────────────────────────────────────────────────────────────────
+
+  async addAgendaItem(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { organizationId } = (request as unknown as RequestUser).user
+      const { councilId, id: meetingId } = meetingParam.parse(request.params)
+      const body = addAgendaItemSchema.parse(request.body)
+
+      const council = await resolveCouncil(councilId, organizationId)
+      if (!council) return reply.code(404).send({ error: 'Not Found', message: 'Conselho não encontrado.' })
+
+      const meeting = await prisma.councilMeeting.findFirst({ where: { id: meetingId, councilId, organizationId } })
+      if (!meeting) return reply.code(404).send({ error: 'Not Found', message: 'Reunião não encontrada.' })
+
+      const item = await prisma.meetingAgendaItem.create({
+        data: {
+          meetingId,
+          order:       body.order,
+          title:       body.title,
+          description: body.description ?? null,
+        },
+      })
+
+      return reply.code(201).send(item)
+    } catch (err) {
+      if (err instanceof z.ZodError) return reply.code(400).send({ error: 'Validation Error', issues: err.issues })
+      return reply.code(500).send({ error: 'Add Agenda Item Failed', message: (err as Error).message })
+    }
+  },
+
+  async updateAgendaItem(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { organizationId } = (request as unknown as RequestUser).user
+      const { councilId, id: meetingId, itemId } = agendaParam.parse(request.params)
+      const body = updateAgendaItemSchema.parse(request.body)
+
+      const council = await resolveCouncil(councilId, organizationId)
+      if (!council) return reply.code(404).send({ error: 'Not Found', message: 'Conselho não encontrado.' })
+
+      const meeting = await prisma.councilMeeting.findFirst({ where: { id: meetingId, councilId, organizationId } })
+      if (!meeting) return reply.code(404).send({ error: 'Not Found', message: 'Reunião não encontrada.' })
+
+      const item = await prisma.meetingAgendaItem.findFirst({ where: { id: itemId, meetingId } })
+      if (!item) return reply.code(404).send({ error: 'Not Found', message: 'Item de pauta não encontrado.' })
+
+      const updated = await prisma.meetingAgendaItem.update({ where: { id: itemId }, data: body })
+      return reply.send(updated)
+    } catch (err) {
+      if (err instanceof z.ZodError) return reply.code(400).send({ error: 'Validation Error', issues: err.issues })
+      return reply.code(500).send({ error: 'Update Agenda Item Failed', message: (err as Error).message })
+    }
+  },
+
+  async removeAgendaItem(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { organizationId } = (request as unknown as RequestUser).user
+      const { councilId, id: meetingId, itemId } = agendaParam.parse(request.params)
+
+      const council = await resolveCouncil(councilId, organizationId)
+      if (!council) return reply.code(404).send({ error: 'Not Found', message: 'Conselho não encontrado.' })
+
+      const meeting = await prisma.councilMeeting.findFirst({ where: { id: meetingId, councilId, organizationId } })
+      if (!meeting) return reply.code(404).send({ error: 'Not Found', message: 'Reunião não encontrada.' })
+
+      const item = await prisma.meetingAgendaItem.findFirst({ where: { id: itemId, meetingId } })
+      if (!item) return reply.code(404).send({ error: 'Not Found', message: 'Item de pauta não encontrado.' })
+
+      await prisma.meetingAgendaItem.delete({ where: { id: itemId } })
+      return reply.code(204).send()
+    } catch (err) {
+      if (err instanceof z.ZodError) return reply.code(400).send({ error: 'Validation Error', issues: err.issues })
+      return reply.code(500).send({ error: 'Remove Agenda Item Failed', message: (err as Error).message })
+    }
+  },
+}

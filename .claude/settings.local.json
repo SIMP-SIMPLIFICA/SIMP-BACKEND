@@ -24,7 +24,20 @@
       "Bash(npm run:*)",
       "Bash(./node_modules/.bin/eslint src:*)",
       "Bash(npm audit:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(npx eslint:*)",
+      "Bash(npm list:*)",
+      "Bash(npm show:*)",
+      "Bash(npx --prefix \"D:/PROJECTS/SIMP-FRONTEND\" tsc -b \"D:/PROJECTS/SIMP-FRONTEND/tsconfig.json\")",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git -C \"D:/PROJECTS/SIMP-FRONTEND\" add src/lib/api/protocols.ts src/hooks/useProtocols.ts src/pages/protocolos/OfficialProtocolsPage.tsx)",
+      "Bash(git -C D:/PROJECTS/SIMP-FRONTEND commit -m ' *)",
+      "Bash(git -C \"D:/PROJECTS/SIMP-FRONTEND\" add src/pages/protocolos/OfficialProtocolsPage.tsx src/pages/protocolos/GenerateProtocolModal.tsx)",
+      "Read(//d/PROJECTS/**)",
+      "Bash(dir D:/PROJECTS/)",
+      "Bash(git commit *)",
+      "Bash(powershell *)"
     ]
   }
 }

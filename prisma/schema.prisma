@@ -45,6 +45,11 @@ model Organization {
   concedentes            Concedente[]
   officialDocuments      OfficialDocument[]
   sequenceControls       SequenceControl[]
+  councils               Council[]
+  councilMemberships     CouncilMembership[]
+  councilMeetings        CouncilMeeting[]
+  councilDocuments       CouncilDocument[]
+  signatureRequests      SignatureRequest[]
 
   @@map("organizations")
 }
@@ -125,6 +130,11 @@ model User {
 
   uploadedLibraryDocs      LibraryDocument[]        @relation("LibraryDocumentUploader")
   officialDocuments        OfficialDocument[]
+
+  councilMemberships       CouncilMembership[]      @relation("CouncilMemberships")
+  councilMeetingsCreated   CouncilMeeting[]         @relation("CouncilMeetingCreator")
+  uploadedCouncilDocs      CouncilDocument[]        @relation("CouncilDocumentUploader")
+  signatureRequests        SignatureRequest[]        @relation("SignatureRequester")
 
   @@map("users")
 }
@@ -935,4 +945,178 @@ model OfficialDocument {
   @@index([organizationId, documentCategory, year])
   @@index([organizationId, status])
   @@map("official_documents")
+}
+
+// ─── Conselhos Municipais ──────────────────────────────────────────────────────
+
+enum CouncilMemberRole {
+  PRESIDENTE
+  VICE_PRESIDENTE
+  SECRETARIO
+  MEMBRO_TITULAR
+  MEMBRO_SUPLENTE
+}
+
+enum MeetingStatus {
+  AGENDADA
+  EM_ANDAMENTO
+  CONCLUIDA
+  CANCELADA
+}
+
+enum CouncilDocumentType {
+  ATA
+  RESOLUCAO
+  CONVOCACAO
+  PARECER
+  OUTROS
+}
+
+enum SignatureStatus {
+  PENDENTE
+  ASSINADO
+  FALHOU
+  EXPIRADO
+}
+
+model Council {
+  id             String   @id @default(nanoid())
+  organizationId String   @map("organization_id")
+  name           String
+  acronym        String?
+  description    String?  @db.Text
+  legalBasis     String?  @map("legal_basis")
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  memberships  CouncilMembership[]
+  meetings     CouncilMeeting[]
+
+  @@unique([organizationId, acronym])
+  @@index([organizationId, isActive])
+  @@map("councils")
+}
+
+model CouncilMembership {
+  id             String            @id @default(nanoid())
+  organizationId String            @map("organization_id")
+  councilId      String            @map("council_id")
+  userId         String            @map("user_id")
+  role           CouncilMemberRole @default(MEMBRO_TITULAR)
+  startDate      DateTime?         @map("start_date")
+  endDate        DateTime?         @map("end_date")
+  isActive       Boolean           @default(true) @map("is_active")
+  createdAt      DateTime          @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  council      Council      @relation(fields: [councilId], references: [id], onDelete: Cascade)
+  user         User         @relation("CouncilMemberships", fields: [userId], references: [id])
+
+  @@unique([councilId, userId, role])
+  @@index([organizationId])
+  @@index([councilId, isActive])
+  @@map("council_memberships")
+}
+
+model CouncilMeeting {
+  id             String        @id @default(nanoid())
+  organizationId String        @map("organization_id")
+  councilId      String        @map("council_id")
+  title          String
+  description    String?       @db.Text
+  location       String?
+  scheduledAt    DateTime      @map("scheduled_at")
+  endedAt        DateTime?     @map("ended_at")
+  status         MeetingStatus @default(AGENDADA)
+  quorum         Int?
+  createdById    String        @map("created_by_id")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  council      Council             @relation(fields: [councilId], references: [id], onDelete: Cascade)
+  createdBy    User                @relation("CouncilMeetingCreator", fields: [createdById], references: [id])
+  agendaItems  MeetingAgendaItem[]
+  documents    CouncilDocument[]
+
+  @@index([organizationId, scheduledAt])
+  @@index([councilId, status])
+  @@map("council_meetings")
+}
+
+model MeetingAgendaItem {
+  id          String   @id @default(nanoid())
+  meetingId   String   @map("meeting_id")
+  order       Int
+  title       String
+  description String?  @db.Text
+  approved    Boolean?
+
+  meeting CouncilMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@index([meetingId])
+  @@map("meeting_agenda_items")
+}
+
+model CouncilDocument {
+  id             String              @id @default(nanoid())
+  organizationId String              @map("organization_id")
+  meetingId      String              @map("meeting_id")
+  documentType   CouncilDocumentType @default(ATA) @map("document_type")
+  title          String
+  fileKey        String              @map("file_key")
+  fileName       String              @map("file_name")
+  fileSize       Int                 @map("file_size")
+  mimeType       String              @default("application/pdf") @map("mime_type")
+  sha256Hash     String?             @map("sha256_hash")
+  uploadedById   String              @map("uploaded_by_id")
+  createdAt      DateTime            @default(now()) @map("created_at")
+  updatedAt      DateTime            @updatedAt @map("updated_at")
+
+  organization      Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  meeting           CouncilMeeting    @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  uploadedBy        User              @relation("CouncilDocumentUploader", fields: [uploadedById], references: [id])
+  signatureRequests SignatureRequest[]
+
+  @@index([organizationId])
+  @@index([meetingId])
+  @@map("council_documents")
+}
+
+model SignatureRequest {
+  id             String          @id @default(nanoid())
+  organizationId String          @map("organization_id")
+  documentId     String          @map("document_id")
+  requestedById  String          @map("requested_by_id")
+  status         SignatureStatus @default(PENDENTE)
+  pkcs7Data      String?         @db.Text @map("pkcs7_data")
+  signedAt       DateTime?       @map("signed_at")
+  errorMsg       String?         @map("error_msg")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  document     CouncilDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  requestedBy  User            @relation("SignatureRequester", fields: [requestedById], references: [id])
+
+  @@index([organizationId, status])
+  @@index([documentId])
+  @@map("signature_requests")
+}
+
+model GovBrOAuthState {
+  id             String   @id @default(nanoid())
+  state          String   @unique
+  nonce          String
+  documentId     String   @map("document_id")
+  userId         String   @map("user_id")
+  organizationId String   @map("organization_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  expiresAt      DateTime @map("expires_at")
+
+  @@index([state])
+  @@index([expiresAt])
+  @@map("govbr_oauth_states")
 }

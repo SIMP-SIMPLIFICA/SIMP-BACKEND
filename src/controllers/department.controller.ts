@@ -42,11 +42,12 @@ export const departmentController = {
 
   async list(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { organizationId } = request.user as { organizationId: string }
+      const { organizationId, isSuperAdmin } = request.user as { organizationId: string | null, isSuperAdmin: boolean }
       const query = listSchema.parse(request.query)
+      const orgFilter = isSuperAdmin ? {} : { organizationId }
 
       const where = {
-        organizationId,
+        ...orgFilter,
         ...(query.search ? {
           OR: [
             { name: { contains: query.search, mode: 'insensitive' as const } },

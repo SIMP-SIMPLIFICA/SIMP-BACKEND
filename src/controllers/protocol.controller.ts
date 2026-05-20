@@ -187,8 +187,9 @@ export const protocolController = {
       const hasAdmin = permissions?.includes('protocols:admin') || isSuperAdmin
       const effectiveYear = query.year ?? currentYear()
 
+      const orgFilter = isSuperAdmin ? {} : { organizationId }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const where: any = { organizationId }
+      const where: any = { ...orgFilter }
       if (query.documentCategory) where.documentCategory = query.documentCategory
       if (query.documentType)     where.documentType     = query.documentType
       if (query.status)           where.status           = query.status
@@ -255,7 +256,8 @@ export const protocolController = {
       const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
       const body = updateStatusSchema.parse(request.body)
 
-      const existing = await prisma.officialDocument.findFirst({ where: { id, organizationId } })
+      const orgFilter = isSuperAdmin ? {} : { organizationId }
+      const existing = await prisma.officialDocument.findFirst({ where: { id, ...orgFilter } })
       if (!existing) return reply.code(404).send({ error: 'Not Found' })
 
       const hasAdmin = (request as unknown as { user: { permissions?: string[] } })
@@ -292,7 +294,8 @@ export const protocolController = {
       const userId = (request as unknown as RequestUser).user.id
       const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
 
-      const existing = await prisma.officialDocument.findFirst({ where: { id, organizationId } })
+      const orgFilter = isSuperAdmin ? {} : { organizationId }
+      const existing = await prisma.officialDocument.findFirst({ where: { id, ...orgFilter } })
       if (!existing) return reply.code(404).send({ error: 'Not Found' })
 
       const hasAdmin = (request as unknown as { user: { permissions?: string[] } }).user.permissions?.includes('protocols:admin') || isSuperAdmin
@@ -316,11 +319,12 @@ export const protocolController = {
 
   async getSequences(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { organizationId } = (request as unknown as RequestUser).user
+      const { organizationId, isSuperAdmin } = (request as unknown as RequestUser).user
+      const orgFilter = isSuperAdmin ? {} : { organizationId }
       const year = z.object({ year: z.coerce.number().int().optional() }).parse(request.query).year ?? currentYear()
 
       const sequences = await prisma.sequenceControl.findMany({
-        where: { organizationId, year },
+        where: { ...orgFilter, year },
         orderBy: [{ documentCategory: 'asc' }, { documentType: 'asc' }, { sector: 'asc' }],
       })
 

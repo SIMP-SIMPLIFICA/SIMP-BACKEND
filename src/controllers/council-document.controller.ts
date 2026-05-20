@@ -30,12 +30,12 @@ export function hexToBase64(hex: string): string {
   return Buffer.from(hex, 'hex').toString('base64')
 }
 
-async function resolveCouncil(councilId: string, organizationId: string) {
-  return prisma.council.findFirst({ where: { id: councilId, organizationId } })
+async function resolveCouncil(councilId: string, orgFilter: Record<string, unknown>) {
+  return prisma.council.findFirst({ where: { id: councilId, ...orgFilter } })
 }
 
-async function resolveMeeting(meetingId: string, councilId: string, organizationId: string) {
-  return prisma.councilMeeting.findFirst({ where: { id: meetingId, councilId, organizationId } })
+async function resolveMeeting(meetingId: string, councilId: string, orgFilter: Record<string, unknown>) {
+  return prisma.councilMeeting.findFirst({ where: { id: meetingId, councilId, ...orgFilter } })
 }
 
 // ─── Validation ───────────────────────────────────────────────────────────────
@@ -64,17 +64,18 @@ export const documentController = {
 
   async list(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { organizationId } = (request as unknown as RequestUser).user
+      const { organizationId, isSuperAdmin } = (request as unknown as RequestUser).user
       const { councilId, meetingId } = docParam.parse(request.params)
+      const orgFilter = isSuperAdmin ? {} : { organizationId }
 
-      const council = await resolveCouncil(councilId, organizationId)
+      const council = await resolveCouncil(councilId, orgFilter)
       if (!council) return reply.code(404).send({ error: 'Not Found', message: 'Conselho não encontrado.' })
 
-      const meeting = await resolveMeeting(meetingId, councilId, organizationId)
+      const meeting = await resolveMeeting(meetingId, councilId, orgFilter)
       if (!meeting) return reply.code(404).send({ error: 'Not Found', message: 'Reunião não encontrada.' })
 
       const documents = await prisma.councilDocument.findMany({
-        where: { meetingId, organizationId },
+        where: { meetingId, ...orgFilter },
         orderBy: { createdAt: 'desc' },
         include: {
           uploadedBy:       { select: { id: true, firstName: true, lastName: true } },
@@ -91,13 +92,14 @@ export const documentController = {
 
   async upload(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { organizationId, id: userId } = (request as unknown as RequestUser).user
+      const { organizationId, id: userId, isSuperAdmin } = (request as unknown as RequestUser).user
       const { councilId, meetingId } = docParam.parse(request.params)
+      const orgFilter = isSuperAdmin ? {} : { organizationId }
 
-      const council = await resolveCouncil(councilId, organizationId)
+      const council = await resolveCouncil(councilId, orgFilter)
       if (!council) return reply.code(404).send({ error: 'Not Found', message: 'Conselho não encontrado.' })
 
-      const meeting = await resolveMeeting(meetingId, councilId, organizationId)
+      const meeting = await resolveMeeting(meetingId, councilId, orgFilter)
       if (!meeting) return reply.code(404).send({ error: 'Not Found', message: 'Reunião não encontrada.' })
 
       // Parse multipart
@@ -178,17 +180,18 @@ export const documentController = {
 
   async download(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { organizationId } = (request as unknown as RequestUser).user
+      const { organizationId, isSuperAdmin } = (request as unknown as RequestUser).user
       const { councilId, meetingId, docId } = docDetailParam.parse(request.params)
+      const orgFilter = isSuperAdmin ? {} : { organizationId }
 
-      const council = await resolveCouncil(councilId, organizationId)
+      const council = await resolveCouncil(councilId, orgFilter)
       if (!council) return reply.code(404).send({ error: 'Not Found', message: 'Conselho não encontrado.' })
 
-      const meeting = await resolveMeeting(meetingId, councilId, organizationId)
+      const meeting = await resolveMeeting(meetingId, councilId, orgFilter)
       if (!meeting) return reply.code(404).send({ error: 'Not Found', message: 'Reunião não encontrada.' })
 
       const document = await prisma.councilDocument.findFirst({
-        where: { id: docId, meetingId, organizationId },
+        where: { id: docId, meetingId, ...orgFilter },
       })
       if (!document) return reply.code(404).send({ error: 'Not Found', message: 'Documento não encontrado.' })
 
@@ -207,17 +210,18 @@ export const documentController = {
 
   async remove(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { organizationId } = (request as unknown as RequestUser).user
+      const { organizationId, isSuperAdmin } = (request as unknown as RequestUser).user
       const { councilId, meetingId, docId } = docDetailParam.parse(request.params)
+      const orgFilter = isSuperAdmin ? {} : { organizationId }
 
-      const council = await resolveCouncil(councilId, organizationId)
+      const council = await resolveCouncil(councilId, orgFilter)
       if (!council) return reply.code(404).send({ error: 'Not Found', message: 'Conselho não encontrado.' })
 
-      const meeting = await resolveMeeting(meetingId, councilId, organizationId)
+      const meeting = await resolveMeeting(meetingId, councilId, orgFilter)
       if (!meeting) return reply.code(404).send({ error: 'Not Found', message: 'Reunião não encontrada.' })
 
       const document = await prisma.councilDocument.findFirst({
-        where: { id: docId, meetingId, organizationId },
+        where: { id: docId, meetingId, ...orgFilter },
       })
       if (!document) return reply.code(404).send({ error: 'Not Found', message: 'Documento não encontrado.' })
 

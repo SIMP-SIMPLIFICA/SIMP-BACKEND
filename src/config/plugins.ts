@@ -131,7 +131,7 @@ export async function registerPlugins(server: AppServer) {
 
   // --- ARQUIVOS ---
   await server.register(multipart, {
-    limits: { fileSize: 10 * 1024 * 1024 }
+    limits: { fileSize: 50 * 1024 * 1024 }
   })
 
   if (config.features.swagger && config.isDevelopment) {

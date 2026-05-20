@@ -51,8 +51,8 @@ const agendaParam   = z.object({ councilId: z.string().min(1), id: z.string().mi
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async function resolveCouncil(councilId: string, organizationId: string) {
-  return prisma.council.findFirst({ where: { id: councilId, organizationId } })
+async function resolveCouncil(councilId: string, orgFilter: Record<string, unknown>) {
+  return prisma.council.findFirst({ where: { id: councilId, ...orgFilter } })
 }
 
 // ─── Controller ───────────────────────────────────────────────────────────────
@@ -63,14 +63,15 @@ export const meetingController = {
 
   async list(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { organizationId } = (request as unknown as RequestUser).user
+      const { organizationId, isSuperAdmin } = (request as unknown as RequestUser).user
       const { councilId } = councilParam.parse(request.params)
+      const orgFilter = isSuperAdmin ? {} : { organizationId }
 
-      const council = await resolveCouncil(councilId, organizationId)
+      const council = await resolveCouncil(councilId, orgFilter)
       if (!council) return reply.code(404).send({ error: 'Not Found', message: 'Conselho não encontrado.' })
 
       const meetings = await prisma.councilMeeting.findMany({
-        where: { councilId, organizationId },
+        where: { councilId, ...orgFilter },
         orderBy: { scheduledAt: 'desc' },
         include: {
           createdBy: { select: { id: true, firstName: true, lastName: true } },
@@ -87,11 +88,12 @@ export const meetingController = {
 
   async create(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { organizationId, id: userId } = (request as unknown as RequestUser).user
+      const { organizationId, id: userId, isSuperAdmin } = (request as unknown as RequestUser).user
       const { councilId } = councilParam.parse(request.params)
       const body = createMeetingSchema.parse(request.body)
+      const orgFilter = isSuperAdmin ? {} : { organizationId }
 
-      const council = await resolveCouncil(councilId, organizationId)
+      const council = await resolveCouncil(councilId, orgFilter)
       if (!council) return reply.code(404).send({ error: 'Not Found', message: 'Conselho não encontrado.' })
 
       const meeting = await prisma.councilMeeting.create({
@@ -115,14 +117,15 @@ export const meetingController = {
 
   async get(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { organizationId } = (request as unknown as RequestUser).user
+      const { organizationId, isSuperAdmin } = (request as unknown as RequestUser).user
       const { councilId, id } = meetingParam.parse(request.params)
+      const orgFilter = isSuperAdmin ? {} : { organizationId }
 
-      const council = await resolveCouncil(councilId, organizationId)
+      const council = await resolveCouncil(councilId, orgFilter)
       if (!council) return reply.code(404).send({ error: 'Not Found', message: 'Conselho não encontrado.' })
 
       const meeting = await prisma.councilMeeting.findFirst({
-        where: { id, councilId, organizationId },
+        where: { id, councilId, ...orgFilter },
         include: {
           createdBy:  { select: { id: true, firstName: true, lastName: true } },
           agendaItems: { orderBy: { order: 'asc' } },
@@ -146,14 +149,15 @@ export const meetingController = {
 
   async update(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { organizationId } = (request as unknown as RequestUser).user
+      const { organizationId, isSuperAdmin } = (request as unknown as RequestUser).user
       const { councilId, id } = meetingParam.parse(request.params)
       const body = updateMeetingSchema.parse(request.body)
+      const orgFilter = isSuperAdmin ? {} : { organizationId }
 
-      const council = await resolveCouncil(councilId, organizationId)
+      const council = await resolveCouncil(councilId, orgFilter)
       if (!council) return reply.code(404).send({ error: 'Not Found', message: 'Conselho não encontrado.' })
 
-      const existing = await prisma.councilMeeting.findFirst({ where: { id, councilId, organizationId } })
+      const existing = await prisma.councilMeeting.findFirst({ where: { id, councilId, ...orgFilter } })
       if (!existing) return reply.code(404).send({ error: 'Not Found', message: 'Reunião não encontrada.' })
 
       const updated = await prisma.councilMeeting.update({ where: { id }, data: body })
@@ -166,13 +170,14 @@ export const meetingController = {
 
   async remove(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { organizationId } = (request as unknown as RequestUser).user
+      const { organizationId, isSuperAdmin } = (request as unknown as RequestUser).user
       const { councilId, id } = meetingParam.parse(request.params)
+      const orgFilter = isSuperAdmin ? {} : { organizationId }
 
-      const council = await resolveCouncil(councilId, organizationId)
+      const council = await resolveCouncil(councilId, orgFilter)
       if (!council) return reply.code(404).send({ error: 'Not Found', message: 'Conselho não encontrado.' })
 
-      const existing = await prisma.councilMeeting.findFirst({ where: { id, councilId, organizationId } })
+      const existing = await prisma.councilMeeting.findFirst({ where: { id, councilId, ...orgFilter } })
       if (!existing) return reply.code(404).send({ error: 'Not Found', message: 'Reunião não encontrada.' })
 
       await prisma.councilMeeting.delete({ where: { id } })
@@ -185,14 +190,15 @@ export const meetingController = {
 
   async updateStatus(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { organizationId } = (request as unknown as RequestUser).user
+      const { organizationId, isSuperAdmin } = (request as unknown as RequestUser).user
       const { councilId, id } = meetingParam.parse(request.params)
       const { status } = updateStatusSchema.parse(request.body)
+      const orgFilter = isSuperAdmin ? {} : { organizationId }
 
-      const council = await resolveCouncil(councilId, organizationId)
+      const council = await resolveCouncil(councilId, orgFilter)
       if (!council) return reply.code(404).send({ error: 'Not Found', message: 'Conselho não encontrado.' })
 
-      const existing = await prisma.councilMeeting.findFirst({ where: { id, councilId, organizationId } })
+      const existing = await prisma.councilMeeting.findFirst({ where: { id, councilId, ...orgFilter } })
       if (!existing) return reply.code(404).send({ error: 'Not Found', message: 'Reunião não encontrada.' })
 
       const data: { status: MeetingStatus; endedAt?: Date } = { status }
@@ -210,14 +216,15 @@ export const meetingController = {
 
   async addAgendaItem(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { organizationId } = (request as unknown as RequestUser).user
+      const { organizationId, isSuperAdmin } = (request as unknown as RequestUser).user
       const { councilId, id: meetingId } = meetingParam.parse(request.params)
       const body = addAgendaItemSchema.parse(request.body)
+      const orgFilter = isSuperAdmin ? {} : { organizationId }
 
-      const council = await resolveCouncil(councilId, organizationId)
+      const council = await resolveCouncil(councilId, orgFilter)
       if (!council) return reply.code(404).send({ error: 'Not Found', message: 'Conselho não encontrado.' })
 
-      const meeting = await prisma.councilMeeting.findFirst({ where: { id: meetingId, councilId, organizationId } })
+      const meeting = await prisma.councilMeeting.findFirst({ where: { id: meetingId, councilId, ...orgFilter } })
       if (!meeting) return reply.code(404).send({ error: 'Not Found', message: 'Reunião não encontrada.' })
 
       const item = await prisma.meetingAgendaItem.create({
@@ -238,14 +245,15 @@ export const meetingController = {
 
   async updateAgendaItem(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { organizationId } = (request as unknown as RequestUser).user
+      const { organizationId, isSuperAdmin } = (request as unknown as RequestUser).user
       const { councilId, id: meetingId, itemId } = agendaParam.parse(request.params)
       const body = updateAgendaItemSchema.parse(request.body)
+      const orgFilter = isSuperAdmin ? {} : { organizationId }
 
-      const council = await resolveCouncil(councilId, organizationId)
+      const council = await resolveCouncil(councilId, orgFilter)
       if (!council) return reply.code(404).send({ error: 'Not Found', message: 'Conselho não encontrado.' })
 
-      const meeting = await prisma.councilMeeting.findFirst({ where: { id: meetingId, councilId, organizationId } })
+      const meeting = await prisma.councilMeeting.findFirst({ where: { id: meetingId, councilId, ...orgFilter } })
       if (!meeting) return reply.code(404).send({ error: 'Not Found', message: 'Reunião não encontrada.' })
 
       const item = await prisma.meetingAgendaItem.findFirst({ where: { id: itemId, meetingId } })
@@ -261,13 +269,14 @@ export const meetingController = {
 
   async removeAgendaItem(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { organizationId } = (request as unknown as RequestUser).user
+      const { organizationId, isSuperAdmin } = (request as unknown as RequestUser).user
       const { councilId, id: meetingId, itemId } = agendaParam.parse(request.params)
+      const orgFilter = isSuperAdmin ? {} : { organizationId }
 
-      const council = await resolveCouncil(councilId, organizationId)
+      const council = await resolveCouncil(councilId, orgFilter)
       if (!council) return reply.code(404).send({ error: 'Not Found', message: 'Conselho não encontrado.' })
 
-      const meeting = await prisma.councilMeeting.findFirst({ where: { id: meetingId, councilId, organizationId } })
+      const meeting = await prisma.councilMeeting.findFirst({ where: { id: meetingId, councilId, ...orgFilter } })
       if (!meeting) return reply.code(404).send({ error: 'Not Found', message: 'Reunião não encontrada.' })
 
       const item = await prisma.meetingAgendaItem.findFirst({ where: { id: itemId, meetingId } })

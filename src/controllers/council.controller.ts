@@ -59,10 +59,11 @@ export const councilController = {
 
   async list(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { organizationId } = (request as unknown as RequestUser).user
+      const { organizationId, isSuperAdmin } = (request as unknown as RequestUser).user
       const query = listQuerySchema.parse(request.query)
+      const orgFilter = isSuperAdmin ? {} : { organizationId }
 
-      const where: Record<string, unknown> = { organizationId }
+      const where: Record<string, unknown> = { ...orgFilter }
       if (query.isActive !== undefined) where.isActive = query.isActive
       if (query.search) {
         where.OR = [
@@ -127,11 +128,12 @@ export const councilController = {
 
   async get(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { organizationId } = (request as unknown as RequestUser).user
+      const { organizationId, isSuperAdmin } = (request as unknown as RequestUser).user
       const { id } = idParamSchema.parse(request.params)
+      const orgFilter = isSuperAdmin ? {} : { organizationId }
 
       const council = await prisma.council.findFirst({
-        where: { id, organizationId },
+        where: { id, ...orgFilter },
         include: {
           memberships: {
             where: { isActive: true },
@@ -157,16 +159,17 @@ export const councilController = {
 
   async update(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { organizationId } = (request as unknown as RequestUser).user
+      const { organizationId, isSuperAdmin } = (request as unknown as RequestUser).user
       const { id } = idParamSchema.parse(request.params)
       const body = updateCouncilSchema.parse(request.body)
+      const orgFilter = isSuperAdmin ? {} : { organizationId }
 
-      const existing = await prisma.council.findFirst({ where: { id, organizationId } })
+      const existing = await prisma.council.findFirst({ where: { id, ...orgFilter } })
       if (!existing) return reply.code(404).send({ error: 'Not Found' })
 
       if (body.acronym && body.acronym !== existing.acronym) {
         const conflict = await prisma.council.findUnique({
-          where: { organizationId_acronym: { organizationId, acronym: body.acronym } },
+          where: { organizationId_acronym: { organizationId: existing.organizationId, acronym: body.acronym } },
         })
         if (conflict) {
           return reply.code(409).send({ error: 'Conflict', message: 'Já existe um conselho com esta sigla.' })
@@ -183,10 +186,11 @@ export const councilController = {
 
   async remove(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { organizationId } = (request as unknown as RequestUser).user
+      const { organizationId, isSuperAdmin } = (request as unknown as RequestUser).user
       const { id } = idParamSchema.parse(request.params)
+      const orgFilter = isSuperAdmin ? {} : { organizationId }
 
-      const existing = await prisma.council.findFirst({ where: { id, organizationId } })
+      const existing = await prisma.council.findFirst({ where: { id, ...orgFilter } })
       if (!existing) return reply.code(404).send({ error: 'Not Found' })
 
       // Soft delete — preserva histórico de reuniões e atas
@@ -202,14 +206,15 @@ export const councilController = {
 
   async listMembers(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { organizationId } = (request as unknown as RequestUser).user
+      const { organizationId, isSuperAdmin } = (request as unknown as RequestUser).user
       const { id: councilId } = idParamSchema.parse(request.params)
+      const orgFilter = isSuperAdmin ? {} : { organizationId }
 
-      const council = await prisma.council.findFirst({ where: { id: councilId, organizationId } })
+      const council = await prisma.council.findFirst({ where: { id: councilId, ...orgFilter } })
       if (!council) return reply.code(404).send({ error: 'Not Found' })
 
       const members = await prisma.councilMembership.findMany({
-        where: { councilId, organizationId },
+        where: { councilId, ...orgFilter },
         include: {
           user: { select: { id: true, firstName: true, lastName: true, email: true, jobTitle: true, avatar: true } },
         },
@@ -225,13 +230,14 @@ export const councilController = {
 
   async addMember(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { organizationId } = (request as unknown as RequestUser).user
+      const { organizationId, isSuperAdmin } = (request as unknown as RequestUser).user
       const { id: councilId } = idParamSchema.parse(request.params)
       const body = addMemberSchema.parse(request.body)
+      const orgFilter = isSuperAdmin ? {} : { organizationId }
 
       const [council, user] = await Promise.all([
-        prisma.council.findFirst({ where: { id: councilId, organizationId } }),
-        prisma.user.findFirst({ where: { id: body.userId, organizationId } }),
+        prisma.council.findFirst({ where: { id: councilId, ...orgFilter } }),
+        prisma.user.findFirst({ where: { id: body.userId, ...orgFilter } }),
       ])
       if (!council) return reply.code(404).send({ error: 'Not Found', message: 'Conselho não encontrado.' })
       if (!user)    return reply.code(404).send({ error: 'Not Found', message: 'Usuário não encontrado nesta organização.' })
@@ -266,12 +272,13 @@ export const councilController = {
 
   async updateMember(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { organizationId } = (request as unknown as RequestUser).user
+      const { organizationId, isSuperAdmin } = (request as unknown as RequestUser).user
       const { id: councilId, membershipId } = membershipParamSchema.parse(request.params)
       const body = updateMemberSchema.parse(request.body)
+      const orgFilter = isSuperAdmin ? {} : { organizationId }
 
       const membership = await prisma.councilMembership.findFirst({
-        where: { id: membershipId, councilId, organizationId },
+        where: { id: membershipId, councilId, ...orgFilter },
       })
       if (!membership) return reply.code(404).send({ error: 'Not Found' })
 
@@ -290,11 +297,12 @@ export const councilController = {
 
   async removeMember(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { organizationId } = (request as unknown as RequestUser).user
+      const { organizationId, isSuperAdmin } = (request as unknown as RequestUser).user
       const { id: councilId, membershipId } = membershipParamSchema.parse(request.params)
+      const orgFilter = isSuperAdmin ? {} : { organizationId }
 
       const membership = await prisma.councilMembership.findFirst({
-        where: { id: membershipId, councilId, organizationId },
+        where: { id: membershipId, councilId, ...orgFilter },
       })
       if (!membership) return reply.code(404).send({ error: 'Not Found' })
 

@@ -979,6 +979,15 @@ enum SignatureStatus {
   EXPIRADO
 }
 
+enum AgendaItemStatus {
+  PENDENTE
+  APROVADO_UNANIMIDADE
+  APROVADO_MAIORIA
+  APROVADO_RESSALVAS
+  REPROVADO
+  VISTAS_ADIADO
+}
+
 model Council {
   id             String   @id @default(nanoid())
   organizationId String   @map("organization_id")
@@ -1010,9 +1019,10 @@ model CouncilMembership {
   isActive       Boolean           @default(true) @map("is_active")
   createdAt      DateTime          @default(now()) @map("created_at")
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  council      Council      @relation(fields: [councilId], references: [id], onDelete: Cascade)
-  user         User         @relation("CouncilMemberships", fields: [userId], references: [id])
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  council      Council            @relation(fields: [councilId], references: [id], onDelete: Cascade)
+  user         User               @relation("CouncilMemberships", fields: [userId], references: [id])
+  attendance   MeetingAttendance[]
 
   @@unique([councilId, userId, role])
   @@index([organizationId])
@@ -1040,6 +1050,7 @@ model CouncilMeeting {
   createdBy    User                @relation("CouncilMeetingCreator", fields: [createdById], references: [id])
   agendaItems  MeetingAgendaItem[]
   documents    CouncilDocument[]
+  attendance   MeetingAttendance[]
 
   @@index([organizationId, scheduledAt])
   @@index([councilId, status])
@@ -1047,17 +1058,33 @@ model CouncilMeeting {
 }
 
 model MeetingAgendaItem {
-  id          String   @id @default(nanoid())
-  meetingId   String   @map("meeting_id")
-  order       Int
-  title       String
-  description String?  @db.Text
-  approved    Boolean?
+  id             String           @id @default(nanoid())
+  meetingId      String           @map("meeting_id")
+  order          Int
+  title          String
+  description    String?          @db.Text
+  status         AgendaItemStatus @default(PENDENTE)
+  votingRemarks  String?          @db.Text @map("voting_remarks")
 
   meeting CouncilMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
 
   @@index([meetingId])
   @@map("meeting_agenda_items")
+}
+
+model MeetingAttendance {
+  id               String  @id @default(nanoid())
+  meetingId        String  @map("meeting_id")
+  membershipId     String  @map("membership_id")
+  isPresent        Boolean @default(false) @map("is_present")
+  justifiedAbsence Boolean? @map("justified_absence")
+
+  meeting    CouncilMeeting    @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  membership CouncilMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, membershipId])
+  @@index([meetingId])
+  @@map("meeting_attendance")
 }
 
 model CouncilDocument {

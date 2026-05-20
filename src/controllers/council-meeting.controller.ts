@@ -1,7 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { prisma } from '@/lib/prisma.js'
 import { z } from 'zod'
-import { MeetingStatus } from '@prisma/client'
+import { MeetingStatus, AgendaItemStatus } from '@prisma/client'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -39,15 +39,24 @@ const addAgendaItemSchema = z.object({
 })
 
 const updateAgendaItemSchema = z.object({
-  order:       z.number().int().positive().optional(),
-  title:       z.string().min(1).max(300).optional(),
-  description: z.string().max(2000).optional(),
-  approved:    z.boolean().nullable().optional(),
+  order:         z.number().int().positive().optional(),
+  title:         z.string().min(1).max(300).optional(),
+  description:   z.string().max(2000).optional(),
+  status:        z.nativeEnum(AgendaItemStatus).optional(),
+  votingRemarks: z.string().max(2000).optional().nullable(),
 })
 
-const councilParam  = z.object({ councilId: z.string().min(1) })
-const meetingParam  = z.object({ councilId: z.string().min(1), id: z.string().min(1) })
-const agendaParam   = z.object({ councilId: z.string().min(1), id: z.string().min(1), itemId: z.string().min(1) })
+const saveAttendanceSchema = z.object({
+  attendance: z.array(z.object({
+    membershipId:     z.string().min(1),
+    isPresent:        z.boolean(),
+    justifiedAbsence: z.boolean().optional().nullable(),
+  })),
+})
+
+const councilParam     = z.object({ councilId: z.string().min(1) })
+const meetingParam     = z.object({ councilId: z.string().min(1), id: z.string().min(1) })
+const agendaParam      = z.object({ councilId: z.string().min(1), id: z.string().min(1), itemId: z.string().min(1) })
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -287,6 +296,81 @@ export const meetingController = {
     } catch (err) {
       if (err instanceof z.ZodError) return reply.code(400).send({ error: 'Validation Error', issues: err.issues })
       return reply.code(500).send({ error: 'Remove Agenda Item Failed', message: (err as Error).message })
+    }
+  },
+
+  // ─── Presença ────────────────────────────────────────────────────────────────
+
+  async getAttendance(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { organizationId, isSuperAdmin } = (request as unknown as RequestUser).user
+      const { councilId, id: meetingId } = meetingParam.parse(request.params)
+      const orgFilter = isSuperAdmin ? {} : { organizationId }
+
+      const council = await resolveCouncil(councilId, orgFilter)
+      if (!council) return reply.code(404).send({ error: 'Not Found', message: 'Conselho não encontrado.' })
+
+      const meeting = await prisma.councilMeeting.findFirst({ where: { id: meetingId, councilId, ...orgFilter } })
+      if (!meeting) return reply.code(404).send({ error: 'Not Found', message: 'Reunião não encontrada.' })
+
+      const [activeMembers, attendanceRecords] = await Promise.all([
+        prisma.councilMembership.findMany({
+          where:   { councilId, isActive: true },
+          include: { user: { select: { id: true, firstName: true, lastName: true } } },
+          orderBy: { role: 'asc' },
+        }),
+        prisma.meetingAttendance.findMany({ where: { meetingId } }),
+      ])
+
+      const attendanceMap = new Map(attendanceRecords.map((a) => [a.membershipId, a]))
+
+      const data = activeMembers.map((m) => {
+        const record = attendanceMap.get(m.id)
+        return {
+          membershipId:     m.id,
+          userId:           m.userId,
+          firstName:        m.user.firstName,
+          lastName:         m.user.lastName,
+          role:             m.role,
+          isPresent:        record?.isPresent ?? false,
+          justifiedAbsence: record?.justifiedAbsence ?? null,
+        }
+      })
+
+      return reply.send({ data })
+    } catch (err) {
+      if (err instanceof z.ZodError) return reply.code(400).send({ error: 'Validation Error', issues: err.issues })
+      return reply.code(500).send({ error: 'Get Attendance Failed', message: (err as Error).message })
+    }
+  },
+
+  async saveAttendance(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { organizationId, isSuperAdmin } = (request as unknown as RequestUser).user
+      const { councilId, id: meetingId } = meetingParam.parse(request.params)
+      const { attendance } = saveAttendanceSchema.parse(request.body)
+      const orgFilter = isSuperAdmin ? {} : { organizationId }
+
+      const council = await resolveCouncil(councilId, orgFilter)
+      if (!council) return reply.code(404).send({ error: 'Not Found', message: 'Conselho não encontrado.' })
+
+      const meeting = await prisma.councilMeeting.findFirst({ where: { id: meetingId, councilId, ...orgFilter } })
+      if (!meeting) return reply.code(404).send({ error: 'Not Found', message: 'Reunião não encontrada.' })
+
+      await Promise.all(
+        attendance.map((entry) =>
+          prisma.meetingAttendance.upsert({
+            where:  { meetingId_membershipId: { meetingId, membershipId: entry.membershipId } },
+            create: { meetingId, membershipId: entry.membershipId, isPresent: entry.isPresent, justifiedAbsence: entry.justifiedAbsence ?? null },
+            update: { isPresent: entry.isPresent, justifiedAbsence: entry.justifiedAbsence ?? null },
+          }),
+        ),
+      )
+
+      return reply.send({ success: true })
+    } catch (err) {
+      if (err instanceof z.ZodError) return reply.code(400).send({ error: 'Validation Error', issues: err.issues })
+      return reply.code(500).send({ error: 'Save Attendance Failed', message: (err as Error).message })
     }
   },
 }

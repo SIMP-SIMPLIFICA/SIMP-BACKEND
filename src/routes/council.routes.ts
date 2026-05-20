@@ -111,6 +111,18 @@ export async function councilRoutes(app: FastifyInstance) {
     meetingController.removeAgendaItem,
   )
 
+  // ─── Presença ───────────────────────────────────────────────────────────────
+
+  app.get('/:councilId/meetings/:id/attendance',
+    { preHandler: [requireAnyPermission(READ)] },
+    meetingController.getAttendance,
+  )
+
+  app.put('/:councilId/meetings/:id/attendance',
+    { preHandler: [requireAnyPermission(WRITE)] },
+    meetingController.saveAttendance,
+  )
+
   // ─── Documentos ─────────────────────────────────────────────────────────────
 
   app.get('/:councilId/meetings/:meetingId/documents',

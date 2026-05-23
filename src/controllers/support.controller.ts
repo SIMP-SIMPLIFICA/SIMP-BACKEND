@@ -71,7 +71,7 @@ export const supportController = {
 
       const supportRequest = await prisma.$transaction(async (tx) => {
         const req = await tx.supportRequest.create({
-          data: { authorId, organizationId, type: body.type, subject: body.subject ?? null },
+          data: { authorId, organizationId: organizationId!, type: body.type, subject: body.subject ?? null },
         })
         await tx.supportMessage.create({
           data: { requestId: req.id, senderId: authorId, content: body.message },
@@ -81,6 +81,7 @@ export const supportController = {
 
       return reply.code(201).send(supportRequest)
     } catch (err) {
+      request.log.error(err)
       if (err instanceof z.ZodError) return reply.code(400).send({ error: 'Validation Error', issues: err.issues })
       return reply.code(500).send({ error: 'Create Failed', message: (err as Error).message })
     }
@@ -92,14 +93,20 @@ export const supportController = {
       const { id: userId, organizationId, isSuperAdmin } = (request as unknown as RequestUser).user
       const query = listQuerySchema.parse(request.query)
 
+      if (!isSuperAdmin && !organizationId) {
+        return reply.code(422).send({ error: 'Missing Org', message: 'Usuário sem organização não pode listar chamados.' })
+      }
+
       const where: Prisma.SupportRequestWhereInput = isSuperAdmin
         ? {}
-        : { authorId: userId, ...(organizationId ? { organizationId } : {}) }
+        : { authorId: userId, organizationId: organizationId! }
 
       if (query.status) where.status = query.status
       if (query.type)   where.type   = query.type
 
-      const skip = (query.page - 1) * query.limit
+      const page  = Number(query.page)
+      const limit = Number(query.limit)
+      const skip  = (page - 1) * limit
 
       const [total, items] = await prisma.$transaction([
         prisma.supportRequest.count({ where }),
@@ -107,7 +114,7 @@ export const supportController = {
           where,
           orderBy: { updatedAt: 'desc' },
           skip,
-          take: query.limit,
+          take: limit,
           include: {
             author:   { select: SENDER_SELECT },
             _count:   { select: { messages: true } },
@@ -117,9 +124,10 @@ export const supportController = {
 
       return reply.send({
         data: items,
-        meta: { total, page: query.page, limit: query.limit, totalPages: Math.ceil(total / query.limit) },
+        meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
       })
     } catch (err) {
+      request.log.error(err)
       if (err instanceof z.ZodError) return reply.code(400).send({ error: 'Validation Error', issues: err.issues })
       return reply.code(500).send({ error: 'List Failed', message: (err as Error).message })
     }
@@ -154,6 +162,7 @@ export const supportController = {
 
       return reply.send({ data: messages, request: supportRequest })
     } catch (err) {
+      request.log.error(err)
       if (err instanceof z.ZodError) return reply.code(400).send({ error: 'Validation Error', issues: err.issues })
       return reply.code(500).send({ error: 'Get Messages Failed', message: (err as Error).message })
     }
@@ -196,6 +205,7 @@ export const supportController = {
 
       return reply.code(201).send(message)
     } catch (err) {
+      request.log.error(err)
       if (err instanceof z.ZodError) return reply.code(400).send({ error: 'Validation Error', issues: err.issues })
       return reply.code(500).send({ error: 'Add Message Failed', message: (err as Error).message })
     }
@@ -223,6 +233,7 @@ export const supportController = {
 
       return reply.send(updated)
     } catch (err) {
+      request.log.error(err)
       if (err instanceof z.ZodError) return reply.code(400).send({ error: 'Validation Error', issues: err.issues })
       return reply.code(500).send({ error: 'Update Status Failed', message: (err as Error).message })
     }

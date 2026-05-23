@@ -8,7 +8,7 @@ import { SupportStatus, SupportType, Prisma } from '@prisma/client'
 interface RequestUser {
   user: {
     id: string
-    organizationId: string
+    organizationId: string | null
     isSuperAdmin: boolean
   }
 }
@@ -53,7 +53,16 @@ export const supportController = {
   // POST /support — cria o ticket/chat e a primeira mensagem atomicamente
   async create(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { id: authorId, organizationId } = (request as unknown as RequestUser).user
+      const { id: authorId, organizationId, isSuperAdmin } = (request as unknown as RequestUser).user
+
+      if (isSuperAdmin) {
+        return reply.code(403).send({ error: 'Forbidden', message: 'SuperAdmins não abrem chamados de suporte.' })
+      }
+
+      if (!organizationId) {
+        return reply.code(422).send({ error: 'Missing Org', message: 'Usuário sem organização não pode abrir chamados.' })
+      }
+
       const body = createSchema.parse(request.body)
 
       if (body.type === SupportType.TICKET && !body.subject) {
@@ -85,7 +94,7 @@ export const supportController = {
 
       const where: Prisma.SupportRequestWhereInput = isSuperAdmin
         ? {}
-        : { authorId: userId, organizationId }
+        : { authorId: userId, ...(organizationId ? { organizationId } : {}) }
 
       if (query.status) where.status = query.status
       if (query.type)   where.type   = query.type

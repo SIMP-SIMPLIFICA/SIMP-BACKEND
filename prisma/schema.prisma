@@ -50,6 +50,7 @@ model Organization {
   councilMeetings        CouncilMeeting[]
   councilDocuments       CouncilDocument[]
   signatureRequests      SignatureRequest[]
+  supportRequests        SupportRequest[]
 
   @@map("organizations")
 }
@@ -135,6 +136,8 @@ model User {
   councilMeetingsCreated   CouncilMeeting[]         @relation("CouncilMeetingCreator")
   uploadedCouncilDocs      CouncilDocument[]        @relation("CouncilDocumentUploader")
   signatureRequests        SignatureRequest[]        @relation("SignatureRequester")
+  supportRequests          SupportRequest[]         @relation("SupportAuthor")
+  supportMessages          SupportMessage[]         @relation("SupportMessageSender")
 
   @@map("users")
 }
@@ -1146,4 +1149,53 @@ model GovBrOAuthState {
   @@index([state])
   @@index([expiresAt])
   @@map("govbr_oauth_states")
+}
+
+// ─── Suporte In-App ───────────────────────────────────────────────────────────
+
+enum SupportType {
+  TICKET
+  CHAT
+}
+
+enum SupportStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+model SupportRequest {
+  id             String        @id @default(nanoid())
+  authorId       String        @map("author_id")
+  organizationId String        @map("organization_id")
+  type           SupportType
+  status         SupportStatus @default(OPEN)
+  subject        String?
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  author       User         @relation("SupportAuthor", fields: [authorId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  messages     SupportMessage[]
+
+  @@index([organizationId, status])
+  @@index([authorId])
+  @@map("support_requests")
+}
+
+model SupportMessage {
+  id        String   @id @default(nanoid())
+  requestId String   @map("request_id")
+  senderId  String   @map("sender_id")
+  content   String   @db.Text
+  isRead    Boolean  @default(false) @map("is_read")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  request SupportRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  sender  User           @relation("SupportMessageSender", fields: [senderId], references: [id])
+
+  @@index([requestId, createdAt])
+  @@index([requestId, isRead])
+  @@map("support_messages")
 }

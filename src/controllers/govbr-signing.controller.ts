@@ -20,6 +20,8 @@ interface RequestUser {
 const GOVBR_AUTH_URL     = () => process.env.GOVBR_AUTH_URL     ?? 'https://sso.staging.acesso.gov.br'
 const GOVBR_SIGN_API_URL = () => process.env.GOVBR_SIGN_API_URL ?? 'https://assinatura-api.staging.iti.br'
 const FRONTEND_URL       = () => process.env.FRONTEND_URL        ?? 'http://localhost:5173'
+const APP_URL            = () => process.env.APP_URL             ?? 'http://localhost:3000'
+const IS_MOCK_GOVBR      = () => process.env.USE_MOCK_GOVBR === 'true'
 
 const STATE_TTL_MS = 10 * 60 * 1000 // 10 minutes
 
@@ -82,17 +84,22 @@ export const signingController = {
         },
       })
 
-      // Build gov.br authorization URL
-      const params = new URLSearchParams({
-        response_type: 'code',
-        client_id:     process.env.GOVBR_CLIENT_ID     ?? '',
-        redirect_uri:  process.env.GOVBR_REDIRECT_URI  ?? '',
-        scope:         'openid profile email govbr_assinatura',
-        state,
-        nonce,
-      })
-
-      const authorizationUrl = `${GOVBR_AUTH_URL()}/authorize?${params.toString()}`
+      // Build authorization URL — mock bypasses gov.br and hits our own callback
+      let authorizationUrl: string
+      if (IS_MOCK_GOVBR()) {
+        const mockParams = new URLSearchParams({ code: 'fake_mock_code_123', state })
+        authorizationUrl = `${APP_URL()}/councils/sign/callback?${mockParams.toString()}`
+      } else {
+        const params = new URLSearchParams({
+          response_type: 'code',
+          client_id:     process.env.GOVBR_CLIENT_ID     ?? '',
+          redirect_uri:  process.env.GOVBR_REDIRECT_URI  ?? '',
+          scope:         'openid profile email govbr_assinatura',
+          state,
+          nonce,
+        })
+        authorizationUrl = `${GOVBR_AUTH_URL()}/authorize?${params.toString()}`
+      }
 
       return reply.code(201).send({ authorizationUrl, signatureRequestId: signatureRequest.id })
     } catch (err) {
@@ -140,6 +147,20 @@ export const signingController = {
     }
 
     try {
+      // Mock mode: skip all gov.br network calls and simulate a successful signature
+      if (IS_MOCK_GOVBR()) {
+        await prisma.signatureRequest.update({
+          where: { id: signatureRequest.id },
+          data: {
+            status:    'ASSINADO',
+            pkcs7Data: 'MOCK_PKCS7_SIGNATURE_DATA',
+            signedAt:  new Date(),
+            errorMsg:  null,
+          },
+        })
+        return reply.redirect(`${frontendBase}/councils/sign/return?requestId=${signatureRequest.id}`)
+      }
+
       // Exchange authorization code for access_token
       const tokenRes = await fetch(`${GOVBR_AUTH_URL()}/token`, {
         method:  'POST',

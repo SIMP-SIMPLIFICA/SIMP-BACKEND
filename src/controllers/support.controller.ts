@@ -211,6 +211,30 @@ export const supportController = {
     }
   },
 
+  // GET /support/insights — superAdmin exclusivo
+  async insights(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { isSuperAdmin } = (request as unknown as RequestUser).user
+
+      if (!isSuperAdmin) {
+        return reply.code(403).send({ error: 'Forbidden', message: 'Apenas superAdmins podem ver insights.' })
+      }
+
+      const [byStatus, byType] = await Promise.all([
+        prisma.supportRequest.groupBy({ by: ['status'], _count: { _all: true } }),
+        prisma.supportRequest.groupBy({ by: ['type'],   _count: { _all: true } }),
+      ])
+
+      return reply.send({
+        byStatus: byStatus.map(r => ({ status: r.status, count: r._count._all })),
+        byType:   byType.map(r => ({ type: r.type,       count: r._count._all })),
+      })
+    } catch (err) {
+      request.log.error(err)
+      return reply.code(500).send({ error: 'Insights Failed', message: (err as Error).message })
+    }
+  },
+
   // PATCH /support/:id/status — superAdmin exclusivo
   async updateStatus(request: FastifyRequest, reply: FastifyReply) {
     try {

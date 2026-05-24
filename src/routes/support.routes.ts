@@ -7,6 +7,7 @@ export async function supportRoutes(app: FastifyInstance) {
 
   app.post('/',                  supportController.create)
   app.get('/',                   supportController.list)
+  app.get('/insights',           supportController.insights)    // must precede /:id routes
   app.get('/:id/messages',       supportController.getMessages)
   app.post('/:id/messages',      supportController.addMessage)
   app.patch('/:id/status',       supportController.updateStatus)

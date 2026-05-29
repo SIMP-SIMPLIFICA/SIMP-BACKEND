@@ -10,6 +10,7 @@ export const MODULES = {
   COVENANTS: 'covenants',
   PROTOCOLS: 'protocols',
   COUNCILS: 'councils',
+  SUPPORT: 'support',
 } as const
 
 export type ModuleKey = typeof MODULES[keyof typeof MODULES]
@@ -17,7 +18,8 @@ export type ModuleKey = typeof MODULES[keyof typeof MODULES]
 export const ALL_MODULES: ModuleKey[] = Object.values(MODULES)
 
 // Módulos habilitados por padrão ao criar uma nova organização.
-// virtual_processes fica fora — habilitado manualmente pelo super admin após validação.
+// virtual_processes, protocols, councils e support ficam fora — habilitados
+// manualmente pelo super admin após validação/contratação.
 export const DEFAULT_MODULES: ModuleKey[] = [
   MODULES.TASKS,
   MODULES.FINANCE,

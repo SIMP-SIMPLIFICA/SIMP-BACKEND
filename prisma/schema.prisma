@@ -9,6 +9,14 @@ datasource db {
   extensions = [unaccent]
 }
 
+enum AppRole {
+  superadmin
+  admin
+  standard_user
+
+  @@map("user_role")
+}
+
 model Organization {
   id        String   @id @default(cuid())
   name      String
@@ -72,31 +80,27 @@ model OrganizationModule {
 }
 
 model User {
-  id                   String    @id @default(nanoid())
-  email                String    @unique
-  username             String?   @unique
-  firstName            String?
-  lastName             String?
-  avatar               String?
-  password             String
-  jobTitle             String?   @map("job_title")
-  isActive             Boolean   @default(false)
-  isVerified           Boolean   @default(false)
-  verifyToken          String?
-  passwordResetToken   String?
-  passwordResetExpires DateTime?
-  lastLoginAt          DateTime?
-  twoFactorEnabled     Boolean   @default(false)
-  twoFactorSecret      String?
-  backupCodes          String[]
-  metadata             Json?
-  preferences          Json?
-  isSuperAdmin         Boolean   @default(false) @map("is_super_admin")
-  emailNotifications   Boolean   @default(true)  @map("email_notifications")
-  autoClearDays        Int       @default(30)     @map("auto_clear_days")
-  clearanceLevel       Int       @default(1)      @map("clearance_level")
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
+  id                 String    @id @db.Uuid
+  email              String    @unique
+  username           String?   @unique
+  firstName          String?   @map("first_name")
+  lastName           String?   @map("last_name")
+  fullName           String?   @map("full_name")
+  avatar             String?
+  jobTitle           String?   @map("job_title")
+  municipalityName   String?   @map("municipality_name")
+  role               AppRole   @default(standard_user) @map("role")
+  isActive           Boolean   @default(true)  @map("is_active")
+  isVerified         Boolean   @default(true)  @map("is_verified")
+  lastLoginAt        DateTime? @map("last_login_at")
+  metadata           Json?
+  preferences        Json?
+  isSuperAdmin       Boolean   @default(false) @map("is_super_admin")
+  emailNotifications Boolean   @default(true)  @map("email_notifications")
+  autoClearDays      Int       @default(30)     @map("auto_clear_days")
+  clearanceLevel     Int       @default(1)      @map("clearance_level")
+  createdAt          DateTime  @default(now())  @map("created_at")
+  updatedAt          DateTime  @updatedAt       @map("updated_at")
 
   organizationId String?       @map("organization_id")
   organization   Organization? @relation(fields: [organizationId], references: [id])
@@ -115,13 +119,12 @@ model User {
   createdDocuments   CommunicationDocument[] @relation("DocumentCreator")
   documentRecipients DocumentRecipient[]
 
-  calendarEvents     CalendarEvent[]
-  notes              Note[]
+  calendarEvents CalendarEvent[]
+  notes          Note[]
 
   departments        Department[] @relation("DepartmentMembers")
   managedDepartments Department[] @relation("DepartmentManager")
 
-  // --- RELAÇÕES FINANCEIRAS ---
   createdFinanceEntries FinanceEntry[]      @relation("FinanceEntryCreator")
   updatedFinanceEntries FinanceEntry[]      @relation("FinanceEntryUpdater")
   financeAttachments    FinanceAttachment[]
@@ -129,17 +132,17 @@ model User {
   createdProcesses         VirtualProcess[]         @relation("ProcessCreator")
   uploadedProcessDocuments VirtualProcessDocument[] @relation("ProcessDocumentUploader")
 
-  uploadedLibraryDocs      LibraryDocument[]        @relation("LibraryDocumentUploader")
-  officialDocuments        OfficialDocument[]
+  uploadedLibraryDocs LibraryDocument[]  @relation("LibraryDocumentUploader")
+  officialDocuments   OfficialDocument[]
 
-  councilMemberships       CouncilMembership[]      @relation("CouncilMemberships")
-  councilMeetingsCreated   CouncilMeeting[]         @relation("CouncilMeetingCreator")
-  uploadedCouncilDocs      CouncilDocument[]        @relation("CouncilDocumentUploader")
-  signatureRequests        SignatureRequest[]        @relation("SignatureRequester")
-  supportRequests          SupportRequest[]         @relation("SupportAuthor")
-  supportMessages          SupportMessage[]         @relation("SupportMessageSender")
+  councilMemberships     CouncilMembership[] @relation("CouncilMemberships")
+  councilMeetingsCreated CouncilMeeting[]    @relation("CouncilMeetingCreator")
+  uploadedCouncilDocs    CouncilDocument[]   @relation("CouncilDocumentUploader")
+  signatureRequests      SignatureRequest[]  @relation("SignatureRequester")
+  supportRequests        SupportRequest[]   @relation("SupportAuthor")
+  supportMessages        SupportMessage[]   @relation("SupportMessageSender")
 
-  @@map("users")
+  @@map("profiles")
 }
 
 model Role {

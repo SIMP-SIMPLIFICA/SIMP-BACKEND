@@ -61,8 +61,14 @@ const configSchema = z.object({
   ENABLE_REQUEST_LOGGING: z.coerce.boolean().default(true),
 
   // Observability (optional — features activate only when set)
-  SENTRY_DSN: z.string().url().optional(),
-  BETTERSTACK_SOURCE_TOKEN: z.string().optional()
+  SENTRY_DSN: z.string().url().optional().or(z.literal('')).transform(v => v || undefined),
+  BETTERSTACK_SOURCE_TOKEN: z.string().optional(),
+
+  // Supabase
+  SUPABASE_URL: z.string().url(),
+  SUPABASE_ANON_KEY: z.string().min(1),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+  SUPABASE_JWT_SECRET: z.string().min(32)
 })
 
 const parsedEnv = configSchema.safeParse(process.env)
@@ -160,6 +166,14 @@ export const config = {
   observability: {
     sentryDsn: env.SENTRY_DSN,
     betterstackToken: env.BETTERSTACK_SOURCE_TOKEN
+  },
+
+  // Supabase
+  supabase: {
+    url: env.SUPABASE_URL,
+    anonKey: env.SUPABASE_ANON_KEY,
+    serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
+    jwtSecret: env.SUPABASE_JWT_SECRET
   }
 } as const
 

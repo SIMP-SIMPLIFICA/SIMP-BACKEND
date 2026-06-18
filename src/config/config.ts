@@ -66,8 +66,8 @@ const configSchema = z.object({
 
   // Supabase
   SUPABASE_URL: z.string().url(),
-  SUPABASE_ANON_KEY: z.string().min(1),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+  SUPABASE_ANON_KEY: z.string().min(40),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().min(40),
   SUPABASE_JWT_SECRET: z.string().min(32)
 })
 

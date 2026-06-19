@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import { prisma } from '@/utils/database.js'
+import { prisma } from '@/lib/prisma.js'
 import { z } from 'zod'
 
 const updateSettingsSchema = z.object({

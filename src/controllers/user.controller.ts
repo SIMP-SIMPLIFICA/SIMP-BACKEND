@@ -1,6 +1,8 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { authService } from '@/services/auth.service.js'
-import { db, prisma } from '@/utils/database.js'
+import { supabaseAdmin } from '@/lib/supabase.js'
+import { db } from '@/utils/database.js'
+import { prisma } from '@/lib/prisma.js'
 import { authLogger } from '@/utils/logger.js'
 import { assignRoleSchema, createUserSchema, updateUserSchema, userQuerySchema } from '@/schemas/auth.schemas.js'
 import { certificateService } from '@/services/certificate.service.js'
@@ -50,7 +52,7 @@ export class UserController {
         where, orderBy, skip: (query.page - 1) * query.limit, take: query.limit,
         select: {
           id: true, email: true, username: true, firstName: true, lastName: true,
-          avatar: true, isActive: true, isVerified: true, twoFactorEnabled: true,
+          avatar: true, isActive: true, isVerified: true,
           lastLoginAt: true, createdAt: true, updatedAt: true,
           organization: { select: { id: true, name: true } },
           roles: { select: { role: { select: { id: true, name: true, displayName: true, color: true } } } }
@@ -97,7 +99,7 @@ export class UserController {
         where: { id, ...orgFilter },
         select: {
           id: true, email: true, username: true, firstName: true, lastName: true,
-          avatar: true, isActive: true, isVerified: true, twoFactorEnabled: true,
+          avatar: true, isActive: true, isVerified: true,
           lastLoginAt: true, createdAt: true, updatedAt: true, preferences: true, metadata: true,
           roles: { select: { id: true, assignedAt: true, expiresAt: true, role: { select: { id: true, name: true, displayName: true, description: true, color: true, permissions: true } } } }
         }
@@ -137,10 +139,19 @@ export class UserController {
         if (existingUsername) return reply.code(400).send({ error: 'Username Taken', message: 'Username is already taken' })
       }
 
-      const hashedPassword = await authService.hashPassword(data.password)
+      const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+        email: data.email.toLowerCase(),
+        ...(data.password ? { password: data.password } : {}),
+        email_confirm: data.isVerified ?? false,
+      })
+      if (authError || !authData.user) {
+        return reply.code(500).send({ error: 'User Creation Failed', message: authError?.message ?? 'Failed to create auth user' })
+      }
+
       const user = await prisma.user.create({
         data: {
-          email: data.email.toLowerCase(), password: hashedPassword, firstName: data.firstName,
+          id: authData.user.id,
+          email: data.email.toLowerCase(), firstName: data.firstName,
           lastName: data.lastName, username: data.username, isActive: data.isActive ?? true, isVerified: data.isVerified ?? false,
           organizationId: request.user.organizationId
         },

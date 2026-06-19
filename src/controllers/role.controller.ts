@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import { db, prisma } from '@/utils/database.js'
+import { db } from '@/utils/database.js'
+import { prisma } from '@/lib/prisma.js'
 import { authLogger } from '@/utils/logger.js'
 import { createRoleSchema, paginationSchema, updateRoleSchema } from '@/schemas/auth.schemas.js'
 import { z } from 'zod'

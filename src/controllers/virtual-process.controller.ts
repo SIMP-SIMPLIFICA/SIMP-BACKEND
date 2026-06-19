@@ -1,5 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify'
-import { prisma, db } from '@/utils/database.js'
+import { db } from '@/utils/database.js'
+import { prisma } from '@/lib/prisma.js'
 import { logger } from '@/utils/logger.js'
 import { z } from 'zod'
 import { createVirtualProcessSchema, uploadDocumentSchema, updateCompanyInfoSchema } from '@/schemas/virtual-process.schemas.js'

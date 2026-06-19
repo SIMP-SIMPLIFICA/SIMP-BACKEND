@@ -61,6 +61,36 @@ export const errorHandler = (
         }
     }
 
+    if (error instanceof Prisma.PrismaClientInitializationError) {
+        logger.error({ error, requestId }, 'Database initialization error — cannot reach Supabase pooler')
+        return reply.code(503).send({
+            statusCode: 503,
+            error: 'Service Unavailable',
+            message: 'O banco de dados está temporariamente indisponível. Tente novamente em instantes.',
+            requestId,
+        })
+    }
+
+    if (error instanceof Prisma.PrismaClientRustPanicError) {
+        logger.fatal({ error, requestId }, 'Prisma engine panic — process will restart')
+        return reply.code(503).send({
+            statusCode: 503,
+            error: 'Service Unavailable',
+            message: 'Erro crítico no servidor. A equipe foi notificada.',
+            requestId,
+        })
+    }
+
+    if (error instanceof Prisma.PrismaClientUnknownRequestError) {
+        logger.error({ error, requestId }, 'Prisma unknown request error')
+        return reply.code(500).send({
+            statusCode: 500,
+            error: 'Internal Server Error',
+            message: 'Erro inesperado ao processar a requisição no banco de dados.',
+            requestId,
+        })
+    }
+
     if (statusCode >= 500) {
         logger.error({
             err: error,

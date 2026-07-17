@@ -39,5 +39,9 @@
       "Bash(git commit *)",
       "Bash(powershell *)"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "lightrag"
+  ],
+  "enableAllProjectMcpServers": true
 }

@@ -1,7 +1,8 @@
 import { S3Client } from '@aws-sdk/client-s3';
+import { config } from '@/config/config.js'
 
-const accessKeyId     = process.env.R2_ACCESS_KEY_ID     ?? ''
-const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY ?? ''
+const accessKeyId     = config.r2.accessKeyId     ?? ''
+const secretAccessKey = config.r2.secretAccessKey ?? ''
 
 if (!accessKeyId || !secretAccessKey) {
   console.warn(
@@ -12,7 +13,7 @@ if (!accessKeyId || !secretAccessKey) {
 
 const r2 = new S3Client({
   region: 'auto',
-  endpoint: process.env.R2_ENDPOINT,
+  endpoint: config.r2.endpoint,
   credentials: { accessKeyId, secretAccessKey },
 });
 

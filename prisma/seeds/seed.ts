@@ -1,28 +1,23 @@
 /**
  * SIMP – Minimal bootstrap seed
  *
- * Creates a single Super Admin user (Supabase Auth + profiles row).
+ * Creates a single Super Admin user (auth local: argon2 + Postgres).
  * Run after a fresh migration or when wiping test data.
  *
  * Usage:
  *   npx tsx prisma/seeds/seed.ts
  *
  * Environment variables required:
- *   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, DATABASE_URL
+ *   DATABASE_URL
  */
 
+import { randomUUID } from 'node:crypto'
 import { PrismaClient, AppRole } from '@prisma/client'
-import { createClient } from '@supabase/supabase-js'
+import { authService } from '../../src/services/auth.service.js'
 
 // ── Clients ──────────────────────────────────────────────────────────────────
 
 const prisma = new PrismaClient()
-
-const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { autoRefreshToken: false, persistSession: false } }
-)
 
 // ── Super Admin credentials (override via env vars in CI/CD) ─────────────────
 
@@ -30,30 +25,6 @@ const SUPER_ADMIN_EMAIL    = process.env.SEED_SUPER_ADMIN_EMAIL    ?? 'superadmi
 const SUPER_ADMIN_PASSWORD = process.env.SEED_SUPER_ADMIN_PASSWORD ?? 'Simp@SuperAdmin2026!'
 const SUPER_ADMIN_FIRST    = process.env.SEED_SUPER_ADMIN_FIRST    ?? 'Super'
 const SUPER_ADMIN_LAST     = process.env.SEED_SUPER_ADMIN_LAST     ?? 'Admin'
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-async function upsertSupabaseUser(email: string, password: string): Promise<string> {
-  const { data: listData } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 })
-  const existing = (listData as any)?.users?.find((u: { email?: string }) => u.email === email)
-
-  if (existing) {
-    await supabaseAdmin.auth.admin.deleteUser(existing.id)
-    console.log(`  ↺ Deleted existing Supabase user: ${email}`)
-  }
-
-  const { data, error } = await supabaseAdmin.auth.admin.createUser({
-    email,
-    password,
-    email_confirm: true,
-  })
-
-  if (error || !data.user) {
-    throw new Error(`Supabase createUser failed for ${email}: ${error?.message}`)
-  }
-
-  return data.user.id
-}
 
 // ── 1. FULL WIPE ─────────────────────────────────────────────────────────────
 
@@ -121,14 +92,6 @@ async function wipe() {
   await prisma.setting.deleteMany()
 
   console.log('  ✅ All tables cleared')
-
-  // Wipe all Supabase Auth users
-  const { data: authList } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 })
-  const authUsers = (authList as any)?.users as Array<{ id: string }> ?? []
-  for (const u of authUsers) {
-    await supabaseAdmin.auth.admin.deleteUser(u.id)
-  }
-  console.log(`  ✅ Deleted ${authUsers.length} Supabase Auth user(s)`)
 }
 
 // ── 2. SEED ───────────────────────────────────────────────────────────────────
@@ -136,12 +99,13 @@ async function wipe() {
 async function seed() {
   console.log('\n🌱 Seeding Super Admin…')
 
-  const superAdminId = await upsertSupabaseUser(SUPER_ADMIN_EMAIL, SUPER_ADMIN_PASSWORD)
+  const hashedPassword = await authService.hashPassword(SUPER_ADMIN_PASSWORD)
 
   await prisma.user.create({
     data: {
-      id:           superAdminId,
+      id:           randomUUID(),
       email:        SUPER_ADMIN_EMAIL,
+      password:     hashedPassword,
       firstName:    SUPER_ADMIN_FIRST,
       lastName:     SUPER_ADMIN_LAST,
       role:         AppRole.superadmin,

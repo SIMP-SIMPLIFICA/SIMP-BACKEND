@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto'
 import { prisma } from '@/lib/prisma.js'
 import { z } from 'zod'
 import { hexToBase64 } from '@/controllers/council-document.controller.js'
+import { config } from '@/config/config.js'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -17,11 +18,11 @@ interface RequestUser {
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-const GOVBR_AUTH_URL     = () => process.env.GOVBR_AUTH_URL     ?? 'https://sso.staging.acesso.gov.br'
-const GOVBR_SIGN_API_URL = () => process.env.GOVBR_SIGN_API_URL ?? 'https://assinatura-api.staging.iti.br'
-const FRONTEND_URL       = () => process.env.FRONTEND_URL        ?? 'http://localhost:5173'
-const APP_URL            = () => process.env.APP_URL             ?? 'http://localhost:3000'
-const IS_MOCK_GOVBR      = () => process.env.USE_MOCK_GOVBR === 'true'
+const GOVBR_AUTH_URL     = () => config.govbr.authUrl
+const GOVBR_SIGN_API_URL = () => config.govbr.signApiUrl
+const FRONTEND_URL       = () => config.urls.frontend
+const APP_URL            = () => config.urls.app
+const IS_MOCK_GOVBR      = () => config.govbr.useMock
 
 const STATE_TTL_MS = 10 * 60 * 1000 // 10 minutes
 
@@ -92,8 +93,8 @@ export const signingController = {
       } else {
         const params = new URLSearchParams({
           response_type: 'code',
-          client_id:     process.env.GOVBR_CLIENT_ID     ?? '',
-          redirect_uri:  process.env.GOVBR_REDIRECT_URI  ?? '',
+          client_id:     config.govbr.clientId     ?? '',
+          redirect_uri:  config.govbr.redirectUri  ?? '',
           scope:         'openid profile email govbr_assinatura',
           state,
           nonce,
@@ -168,9 +169,9 @@ export const signingController = {
         body:    new URLSearchParams({
           grant_type:    'authorization_code',
           code,
-          redirect_uri:  process.env.GOVBR_REDIRECT_URI  ?? '',
-          client_id:     process.env.GOVBR_CLIENT_ID     ?? '',
-          client_secret: process.env.GOVBR_CLIENT_SECRET ?? '',
+          redirect_uri:  config.govbr.redirectUri  ?? '',
+          client_id:     config.govbr.clientId     ?? '',
+          client_secret: config.govbr.clientSecret ?? '',
         }).toString(),
       })
 

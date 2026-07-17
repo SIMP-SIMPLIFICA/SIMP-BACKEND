@@ -36,10 +36,10 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
     if (user.isSuperAdmin === undefined) user.isSuperAdmin = false
 
   } catch (err) {
+    request.log.warn({ err }, 'JWT verification failed')
     return reply.code(401).send({
       error: 'Unauthorized',
-      message: 'Falha na autenticação',
-      details: err
+      message: 'Falha na autenticação'
     })
   }
 }

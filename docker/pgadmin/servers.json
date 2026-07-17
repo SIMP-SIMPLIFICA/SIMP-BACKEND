@@ -1,0 +1,13 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "SIMP Local (Docker)",
+      "Group": "Servers",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "fastify_auth",
+      "Username": "postgres",
+      "SSLMode": "prefer"
+    }
+  }
+}

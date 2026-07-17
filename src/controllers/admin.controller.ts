@@ -1,8 +1,10 @@
 import { FastifyReply, FastifyRequest } from 'fastify'
 import { z, ZodError } from 'zod'
-import { hash } from '@node-rs/argon2'
+import { randomUUID } from 'node:crypto'
 import { prisma } from '../lib/prisma.js'
 import { authService } from '../services/auth.service.js'
+import { emailService } from '../services/email.service.js'
+import { authLogger } from '../utils/logger.js'
 import { DEFAULT_MODULES, ALL_MODULES, ModuleKey } from '../constants/modules.js'
 import { invalidateModuleCache } from '../middleware/auth.middleware.js'
 
@@ -13,16 +15,6 @@ import { invalidateModuleCache } from '../middleware/auth.middleware.js'
 function zodErrorMessage(error: unknown): string {
   if (error instanceof ZodError) return error.issues.map(i => i.message).join('. ')
   return error instanceof Error ? error.message : String(error)
-}
-
-function generateTempPassword(): string {
-  const lower   = 'abcdefghijkmnpqrstuvwxyz'
-  const upper   = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
-  const nums    = '23456789'
-  const special = '@$!%*?&'
-  const rand = (s: string) => s[Math.floor(Math.random() * s.length)]
-  const base = Array.from({ length: 6 }, () => rand(lower)).join('')
-  return rand(upper) + base + rand(nums) + rand(special)
 }
 
 function requireSuperAdmin(request: FastifyRequest, reply: FastifyReply): boolean {
@@ -116,8 +108,8 @@ export class AdminController {
     if (cnpjExists)  return reply.code(409).send({ error: 'Conflict', message: 'CNPJ já cadastrado.' })
     if (emailExists) return reply.code(409).send({ error: 'Conflict', message: 'E-mail já está em uso.' })
 
-    const tempPassword   = generateTempPassword()
-    const hashedPassword = await hash(tempPassword, { memoryCost: 65536, timeCost: 3, parallelism: 4 })
+    const tempPassword   = authService.generateTempPassword()
+    const hashedPassword = await authService.hashPassword(tempPassword)
 
     const validModules = data.enabledModules.filter(m =>
       (ALL_MODULES as readonly string[]).includes(m)
@@ -141,6 +133,7 @@ export class AdminController {
 
       const adminUser = await tx.user.create({
         data: {
+          id: randomUUID(),
           email: data.adminEmail.toLowerCase(),
           firstName: data.adminFirstName,
           lastName: data.adminLastName,
@@ -161,11 +154,14 @@ export class AdminController {
       return { org, adminUser }
     })
 
+    await emailService.sendTempPasswordEmail(adminUser.email, tempPassword).catch(err => {
+      authLogger.error(err, 'Failed to send temp password email to new organization admin')
+    })
+
     return reply.code(201).send({
-      message: 'Organização criada com sucesso.',
+      message: 'Organização criada com sucesso. A senha temporária foi enviada por e-mail para o administrador.',
       org: { id: org.id, name: org.name, slug: org.slug, cnpj: org.cnpj, plan: org.plan },
       admin: { id: adminUser.id, email: adminUser.email, firstName: adminUser.firstName, lastName: adminUser.lastName },
-      tempPassword, // TODO produção: enviar por email e remover do body
       enabledModules: validModules,
     })
   }

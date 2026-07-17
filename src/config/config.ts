@@ -15,6 +15,10 @@ const configSchema = z.object({
 
   // Database
   DATABASE_URL: z.string().url(),
+  // Opcionais: URL direta (sem pooler) para rodar migrations e URL de réplica de leitura.
+  // Localmente, ambas ficam sem uso — o Postgres local não tem pooler nem réplica.
+  DATABASE_MIGRATION_URL: z.string().url().optional(),
+  DATABASE_REPLICA_URL: z.string().url().optional(),
 
   // Redis
   REDIS_URL: z.string().url(),
@@ -64,11 +68,22 @@ const configSchema = z.object({
   SENTRY_DSN: z.string().url().optional().or(z.literal('')).transform(v => v || undefined),
   BETTERSTACK_SOURCE_TOKEN: z.string().optional(),
 
-  // Supabase
-  SUPABASE_URL: z.string().url(),
-  SUPABASE_ANON_KEY: z.string().min(40),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().min(40),
-  SUPABASE_JWT_SECRET: z.string().min(32)
+  // Cloudflare R2 (S3-compatible object storage) — opcional: sem credenciais,
+  // uploads/downloads falham no ponto de uso em vez de bloquear o boot local.
+  R2_ENDPOINT: z.string().url().optional(),
+  R2_ACCESS_KEY_ID: z.string().optional(),
+  R2_SECRET_ACCESS_KEY: z.string().optional(),
+  R2_BUCKET_NAME: z.string().optional(),
+  R2_PUBLIC_URL: z.string().url().optional(),
+
+  // Gov.br OAuth2 + assinatura digital — USE_MOCK_GOVBR=true (padrão local)
+  // simula o fluxo de assinatura sem exigir credenciais reais do gov.br.
+  GOVBR_CLIENT_ID: z.string().optional(),
+  GOVBR_CLIENT_SECRET: z.string().optional(),
+  GOVBR_REDIRECT_URI: z.string().url().optional(),
+  GOVBR_AUTH_URL: z.string().url().default('https://sso.staging.acesso.gov.br'),
+  GOVBR_SIGN_API_URL: z.string().url().default('https://assinatura-api.staging.iti.br'),
+  USE_MOCK_GOVBR: z.coerce.boolean().default(true)
 })
 
 const parsedEnv = configSchema.safeParse(process.env)
@@ -97,7 +112,9 @@ export const config = {
 
   // Database
   database: {
-    url: env.DATABASE_URL
+    url: env.DATABASE_URL,
+    migrationUrl: env.DATABASE_MIGRATION_URL,
+    replicaUrl: env.DATABASE_REPLICA_URL
   },
 
   // Redis
@@ -168,12 +185,23 @@ export const config = {
     betterstackToken: env.BETTERSTACK_SOURCE_TOKEN
   },
 
-  // Supabase
-  supabase: {
-    url: env.SUPABASE_URL,
-    anonKey: env.SUPABASE_ANON_KEY,
-    serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
-    jwtSecret: env.SUPABASE_JWT_SECRET
+  // Cloudflare R2 (object storage)
+  r2: {
+    endpoint: env.R2_ENDPOINT,
+    accessKeyId: env.R2_ACCESS_KEY_ID,
+    secretAccessKey: env.R2_SECRET_ACCESS_KEY,
+    bucketName: env.R2_BUCKET_NAME,
+    publicUrl: env.R2_PUBLIC_URL
+  },
+
+  // Gov.br OAuth2 + assinatura digital
+  govbr: {
+    clientId: env.GOVBR_CLIENT_ID,
+    clientSecret: env.GOVBR_CLIENT_SECRET,
+    redirectUri: env.GOVBR_REDIRECT_URI,
+    authUrl: env.GOVBR_AUTH_URL,
+    signApiUrl: env.GOVBR_SIGN_API_URL,
+    useMock: env.USE_MOCK_GOVBR
   }
 } as const
 

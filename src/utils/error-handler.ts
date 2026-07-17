@@ -62,7 +62,7 @@ export const errorHandler = (
     }
 
     if (error instanceof Prisma.PrismaClientInitializationError) {
-        logger.error({ error, requestId }, 'Database initialization error — cannot reach Supabase pooler')
+        logger.error({ error, requestId }, 'Database initialization error — cannot reach Postgres')
         return reply.code(503).send({
             statusCode: 503,
             error: 'Service Unavailable',

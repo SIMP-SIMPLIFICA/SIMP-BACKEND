@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { hash, verify } from '@node-rs/argon2'
 import { SignJWT, jwtVerify } from 'jose'
 import { nanoid } from 'nanoid'
@@ -7,6 +8,17 @@ import { authLogger, logSecurity } from '@/utils/logger.js'
 import { emailService } from '@/services/email.service.js'
 
 export class AuthService {
+  /** Gera uma senha temporária forte para contas criadas por um admin (nunca retornada na resposta da API — apenas por e-mail). */
+  generateTempPassword(): string {
+    const lower = 'abcdefghijkmnpqrstuvwxyz'
+    const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
+    const nums = '23456789'
+    const special = '@$!%*?&'
+    const rand = (s: string) => s[Math.floor(Math.random() * s.length)]
+    const base = Array.from({ length: 6 }, () => rand(lower)).join('')
+    return rand(upper) + base + rand(nums) + rand(special)
+  }
+
   async hashPassword(password: string): Promise<string> {
     try {
       return await hash(password, {
@@ -135,6 +147,7 @@ export class AuthService {
 
       const user = await prisma.user.create({
         data: {
+          id: randomUUID(),
           email: data.email.toLowerCase(),
           username: data.username,
           firstName: data.firstName,

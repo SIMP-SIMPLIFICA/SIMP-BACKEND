@@ -1,6 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { z, ZodError } from 'zod'
-import { hash } from '@node-rs/argon2'
+import { randomUUID } from 'node:crypto'
 import { prisma } from '@/lib/prisma.js'
 import { authService } from '@/services/auth.service.js'
 import { ALL_MODULES, DEFAULT_MODULES } from '@/constants/modules.js'
@@ -70,11 +70,7 @@ export class OrganizationController {
         return reply.code(409).send({ error: 'Conflict', message: 'E-mail já está em uso' })
       }
 
-      const hashedPassword = await hash(data.adminPassword, {
-        memoryCost: 65536,
-        timeCost: 3,
-        parallelism: 4
-      })
+      const hashedPassword = await authService.hashPassword(data.adminPassword)
 
       // Criar org + admin em transação
       const { org, adminUser } = await prisma.$transaction(async tx => {
@@ -88,6 +84,7 @@ export class OrganizationController {
 
         const adminUser = await tx.user.create({
           data: {
+            id: randomUUID(),
             email: data.adminEmail.toLowerCase(),
             firstName: data.adminFirstName,
             lastName: data.adminLastName,

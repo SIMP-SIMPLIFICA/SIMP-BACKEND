@@ -87,6 +87,16 @@ model User {
   lastName           String?   @map("last_name")
   fullName           String?   @map("full_name")
   avatar             String?
+
+  // Autenticação local (argon2 + jose) — Supabase Auth foi removido, ver ADR em docs/ProjectGoals.md §4
+  password             String
+  verifyToken          String?   @map("verify_token")
+  passwordResetToken   String?   @map("password_reset_token")
+  passwordResetExpires DateTime? @map("password_reset_expires")
+  twoFactorEnabled     Boolean   @default(false) @map("two_factor_enabled")
+  twoFactorSecret      String?   @map("two_factor_secret")
+  backupCodes          String[]  @map("backup_codes")
+
   jobTitle           String?   @map("job_title")
   municipalityName   String?   @map("municipality_name")
   role               AppRole   @default(standard_user) @map("role")
@@ -171,7 +181,7 @@ model Role {
 
 model UserRole {
   id         String    @id @default(nanoid())
-  userId     String
+  userId     String    @db.Uuid
   roleId     String
   expiresAt  DateTime?
   assignedBy String?
@@ -187,7 +197,7 @@ model UserRole {
 
 model UserSession {
   id           String   @id @default(nanoid())
-  userId       String
+  userId       String   @db.Uuid
   refreshToken String   @unique
   fingerprint  String?
   ipAddress    String?
@@ -208,7 +218,7 @@ model UserSession {
 
 model AuditLog {
   id           String   @id @default(nanoid())
-  userId       String?
+  userId       String?  @db.Uuid
   action       String
   resource     String
   resourceId   String?
@@ -277,7 +287,7 @@ model Department {
   organizationId String?       @map("organization_id")
   organization   Organization? @relation(fields: [organizationId], references: [id])
 
-  managerId String? @map("manager_id")
+  managerId String? @map("manager_id") @db.Uuid
   manager   User?   @relation("DepartmentManager", fields: [managerId], references: [id])
 
   members           User[]             @relation("DepartmentMembers")
@@ -331,7 +341,7 @@ model Workspace {
 model WorkspaceMember {
   id          String        @id @default(uuid())
   workspaceId String
-  userId      String
+  userId      String        @db.Uuid
   role        WorkspaceRole @default(MEMBER)
   joinedAt    DateTime      @default(now())
 
@@ -351,7 +361,7 @@ model Task {
   dueDate     DateTime?
 
   workspaceId String
-  creatorId   String
+  creatorId   String   @db.Uuid
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -368,7 +378,7 @@ model Task {
 
 model TaskAssignee {
   taskId String
-  userId String
+  userId String @db.Uuid
 
   task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -404,7 +414,7 @@ model TaskNote {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   taskId    String
-  authorId  String
+  authorId  String   @db.Uuid
 
   task   Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
   author User @relation(fields: [authorId], references: [id])
@@ -416,7 +426,7 @@ model TaskHistory {
   metadata  Json?
   createdAt DateTime @default(now())
   taskId    String
-  userId    String
+  userId    String   @db.Uuid
 
   task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id])
@@ -426,7 +436,7 @@ model Notification {
   id        String   @id @default(uuid())
   title     String
   message   String
-  userId    String
+  userId    String   @db.Uuid
   read      Boolean  @default(false)
   type      String
   link      String?
@@ -463,7 +473,7 @@ model CommunicationDocument {
   sentAt    DateTime? @map("sent_at")
   readAt    DateTime? @map("read_at")
 
-  createdBy String @map("created_by")
+  createdBy String @map("created_by") @db.Uuid
   creator   User   @relation("DocumentCreator", fields: [createdBy], references: [id])
 
   organizationId String?       @map("organization_id")
@@ -478,7 +488,7 @@ model CommunicationDocument {
 model DocumentRecipient {
   id         String       @id @default(nanoid())
   documentId String       @map("document_id")
-  userId     String       @map("user_id")
+  userId     String       @map("user_id") @db.Uuid
   role       DocumentRole @default(TO)
   canView    Boolean      @default(true) @map("can_view")
   readAt     DateTime?    @map("read_at")
@@ -559,8 +569,8 @@ model FinanceEntry {
   liquidacaoNumber  String?
   deliveryDate      DateTime?
   attachmentsStatus String           @default("none")
-  createdById       String
-  updatedById       String?
+  createdById       String           @db.Uuid
+  updatedById       String?          @db.Uuid
   deletedAt         DateTime?
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
@@ -581,7 +591,7 @@ model FinanceEntry {
 model FinanceAttachment {
   id         String   @id @default(uuid())
   entryId    String
-  uploaderId String
+  uploaderId String   @db.Uuid
   fileName   String
   fileType   String
   fileSize   Int
@@ -614,7 +624,7 @@ model VirtualProcess {
   category       String    @default("Outros")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
-  createdById String   @map("created_by_id")
+  createdById String   @map("created_by_id") @db.Uuid
 
   organization Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   creator      User                     @relation("ProcessCreator", fields: [createdById], references: [id])
@@ -671,7 +681,7 @@ model VirtualProcessDocument {
   fileName         String   @map("file_name")
   fileUrl          String   @map("file_url")
   fileSize         Int      @map("file_size")
-  uploadedById     String   @map("uploaded_by_id")
+  uploadedById     String   @map("uploaded_by_id") @db.Uuid
   uploadedAt       DateTime @default(now()) @map("uploaded_at")
 
   process  VirtualProcess @relation(fields: [virtualProcessId], references: [id], onDelete: Cascade)
@@ -692,7 +702,7 @@ model CalendarEvent {
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
-  userId String @map("user_id")
+  userId String @map("user_id") @db.Uuid
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   organizationId String?       @map("organization_id")
@@ -727,7 +737,7 @@ model Note {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  userId String @map("user_id")
+  userId String @map("user_id") @db.Uuid
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   organizationId String?       @map("organization_id")
@@ -749,7 +759,7 @@ model LibraryDocument {
   accessLevel  Int       @default(1)                @map("access_level") // 1 | 2 | 3
   textContent  String?   @db.Text                   @map("text_content") // OCR para busca profunda
 
-  uploaderId     String   @map("uploader_id")
+  uploaderId     String   @map("uploader_id") @db.Uuid
   organizationId String   @map("organization_id")
   categoryId     String?  @map("category_id")
   covenantId     String?  @map("covenant_id")
@@ -919,7 +929,7 @@ model SequenceControl {
 model OfficialDocument {
   id               String   @id @default(uuid())
   organizationId   String   @map("organization_id")
-  creatorId        String   @map("creator_id")
+  creatorId        String   @map("creator_id") @db.Uuid
 
   documentCategory    OfficialDocumentCategory    @map("document_category")
   documentType        String                       @map("document_type")
@@ -1018,7 +1028,7 @@ model CouncilMembership {
   id             String            @id @default(nanoid())
   organizationId String            @map("organization_id")
   councilId      String            @map("council_id")
-  userId         String            @map("user_id")
+  userId         String            @map("user_id") @db.Uuid
   role           CouncilMemberRole @default(MEMBRO_TITULAR)
   startDate      DateTime?         @map("start_date")
   endDate        DateTime?         @map("end_date")
@@ -1047,7 +1057,7 @@ model CouncilMeeting {
   endedAt        DateTime?     @map("ended_at")
   status         MeetingStatus @default(AGENDADA)
   quorum         Int?
-  createdById    String        @map("created_by_id")
+  createdById    String        @map("created_by_id") @db.Uuid
   createdAt      DateTime      @default(now()) @map("created_at")
   updatedAt      DateTime      @updatedAt @map("updated_at")
 
@@ -1104,7 +1114,7 @@ model CouncilDocument {
   fileSize       Int                 @map("file_size")
   mimeType       String              @default("application/pdf") @map("mime_type")
   sha256Hash     String?             @map("sha256_hash")
-  uploadedById   String              @map("uploaded_by_id")
+  uploadedById   String              @map("uploaded_by_id") @db.Uuid
   createdAt      DateTime            @default(now()) @map("created_at")
   updatedAt      DateTime            @updatedAt @map("updated_at")
 
@@ -1122,7 +1132,7 @@ model SignatureRequest {
   id             String          @id @default(nanoid())
   organizationId String          @map("organization_id")
   documentId     String          @map("document_id")
-  requestedById  String          @map("requested_by_id")
+  requestedById  String          @map("requested_by_id") @db.Uuid
   status         SignatureStatus @default(PENDENTE)
   pkcs7Data      String?         @db.Text @map("pkcs7_data")
   signedAt       DateTime?       @map("signed_at")
@@ -1170,7 +1180,7 @@ enum SupportStatus {
 
 model SupportRequest {
   id             String        @id @default(nanoid())
-  authorId       String        @map("author_id")
+  authorId       String        @map("author_id") @db.Uuid
   organizationId String        @map("organization_id")
   type           SupportType
   status         SupportStatus @default(OPEN)
@@ -1190,7 +1200,7 @@ model SupportRequest {
 model SupportMessage {
   id        String   @id @default(nanoid())
   requestId String   @map("request_id")
-  senderId  String   @map("sender_id")
+  senderId  String   @map("sender_id") @db.Uuid
   content   String   @db.Text
   isRead    Boolean  @default(false) @map("is_read")
   createdAt DateTime @default(now()) @map("created_at")

@@ -1,6 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { authService } from '@/services/auth.service.js'
-import { supabaseAdmin } from '@/lib/supabase.js'
 import { db } from '@/utils/database.js'
 import { prisma } from '@/lib/prisma.js'
 import { authLogger } from '@/utils/logger.js'
@@ -139,20 +138,14 @@ export class UserController {
         if (existingUsername) return reply.code(400).send({ error: 'Username Taken', message: 'Username is already taken' })
       }
 
-      const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-        email: data.email.toLowerCase(),
-        ...(data.password ? { password: data.password } : {}),
-        email_confirm: data.isVerified ?? false,
-      })
-      if (authError || !authData.user) {
-        return reply.code(500).send({ error: 'User Creation Failed', message: authError?.message ?? 'Failed to create auth user' })
-      }
+      const hashedPassword = await authService.hashPassword(data.password)
 
       const user = await prisma.user.create({
         data: {
-          id: authData.user.id,
+          id: crypto.randomUUID(),
           email: data.email.toLowerCase(), firstName: data.firstName,
           lastName: data.lastName, username: data.username, isActive: data.isActive ?? true, isVerified: data.isVerified ?? false,
+          password: hashedPassword,
           organizationId: request.user.organizationId
         },
         select: { id: true, email: true, username: true, firstName: true, lastName: true, isActive: true, isVerified: true, createdAt: true }

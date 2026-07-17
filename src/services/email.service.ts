@@ -121,6 +121,25 @@ class EmailService {
     })
   }
 
+  async sendTempPasswordEmail(email: string, tempPassword: string): Promise<void> {
+    const loginUrl = `${config.urls.frontend}/login`
+    const content = `
+      <p>Uma conta foi criada para você no SIMP.</p>
+      <p>Sua senha temporária é: <strong>${tempPassword}</strong></p>
+      <p>Por segurança, recomendamos alterá-la assim que fizer o primeiro acesso.</p>
+    `
+    await this.sendEmail({
+      to: email,
+      subject: 'Sua conta SIMP foi criada',
+      html: this.generateEmailTemplate(
+        'Bem-vindo ao SIMP',
+        content,
+        { text: 'Acessar o sistema', url: loginUrl }
+      ),
+      text: `Sua senha temporária: ${tempPassword}\n\nAcesse: ${loginUrl}`
+    })
+  }
+
   async sendWelcomeEmail(email: string, name?: string): Promise<void> {
     const content = `<p>Hello ${name || ''}! Welcome to SIMP.</p>`
     await this.sendEmail({

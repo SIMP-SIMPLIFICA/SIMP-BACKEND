@@ -4,11 +4,7 @@ import { createChecklistItemSchema, createTaskSchema, updateChecklistItemSchema,
 import { notificationService } from '../services/notification.service.js';
 import { userHasPermission, PERMISSION_MISSING_MESSAGE } from '../services/rbac.service.js';
 import { z } from 'zod';
-import * as path from 'node:path';
-import * as crypto from 'node:crypto';
-import r2 from '../lib/r2.js';
-import { PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { saveFile, getFileUrl, deleteFile } from '../services/storage.service.js';
 
 // --- HELPERS ---
 
@@ -123,21 +119,11 @@ export class TaskController {
     });
     if (!member) return reply.status(403).send({ message: 'Sem permissão.' });
 
-    // Gera presigned URLs para cada anexo
-    const attachmentsWithUrls = await Promise.all(
-      task.attachments.map(async (att) => {
-        try {
-          const url = await getSignedUrl(
-            r2,
-            new GetObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: att.fileUrl }),
-            { expiresIn: 3600 }
-          );
-          return { ...att, signedUrl: url };
-        } catch {
-          return { ...att, signedUrl: null };
-        }
-      })
-    );
+    // URL pública local de cada anexo (antes: presigned URL do R2)
+    const attachmentsWithUrls = task.attachments.map((att) => ({
+      ...att,
+      signedUrl: getFileUrl(att.fileUrl),
+    }));
 
     return reply.send({ ...task, attachments: attachmentsWithUrls });
   }
@@ -361,17 +347,11 @@ export class TaskController {
     for await (const chunk of data.file) chunks.push(chunk);
     const fileBuffer = Buffer.concat(chunks);
 
-    const fileExt = path.extname(data.filename);
-    const uniqueName = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${fileExt}`;
-    const orgId = request.user.organizationId ?? 'global';
-    const r2Key = `organizations/${orgId}/tasks/${uniqueName}`;
-
-    await r2.send(new PutObjectCommand({
-        Bucket: process.env.R2_BUCKET_NAME,
-        Key: r2Key,
-        Body: fileBuffer,
-        ContentType: data.mimetype,
-    }));
+    const fileKey = await saveFile(fileBuffer, {
+        organizationId: request.user.organizationId ?? null,
+        scope: 'tasks',
+        originalName: data.filename,
+    });
 
     const attachment = await prisma.taskAttachment.create({
         data: {
@@ -380,7 +360,7 @@ export class TaskController {
             fileName: data.filename,
             fileType: data.mimetype,
             fileSize: fileBuffer.length,
-            fileUrl: r2Key
+            fileUrl: fileKey
         }
     });
 
@@ -422,7 +402,7 @@ export class TaskController {
 
     await prisma.taskAttachment.delete({ where: { id: attachmentId } });
     try {
-        await r2.send(new DeleteObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: attachment.fileUrl }));
+        await deleteFile(attachment.fileUrl);
     } catch (_e) { /* ignore */ }
     
     await prisma.taskHistory.create({

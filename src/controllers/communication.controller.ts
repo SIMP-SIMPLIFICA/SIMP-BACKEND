@@ -2,12 +2,7 @@ import { FastifyReply, FastifyRequest } from 'fastify'
 import { prisma } from '@/lib/prisma'
 import { CreateMessageInput, UpdateMessageInput } from '@/schemas/communication.schemas'
 import { notificationService } from '@/services/notification.service'
-import { getUsersWithPermission, PERMISSION_MISSING_MESSAGE } from '@/services/rbac.service.js'
-import path from 'node:path'
-import crypto from 'node:crypto'
-import r2 from '@/lib/r2.js'
-import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3'
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+import { saveFile, getFileUrl } from '@/services/storage.service.js'
 
 export class CommunicationController {
   private getUserId(request: FastifyRequest): string {
@@ -15,6 +10,26 @@ export class CommunicationController {
     const userId = user.id || user.sub
     if (!userId) throw new Error('ID do usuário não encontrado no token')
     return userId
+  }
+
+  /**
+   * Resolve o filtro de organização de forma fail-closed: super admin vê tudo,
+   * usuário comum precisa ter organizationId presente ou a requisição é rejeitada
+   * (nunca cai para "sem filtro" por engano). Retorna `null` quando já respondeu 403.
+   */
+  private getOrgFilter(
+    request: FastifyRequest,
+    reply: FastifyReply
+  ): { organizationId: string } | Record<string, never> | null {
+    const user = request.user as any
+    if (user.isSuperAdmin) return {}
+
+    if (!user.organizationId) {
+      reply.code(403).send({ message: 'Usuário sem organização associada.' })
+      return null
+    }
+
+    return { organizationId: user.organizationId as string }
   }
 
   async create(request: FastifyRequest<{ Body: CreateMessageInput }>, reply: FastifyReply) {
@@ -32,13 +47,6 @@ export class CommunicationController {
           })
           if (validCount !== recipientUserIds.length) {
             return reply.code(403).send({ message: 'Um ou mais destinatários não pertencem a esta organização.' })
-          }
-
-          // RBAC: todos os destinatários devem ter communication:read
-          const permitted = await getUsersWithPermission(recipientUserIds, 'communication:read')
-          const unauthorized = recipientUserIds.filter(id => !permitted.has(id))
-          if (unauthorized.length > 0) {
-            return reply.code(400).send({ message: PERMISSION_MISSING_MESSAGE })
           }
         }
       }
@@ -110,10 +118,13 @@ export class CommunicationController {
     const userId = this.getUserId(request)
     const { startDate, endDate, personId } = request.query as any
 
+    const orgFilter = this.getOrgFilter(request, reply)
+    if (orgFilter === null) return
+
     const where: any = {
       recipients: { some: { userId } },
       status: { in: ['SENT', 'READ', 'ARCHIVED'] },
-      ...(!request.user.isSuperAdmin && { organizationId: request.user.organizationId })
+      ...orgFilter
     }
 
     if (startDate && endDate) {
@@ -142,10 +153,13 @@ export class CommunicationController {
     const userId = this.getUserId(request)
     const { startDate, endDate, personId } = request.query as any
 
+    const orgFilter = this.getOrgFilter(request, reply)
+    if (orgFilter === null) return
+
     const where: any = {
       createdBy: userId,
       status: { not: 'DRAFT' },
-      ...(!request.user.isSuperAdmin && { organizationId: request.user.organizationId })
+      ...orgFilter
     }
 
     if (startDate && endDate) {
@@ -271,10 +285,13 @@ export class CommunicationController {
     const userId = this.getUserId(request)
     const { search } = request.query as { search?: string }
 
+    const orgFilter = this.getOrgFilter(request, reply)
+    if (orgFilter === null) return
+
     const where: any = {
       isActive: true,
       id: { not: userId },
-      ...(!request.user.isSuperAdmin && { organizationId: request.user.organizationId })
+      ...orgFilter
     }
 
     if (search) {
@@ -297,16 +314,13 @@ export class CommunicationController {
       take: 20
     })
 
-    const permitted = await getUsersWithPermission(users.map(u => u.id), 'communication:read')
-
     return reply.send(users.map(u => ({
       id: u.id,
       name: `${u.firstName} ${u.lastName}`,
       username: u.username,
       email: u.email,
       avatar: u.avatar,
-      role: u.roles[0]?.role?.displayName || 'Usuário',
-      hasPermission: permitted.has(u.id)
+      role: u.roles[0]?.role?.displayName || 'Usuário'
     })))
   }
 
@@ -336,20 +350,17 @@ export class CommunicationController {
         return reply.code(400).send({ message: 'Arquivo muito grande. O limite é 10MB.' })
       }
 
-      const ext = path.extname(data.filename) || ''
-      const uniqueName = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`
-      const r2Key = `communication/${orgId ?? 'global'}/${uniqueName}`
-
-      await r2.send(new PutObjectCommand({
-        Bucket: process.env.R2_BUCKET_NAME,
-        Key: r2Key,
-        Body: buffer,
-        ContentType: data.mimetype
-      }))
+      // fileUrl passa a guardar o fileKey completo (antes guardava só o nome, e a
+      // chave era remontada no download) — evita duplicar a convenção de caminho.
+      const fileKey = await saveFile(buffer, {
+        organizationId: orgId,
+        scope: 'communication',
+        originalName: data.filename,
+      })
 
       return reply.code(201).send({
         fileName: data.filename,
-        fileUrl: uniqueName,
+        fileUrl: fileKey,
         fileType: data.mimetype,
         fileSize: buffer.length
       })
@@ -381,14 +392,7 @@ export class CommunicationController {
 
     if (!attachment) return reply.code(404).send({ message: 'Anexo não encontrado' })
 
-    const orgId = message.organizationId ?? 'global'
-    const r2Key = `communication/${orgId}/${attachment.fileUrl}`
-
-    const command = new GetObjectCommand({
-      Bucket: process.env.R2_BUCKET_NAME,
-      Key: r2Key
-    })
-    const url = await getSignedUrl(r2, command, { expiresIn: 3600 })
+    const url = getFileUrl(attachment.fileUrl)
 
     return reply.send({ url, fileName: attachment.fileName, fileType: attachment.fileType })
   }

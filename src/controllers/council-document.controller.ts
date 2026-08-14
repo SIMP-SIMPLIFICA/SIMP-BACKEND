@@ -1,11 +1,13 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { createHash } from 'node:crypto'
 import * as path from 'node:path'
-import * as crypto from 'node:crypto'
 import { prisma } from '@/lib/prisma.js'
-import r2 from '@/lib/r2.js'
-import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+import { saveFile, getFileUrl, deleteFile } from '@/services/storage.service.js'
+import {
+  isMeetingFrozen,
+  MEETING_FROZEN_ERROR,
+  MEETING_FROZEN_MESSAGE,
+} from '@/services/council-compliance.js'
 import { z } from 'zod'
 import { CouncilDocumentType } from '@prisma/client'
 
@@ -101,6 +103,9 @@ export const documentController = {
 
       const meeting = await resolveMeeting(meetingId, councilId, orgFilter)
       if (!meeting) return reply.code(404).send({ error: 'Not Found', message: 'Reunião não encontrada.' })
+      if (isMeetingFrozen(meeting.scheduledAt)) {
+        return reply.code(403).send({ error: MEETING_FROZEN_ERROR, message: MEETING_FROZEN_MESSAGE })
+      }
 
       // Parse multipart
       let fileBuffer: Buffer | null = null
@@ -142,18 +147,14 @@ export const documentController = {
       // Compute SHA-256 server-side — client hash is never trusted
       const sha256Hash = computeSha256(fileBuffer)
 
-      // Build unique R2 key
-      const ext       = path.extname(originalFileName) || '.pdf'
-      const uniqueName = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`
-      const fileKey    = `organizations/${organizationId}/councils/${uniqueName}`
+      const ext = path.extname(originalFileName) || '.pdf'
 
-      // Upload to R2
-      await r2.send(new PutObjectCommand({
-        Bucket:      process.env.R2_BUCKET_NAME,
-        Key:         fileKey,
-        Body:        fileBuffer,
-        ContentType: mimeType,
-      }))
+      // Grava em disco local — ver storage.service.ts
+      const fileKey = await saveFile(fileBuffer, {
+        organizationId,
+        scope: 'councils',
+        originalName: originalFileName,
+      })
 
       // Persist record
       const document = await prisma.councilDocument.create({
@@ -195,11 +196,7 @@ export const documentController = {
       })
       if (!document) return reply.code(404).send({ error: 'Not Found', message: 'Documento não encontrado.' })
 
-      const url = await getSignedUrl(
-        r2,
-        new GetObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: document.fileKey }),
-        { expiresIn: 300 },
-      )
+      const url = getFileUrl(document.fileKey)
 
       return reply.send({ url, fileName: document.fileName, sha256Hash: document.sha256Hash })
     } catch (err) {
@@ -225,11 +222,17 @@ export const documentController = {
       })
       if (!document) return reply.code(404).send({ error: 'Not Found', message: 'Documento não encontrado.' })
 
-      // Delete from R2 first — if it fails we leave DB record intact
+      // Mesma trava do upload: sem isso, o congelamento seria contornável
+      // apagando a ata e reanexando outra.
+      if (isMeetingFrozen(meeting.scheduledAt)) {
+        return reply.code(403).send({ error: MEETING_FROZEN_ERROR, message: MEETING_FROZEN_MESSAGE })
+      }
+
+      // Apaga do disco primeiro — se falhar, o registro no banco permanece intacto
       try {
-        await r2.send(new DeleteObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: document.fileKey }))
-      } catch (r2Err) {
-        request.log.warn({ r2Err, fileKey: document.fileKey }, 'Failed to delete council document from R2')
+        await deleteFile(document.fileKey)
+      } catch (fsErr) {
+        request.log.warn({ fsErr, fileKey: document.fileKey }, 'Failed to delete council document from disk')
       }
 
       await prisma.councilDocument.delete({ where: { id: docId } })

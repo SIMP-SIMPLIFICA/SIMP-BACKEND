@@ -46,9 +46,19 @@ These are not gated by `OrganizationModule` — every organization has them.
 - **Acceptance:** permission resolution must be consistent regardless of which code path evaluates it. Currently there are three independent implementations (`rbac.service.ts`, `utils/database.ts`, `middleware/auth.middleware.ts`) that can disagree — e.g. a `system:admin` bypass exists in one path and not another. This must not silently diverge; see `TechStack.md` §11 P1.
 
 ### 3.5 Admin (super-admin panel)
-- **Requirement:** Cross-organization management: create/inspect organizations, toggle modules, and **impersonate** a user in any organization for support purposes.
-- **Routes:** `/api/v1/admin/*` (`admin.controller.ts`, 332 lines, includes `POST /organizations/:id/impersonate`).
+- **Requirement:** Cross-organization management: create/inspect organizations, toggle modules, **suspend/reactivate** an organization (kill switch), and **impersonate** a user in any organization for support purposes.
+- **Routes:** `/api/v1/admin/*` (`admin.controller.ts`, includes `POST /organizations/:id/impersonate`).
 - **Frontend pages:** `src/pages/admin/{AdminPanel,AdminNewOrganizationPage,AdminOrganizationDetailPage,SupportAdminPage}.tsx`.
+
+#### 3.5.1 Kill switch — suspensão de organização (Épico 3, 2026-08-09)
+- **Requirement:** O Super Admin pode suspender uma organização inadimplente; enquanto suspensa, **nenhum** usuário dela acessa o sistema ou consome a API — inclusive quem já estava logado com token válido.
+- **Estado:** reutiliza o booleano `Organization.isActive` já existente (não há enum `ACTIVE`/`SUSPENDED`, e nenhuma migration foi necessária).
+- **Alternância:** `PATCH /api/v1/admin/organizations/:id` com `{ isActive }` — endpoint que já existia, agora com invalidação de cache e registro em auditoria (`ORGANIZATION_SUSPENDED` / `ORGANIZATION_REACTIVATED`).
+- **Onde a trava vive:** dentro de `authenticate` (`src/middleware/auth.middleware.ts`), único ponto por onde toda requisição autenticada passa. **A ordem é crítica e não deve ser reorganizada:** o Super Admin retorna *antes* de qualquer consulta de organização — se essa checagem viesse depois, suspender todas as organizações bloquearia o próprio Super Admin, tornando a reativação impossível pela interface.
+- **Erro devolvido:** HTTP 403 com `{ error: 'ORGANIZATION_SUSPENDED' }`, seguindo o precedente de `MODULE_DISABLED`. O frontend (`src/lib/api.ts`) intercepta **apenas esse código** — um 403 de permissão comum não desloga ninguém —, limpa sessão e cache do TanStack Query e redireciona para `/acesso-suspenso` (rota pública, para não criar laço com o login).
+- **Login:** bloqueado também em `auth.service.ts::login`, verificado *após* a senha, para não revelar a existência da conta a quem não tem a credencial.
+- **Comportamento conhecido:** o status é cacheado por 60s em memória (mesmo padrão do `moduleCache`). Pela interface o efeito é imediato (há invalidação explícita); alterar `is_active` **direto no banco** leva até 60s para surtir efeito.
+- **Impersonação:** continua recusada para organizações suspensas, para que a suspensão não seja contornável por essa via.
 
 ### 3.6 Profile & Settings
 - **Requirement:** Users manage their own profile; organizations manage org-level public/private settings.
@@ -84,6 +94,23 @@ These are not gated by `OrganizationModule` — every organization has them.
 - **Data model:** `VirtualProcess`, `VirtualProcessCategory`, `VirtualProcessSource`, `VirtualProcessCompany`, `VirtualProcessDocument`.
 - **Gating note:** not enabled by default — requires manual super-admin activation per organization.
 
+#### 4.4.1 Vencimentos e alertas de prazo (Épico 3, 2026-08-09)
+- **Campos:** `validityDate` (DateTime?) e `totalValue` (`Decimal(15,2)?`, mesma convenção de `Covenant.transferValue`). Aplicados via `prisma db push` (o `migrate dev` está bloqueado por drift — ver §11 do TechStack).
+- **Distinção importante:** `validityDate` é a **vigência legal** e é a ÚNICA data que dispara alertas. Não confundir com `endDate` ("Data de Encerramento", quando o processo é arquivado) nem com `startDate`. O formulário separa os dois grupos visualmente ("Tramitação do processo" vs. "Prazo monitorado") justamente porque preencher o campo errado faria o alerta nunca disparar — falha silenciosa.
+- **Faixas de alerta** (fonte única: `SIMP-FRONTEND/src/lib/processExpiry.ts`), avaliadas da mais grave para a menos grave: **vencido** (`< 0` dias, badge vermelho sólido) → **crítico** (`<= 3` dias, cobrindo 3/2/1/0 de forma contínua) → **urgente** (`<= 7`) → **atenção** (`<= 15`) → **aviso** (`<= 30`) → sem alerta.
+- **Contagem por dia de calendário**: usa `differenceInCalendarDays` do `date-fns`, não subtração de milissegundos. Uma diferença bruta faria um processo que vence amanhã às 09h ser exibido como "vence hoje" quando consultado às 14h — a faixa mudaria conforme a hora da consulta.
+- **Filtro:** `GET /virtual-processes?expiringIn=<dias>` — janela do início de hoje ao fim do dia `hoje + N`. O limite inferior é o início de hoje (não "agora") para que um processo que vence hoje não suma do filtro no meio do expediente. Processos sem `validityDate` ficam fora naturalmente. Filtragem no servidor, para que `total` e paginação fiquem coerentes.
+- **Edição:** `PATCH /virtual-processes/:id/validity` (permissões `processes:write`/`processes:manage`), escopo estreito no padrão de `/:id/company`. Existe porque, sem ele, o acervo já cadastrado ficaria permanentemente fora do controle de prazos. `null` remove um valor já gravado; campo omitido não é alterado.
+
+#### 4.4.2 Documentos compartilhados com Convênios (Épico 3, 2026-08-09)
+- **Relação N:N Convênio ↔ Processo já existia** (`_CovenantToVirtualProcess`, relação implícita do Prisma) — este épico se apoiou nela, sem criar migration de relacionamento.
+- **Coluna nova:** `LibraryDocument.virtualProcessId` (opcional). Um documento anexado pelo Convênio pode ser atribuído a um processo específico e passa a aparecer nas **duas** telas, com **um único arquivo armazenado**.
+- **`onDelete: SetNull` (nunca Cascade)**: excluir um processo **não apaga** documentos do acervo do convênio — eles voltam a ser "Gerais". Documento de convênio é acervo com valor legal.
+- **Validação server-side:** o upload recusa vincular um documento a um processo que não esteja associado ao convênio de origem (e recusa `virtualProcessId` sem `covenantId`). A interface já oferece só os processos corretos, mas interface não é fronteira de segurança.
+- **Dois modelos de documento, normalizados na leitura:** `LibraryDocument` (`fileKey`, `accessLevel`, `title`) e `VirtualProcessDocument` (`fileUrl`, `tag`, `description`) têm formatos, ids e endpoints de download distintos. `GET /virtual-processes/:id` devolve `unifiedDocuments` com `source: 'process' | 'covenant'`. O armazenamento continua separado — unificar os modelos seria migração de dados com impacto em Biblioteca, Conselhos e Processos.
+- **Download de documento do convênio passa pelo endpoint da Biblioteca**, mesmo quando exibido na tela do Processo — é o que preserva a checagem de `accessLevel` (sigilo) sem criar um segundo caminho para divergir.
+- **Exclusão permanece na tela de origem:** a aba do Processo mostra documentos do convênio como leitura + download, sem botão de excluir. As regras de exclusão dos dois modelos são diferentes (`library:delete` vs. janela de 24h do processo).
+
 ### 4.5 Calendar & Notes (Utilidades)
 - **Purpose:** Personal/org calendar events and freeform notes.
 - **Routes:** `/api/v1/utilities/calendar/*`, `/api/v1/utilities/notes/*`.
@@ -102,6 +129,7 @@ These are not gated by `OrganizationModule` — every organization has them.
 - **Frontend:** `src/pages/convenios/{CovenantsPage,CovenantDetailSheet,CovenantFormDialog}.tsx`.
 - **Data model:** `CovenantType`, `Convenente`, `Concedente`, `Covenant`.
 - **Acceptance:** a `Covenant`'s transfer/counterpart values must be traceable to its `Concedente` and `Convenente` records for audit purposes.
+- **Documentos por processo (Épico 3, 2026-08-09):** a aba Documentos agrupa o acervo em blocos por Processo Virtual vinculado (cabeçalho "Processo nº X — Secretaria — Objeto"), reunindo em cada bloco **as duas origens** (documentos do convênio atribuídos ao processo + documentos anexados diretamente nele). Documentos sem vínculo ficam no bloco "Gerais". Ao anexar, um Select "Vincular a qual Processo?" aparece **somente** se o convênio tiver processos vinculados. Detalhes da regra em §4.4.2.
 
 ### 4.8 Protocolos (Official Document Numbering)
 - **Purpose:** Sequential or randomized official protocol/document numbering for legal traceability.
@@ -116,6 +144,23 @@ These are not gated by `OrganizationModule` — every organization has them.
 - **Frontend:** `src/pages/councils/{CouncilsPage,CouncilDetailPage,MeetingDetailPage,CouncilSignReturnPage}.tsx`.
 - **Data model:** `Council`, `CouncilMembership`, `CouncilMeeting`, `MeetingAgendaItem`, `MeetingAttendance`, `CouncilDocument`, `SignatureRequest`, `GovBrOAuthState`.
 - **Gating note:** not enabled by default; requires manual activation.
+
+#### 4.9.1 Trava de compliance de 72h (Épico 3, 2026-08-09)
+- **Regra:** passadas **72 horas** de `CouncilMeeting.scheduledAt`, o registro da reunião congela e nenhuma mutação é aceita. Reuniões futuras, de hoje ou dentro do prazo permanecem totalmente editáveis.
+- **Cobertura — 9 rotas, não 2.** Além de editar/excluir a reunião e anexar/excluir atas (o mínimo óbvio), a trava alcança **status, pauta (criar/editar/excluir) e presença**: alterar a pauta de uma ata congelada mudaria o conteúdo do registro oficial pela porta dos fundos. Fonte única em `src/services/council-compliance.ts` — nove implementações separadas divergiriam.
+- **Aritmética de tempo:** comparação de **instantes em UTC** (`Date.now() > scheduledAt + 72h`), nunca de dias de calendário nem de componentes locais (`getHours`/`setHours`). O prazo é literalmente 72 horas; arredondar para dia daria a alguém até ~24h a mais ou a menos conforme o horário da reunião. **Contraste proposital com §4.4.1**, onde os alertas de vencimento usam `differenceInCalendarDays` — lá a pergunta é "quantos dias faltam", aqui é um instante exato.
+- **Servidor é a fonte da verdade:** as rotas de leitura devolvem `isFrozen` e `freezeAt` prontos. O frontend **não recalcula** — se recalculasse, o relógio do navegador do usuário entraria na decisão sobre um registro oficial, e a tela poderia divergir do servidor.
+- **Erro:** HTTP 403 com `{ error: 'MEETING_FROZEN' }`, no padrão de `MODULE_DISABLED`/`ORGANIZATION_SUSPENDED`.
+- **Interface:** badge "Registro Oficial Congelado (Prazo de 72h encerrado)" + aviso explicativo no topo da reunião; controles **desabilitados, não ocultos** (o usuário precisa entender que a ação existia); ícone de cadeado na listagem de reuniões.
+- **Não há mecanismo de desbloqueio.** Nenhum papel reabre um registro congelado. Se a prefeitura precisar disso (ex: determinação judicial), é funcionalidade própria, com regra de quem pode e auditoria própria.
+
+#### 4.9.2 Calendário Anual Oficial em PDF (Épico 3, 2026-08-09)
+- Botão "Exportar Calendário Anual" na aba Reuniões, com seletor de ano (anos que têm reuniões + ano corrente).
+- **Layout:** cabeçalho com nome da organização e do conselho + ano; tabela de reuniões (Data, Pauta/Tema, Situação); rodapé com linhas de assinatura tracejadas contendo nome e cargo dos membros **ativos** da Mesa Diretora (`PRESIDENTE`, `VICE_PRESIDENTE`, `SECRETARIO`).
+- **Casos-limite tratados:** ano sem reuniões gera o documento indicando ausência (não falha nem sai vazio); cargo ausente **omite a linha** em vez de imprimir "Presidente: ____" sem presidente cadastrado, o que induziria a erro; cargo duplicado por erro de cadastro não quebra a geração.
+- **Técnica:** `jspdf` + `jspdf-autotable` no cliente (`src/utils/councilCalendarPdf.ts`), já instalados e com precedente em `src/utils/export.ts`. Escolhido em vez de `window.print()` porque o diálogo do navegador não garante o layout — e este é documento oficial com linhas de assinatura.
+- **Rótulos dos cargos:** `MEMBRO_TITULAR` e `MEMBRO_SUPLENTE` passaram a ser exibidos como "Conselheiro(a)" e "Suplente"; **os valores do enum no banco permanecem inalterados** (sem migration). Fonte única em `src/lib/councilRoles.ts`, que substituiu a duplicação que existia entre `CouncilDetailPage` e `EditMemberModal`.
+
 - **Known open gaps (from code TODOs):**
   - `src/router.tsx:179` (frontend) — Councils routes are currently gated only by module flag, not fine-grained permission, unlike every other module. **Acceptance to close this gap:** wrap Councils routes in `PermissionGate anyOf={["councils:read","councils:write","councils:admin"]}` once those permission keys are defined in the RBAC seed data.
   - `src/pages/councils/CouncilsPage.tsx:188` (frontend) — the council list endpoint does not return associated meetings; the meeting list is only populated from the detail page today. **Acceptance to close this gap:** the list endpoint should either eager-load meeting counts or the list page should fetch them lazily per row.

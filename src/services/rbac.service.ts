@@ -1,4 +1,25 @@
+import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma.js'
+import { DEFAULT_ADMIN_PERMISSIONS } from '@/constants/permissions.js'
+
+/**
+ * Garante que a role global "admin" exista e retorna seu id — chamado dentro
+ * da mesma transaction que cria a Organization + User, para que a vinculação
+ * do UserRole nunca dependa de um seed prévio ter rodado (self-healing).
+ */
+export async function ensureAdminRole(tx: Prisma.TransactionClient): Promise<{ id: string }> {
+  return tx.role.upsert({
+    where: { name: 'admin' },
+    update: {},
+    create: {
+      name: 'admin',
+      displayName: 'Administrador',
+      isSystem: true,
+      permissions: DEFAULT_ADMIN_PERMISSIONS,
+    },
+    select: { id: true },
+  })
+}
 
 export const PERMISSION_MISSING_MESSAGE =
   'Esse usuário não tem permissão para essa ferramenta. Se for admin, acesse a parte de permissões (Roles), edite o cargo que foi atribuído a ele clicando no ícone do lápis, e marque as permissões necessárias.'

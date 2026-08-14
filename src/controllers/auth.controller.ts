@@ -52,7 +52,18 @@ export class AuthController {
       })
       return reply.send({ message: 'Login successful', user: result.user, tokens: { accessToken: result.tokens.accessToken, expiresIn: result.tokens.expiresIn } })
     } catch (error: unknown) {
-      return reply.code(400).send({ error: 'Login Failed', message: error instanceof Error ? error.message : String(error) })
+      const message = error instanceof Error ? error.message : String(error)
+
+      // Organização suspensa: erro identificável, para o frontend explicar a causa
+      // em vez de exibir a mensagem genérica de credenciais inválidas.
+      if (message === 'ORGANIZATION_SUSPENDED') {
+        return reply.code(403).send({
+          error: 'ORGANIZATION_SUSPENDED',
+          message: 'Organização suspensa. Entre em contato com o suporte.'
+        })
+      }
+
+      return reply.code(400).send({ error: 'Login Failed', message })
     }
   }
 

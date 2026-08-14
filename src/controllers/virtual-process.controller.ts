@@ -3,12 +3,9 @@ import { db } from '@/utils/database.js'
 import { prisma } from '@/lib/prisma.js'
 import { logger } from '@/utils/logger.js'
 import { z } from 'zod'
-import { createVirtualProcessSchema, uploadDocumentSchema, updateCompanyInfoSchema } from '@/schemas/virtual-process.schemas.js'
+import { createVirtualProcessSchema, uploadDocumentSchema, updateCompanyInfoSchema, updateValiditySchema } from '@/schemas/virtual-process.schemas.js'
 import { randomUUID } from 'crypto'
-import * as path from 'node:path'
-import r2 from '../lib/r2.js'
-import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3'
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+import { saveFile, getFileUrl, deleteFile } from '@/services/storage.service.js'
 
 export class VirtualProcessController {
   async listProcesses(request: FastifyRequest, reply: FastifyReply) {
@@ -29,6 +26,9 @@ export class VirtualProcessController {
         companyName: z.string().optional(),
         startDate: z.coerce.date().optional(),
         endDate: z.coerce.date().optional(),
+        // Janela de vencimento em dias: ?expiringIn=30 traz o que vence nos
+        // próximos 30 dias (processos sem validityDate ficam fora naturalmente).
+        expiringIn: z.coerce.number().int().positive().optional(),
       })
 
       const query = querySchema.parse(request.query)
@@ -55,6 +55,19 @@ export class VirtualProcessController {
         where.createdAt = {}
         if (query.startDate) where.createdAt.gte = query.startDate
         if (query.endDate) where.createdAt.lte = query.endDate
+      }
+
+      if (query.expiringIn !== undefined) {
+        // Limite inferior é o INÍCIO de hoje (não "agora"), senão um processo que
+        // vence hoje sumiria do filtro no meio do expediente. Limite superior é o
+        // FIM do último dia da janela, para incluí-lo por inteiro.
+        const from = new Date()
+        from.setHours(0, 0, 0, 0)
+        const to = new Date(from)
+        to.setDate(to.getDate() + query.expiringIn)
+        to.setHours(23, 59, 59, 999)
+
+        where.validityDate = { gte: from, lte: to }
       }
 
       const total = await prisma.virtualProcess.count({ where })
@@ -90,6 +103,18 @@ export class VirtualProcessController {
             include: { uploader: { select: { id: true, firstName: true, lastName: true } } },
             orderBy: { uploadedAt: 'desc' }
           },
+          // Documentos anexados via Convênio e atribuídos a este processo.
+          // Armazenamento continua sendo o da Biblioteca — aqui só os lemos.
+          libraryDocuments: {
+            where: { deletedAt: null },
+            select: {
+              id: true, title: true, fileName: true, fileSize: true, mimeType: true,
+              accessLevel: true, createdAt: true, covenantId: true,
+              uploader: { select: { id: true, firstName: true, lastName: true } },
+              covenant: { select: { id: true, number: true } },
+            },
+            orderBy: { createdAt: 'desc' }
+          },
           covenants: {
             select: { id: true, number: true, status: true, processObject: true,
               covenantType: { select: { id: true, name: true } } }
@@ -118,7 +143,39 @@ export class VirtualProcessController {
         success: true
       })
 
-      return reply.send({ process, auditLog: auditLogs })
+      // Normalização na leitura: os dois modelos de documento têm formatos
+      // diferentes (VirtualProcessDocument: fileUrl/tag; LibraryDocument:
+      // fileKey/accessLevel/title). Aqui devolvemos uma forma unificada com a
+      // origem marcada, para o frontend distinguir procedência sem duplicar regra.
+      const { libraryDocuments, ...processRest } = process
+      const unifiedDocuments = [
+        ...process.documents.map(doc => ({
+          id: doc.id,
+          fileName: doc.fileName,
+          fileSize: doc.fileSize,
+          uploadedAt: doc.uploadedAt,
+          uploader: doc.uploader,
+          tag: doc.tag,
+          description: doc.description,
+          source: 'process' as const,
+        })),
+        ...libraryDocuments.map(doc => ({
+          id: doc.id,
+          fileName: doc.fileName,
+          fileSize: doc.fileSize,
+          uploadedAt: doc.createdAt,
+          uploader: doc.uploader,
+          title: doc.title,
+          accessLevel: doc.accessLevel,
+          covenantNumber: doc.covenant?.number ?? null,
+          source: 'covenant' as const,
+        })),
+      ].sort((a, b) => b.uploadedAt.getTime() - a.uploadedAt.getTime())
+
+      return reply.send({
+        process: { ...processRest, documents: process.documents, unifiedDocuments },
+        auditLog: auditLogs
+      })
     } catch (error: any) {
       logger.error(error, 'Failed to get virtual process details')
       return reply.code(500).send({ error: 'Process Fetch Failed', message: error.message })
@@ -156,6 +213,8 @@ export class VirtualProcessController {
           companyName: data.companyName,
           startDate: data.startDate,
           endDate: data.endDate,
+          validityDate: data.validityDate,
+          totalValue: data.totalValue,
           subject: data.subject,
           category: data.category,
           createdById: userId,
@@ -256,6 +315,55 @@ export class VirtualProcessController {
     }
   }
 
+  /**
+   * PATCH /:id/validity — atualiza prazo de vigência e valor total de um processo
+   * já existente. Escopo estreito de propósito (mesmo padrão de /:id/company):
+   * um update geral exigiria tratar unicidade de processNumber, o refine de
+   * start/endDate e regras de status, sem necessidade para este épico.
+   */
+  async updateValidity(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { id } = request.params as { id: string }
+      const data = updateValiditySchema.parse(request.body)
+      const userId = (request as any).user?.id as string
+
+      const process = await prisma.virtualProcess.findUnique({ where: { id } })
+      if (!process) return reply.code(404).send({ error: 'Not Found', message: 'Processo não encontrado' })
+
+      if (!(request as any).user?.isSuperAdmin && process.organizationId !== (request as any).user?.organizationId) {
+        return reply.code(404).send({ error: 'Not Found', message: 'Processo não encontrado' })
+      }
+
+      // `undefined` = campo não enviado (não mexer); `null` = remover o valor.
+      const updatedProcess = await prisma.virtualProcess.update({
+        where: { id },
+        data: {
+          ...(data.validityDate !== undefined && { validityDate: data.validityDate }),
+          ...(data.totalValue   !== undefined && { totalValue: data.totalValue }),
+        }
+      })
+
+      await db.createAuditLog({
+        userId,
+        action: 'ATUALIZOU_VIGENCIA',
+        resource: 'VIRTUAL_PROCESS',
+        resourceId: id,
+        ipAddress: request.ip,
+        success: true,
+        oldData: { validityDate: process.validityDate, totalValue: process.totalValue },
+        newData: { validityDate: updatedProcess.validityDate, totalValue: updatedProcess.totalValue }
+      })
+
+      return reply.send(updatedProcess)
+    } catch (error: any) {
+      logger.error(error, 'Failed to update validity')
+      if (error instanceof z.ZodError) {
+        return reply.code(400).send({ error: 'Validation Error', details: error.errors })
+      }
+      return reply.code(500).send({ error: 'Validity Update Failed', message: error.message })
+    }
+  }
+
   async deleteProcess(request: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = request.params as { id: string }
@@ -309,22 +417,17 @@ export class VirtualProcessController {
 
       for await (const part of parts) {
         if (part.type === 'file') {
-          const extension = path.extname(part.filename)
-          const uniqueName = `${randomUUID()}${extension}`
-          const fileKey = `organizations/${processObj.organizationId}/virtual-processes/${uniqueName}`
-
           const chunks: Buffer[] = []
           for await (const chunk of part.file) {
             chunks.push(chunk as Buffer)
           }
           const buffer = Buffer.concat(chunks)
 
-          await r2.send(new PutObjectCommand({
-            Bucket: process.env.R2_BUCKET_NAME,
-            Key: fileKey,
-            Body: buffer,
-            ContentType: part.mimetype,
-          }))
+          const fileKey = await saveFile(buffer, {
+            organizationId: processObj.organizationId,
+            scope: 'virtual-processes',
+            originalName: part.filename,
+          })
 
           fileData = {
             fileName: part.filename,
@@ -386,11 +489,7 @@ export class VirtualProcessController {
         return reply.code(404).send({ message: 'Processo não encontrado' })
       }
 
-      const command = new GetObjectCommand({
-        Bucket: process.env.R2_BUCKET_NAME,
-        Key: document.fileUrl,
-      })
-      const signedUrl = await getSignedUrl(r2, command, { expiresIn: 300 })
+      const signedUrl = getFileUrl(document.fileUrl)
 
       await db.createAuditLog({
         userId,
@@ -433,9 +532,9 @@ export class VirtualProcessController {
       await prisma.virtualProcessDocument.delete({ where: { id: documentId } })
 
       try {
-        await r2.send(new DeleteObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: document.fileUrl }))
+        await deleteFile(document.fileUrl)
       } catch (_e) {
-        // ignore R2 delete errors
+        // falha ao apagar do disco não impede a exclusão do registro
       }
 
       await db.createAuditLog({

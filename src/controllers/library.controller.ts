@@ -2,11 +2,9 @@ import { FastifyReply, FastifyRequest } from 'fastify'
 import { prisma } from '@/lib/prisma.js'
 import { z } from 'zod'
 import * as path from 'node:path'
-import * as crypto from 'node:crypto'
+import * as fs from 'node:fs'
 import * as stream from 'node:stream'
-import r2 from '@/lib/r2.js'
-import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+import { saveFile, getFileUrl, getFilePath, deleteFile } from '@/services/storage.service.js'
 import { logger } from '@/utils/logger.js'
 import archiver from 'archiver'
 
@@ -78,20 +76,45 @@ export class LibraryController {
     const covenantId = fields['covenantId'] && fields['covenantId'] !== 'null' && fields['covenantId'] !== 'undefined'
       ? fields['covenantId']
       : undefined
+    const virtualProcessId = fields['virtualProcessId'] && fields['virtualProcessId'] !== 'null' && fields['virtualProcessId'] !== 'undefined'
+      ? fields['virtualProcessId']
+      : undefined
     const orgId = organizationId ?? 'global'
 
-    // Gera chave única no R2
-    const ext = path.extname(originalFileName) || '.pdf'
-    const uniqueName = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`
-    const fileKey = `organizations/${orgId}/library/${uniqueName}`
+    // Vínculo documento→processo só é válido dentro do convênio de origem.
+    // A interface já oferece apenas os processos corretos, mas interface não é
+    // fronteira de segurança: um upload cruzado direto na API deve ser recusado.
+    if (virtualProcessId) {
+      if (!covenantId) {
+        return reply.status(400).send({
+          message: 'Só é possível vincular um documento a um processo no contexto de um convênio.'
+        })
+      }
 
-    // Upload para o R2
-    await r2.send(new PutObjectCommand({
-      Bucket: process.env.R2_BUCKET_NAME,
-      Key: fileKey,
-      Body: fileBuffer,
-      ContentType: mimeType
-    }))
+      const link = await prisma.covenant.findFirst({
+        where: {
+          id: covenantId,
+          organizationId: orgId,
+          virtualProcesses: { some: { id: virtualProcessId } },
+        },
+        select: { id: true },
+      })
+
+      if (!link) {
+        return reply.status(400).send({
+          message: 'O processo informado não está vinculado a este convênio.'
+        })
+      }
+    }
+
+    const ext = path.extname(originalFileName) || '.pdf'
+
+    // Grava em disco local (uploads/) — ver storage.service.ts
+    const fileKey = await saveFile(fileBuffer, {
+      organizationId: orgId,
+      scope: 'library',
+      originalName: originalFileName,
+    })
 
     // Salva registro no banco
     const document = await prisma.libraryDocument.create({
@@ -106,6 +129,7 @@ export class LibraryController {
         organizationId: orgId,
         ...(categoryId  ? { categoryId }  : {}),
         ...(covenantId  ? { covenantId }  : {}),
+        ...(virtualProcessId ? { virtualProcessId } : {}),
       }
     })
 
@@ -173,6 +197,8 @@ export class LibraryController {
         select: {
           id: true, title: true, fileName: true, fileSize: true,
           mimeType: true, accessLevel: true, createdAt: true,
+          // Necessário para a aba Documentos do convênio agrupar por processo.
+          virtualProcessId: true,
           uploader:  { select: { id: true, firstName: true, lastName: true, avatar: true } },
           category:  { select: { id: true, name: true } }
         }
@@ -209,11 +235,7 @@ export class LibraryController {
       return reply.status(403).send({ message: 'Seu nível de acesso não permite visualizar este documento.' })
     }
 
-    const url = await getSignedUrl(
-      r2,
-      new GetObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: document.fileKey }),
-      { expiresIn: 300 }
-    )
+    const url = getFileUrl(document.fileKey)
 
     // Audit log de acesso
     await prisma.auditLog.create({
@@ -248,11 +270,11 @@ export class LibraryController {
       data: { deletedAt: new Date() }
     })
 
-    // Deleta fisicamente do R2
+    // Deleta fisicamente do disco — falha aqui não impede a exclusão do registro
     try {
-      await r2.send(new DeleteObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: document.fileKey }))
+      await deleteFile(document.fileKey)
     } catch (err) {
-      logger.warn({ err, fileKey: document.fileKey }, 'Failed to delete library document from R2')
+      logger.warn({ err, fileKey: document.fileKey }, 'Failed to delete library document from disk')
     }
 
     await prisma.auditLog.create({
@@ -343,18 +365,10 @@ export class LibraryController {
     void (async () => {
       try {
         for (const doc of documents) {
-          const r2Response = await r2.send(
-            new GetObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: doc.fileKey })
-          )
-          if (r2Response.Body) {
-            // transformToByteArray() é a API oficial do SDK v3 para extrair o corpo completo
-            // como Uint8Array — evita incompatibilidades silenciosas entre SdkStream e archiver
-            const byteArray = await r2Response.Body.transformToByteArray()
-            // path.basename() remove qualquer componente de diretório (../) do nome do arquivo
-            // prevenindo Zip Slip — CodeQL js/zip-slip
-            const safeName = path.basename(doc.fileName)
-            archive.append(Buffer.from(byteArray), { name: safeName })
-          }
+          // path.basename() remove qualquer componente de diretório (../) do nome do arquivo
+          // prevenindo Zip Slip — CodeQL js/zip-slip
+          const safeName = path.basename(doc.fileName)
+          archive.append(fs.createReadStream(getFilePath(doc.fileKey)), { name: safeName })
         }
         await archive.finalize()
       } catch (error) {

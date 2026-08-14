@@ -8,6 +8,7 @@ import underPressure from '@fastify/under-pressure'
 import cookie from '@fastify/cookie'
 import formbody from '@fastify/formbody'
 import multipart from '@fastify/multipart'
+import fastifyStatic from '@fastify/static'
 import jwt from '@fastify/jwt'
 import { jsonSchemaTransform, validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod'
 
@@ -15,6 +16,7 @@ import { config } from './config.js'
 import { Sentry } from './sentry.js'
 import { AppServer } from '@/types/server.js'
 import { db } from '@/utils/database.js'
+import { UPLOADS_ROOT, ensureUploadsRoot } from '@/services/storage.service.js'
 
 export async function registerPlugins(server: AppServer) {
   // Set global validator and serializer compilers for Zod
@@ -132,6 +134,15 @@ export async function registerPlugins(server: AppServer) {
   // --- ARQUIVOS ---
   await server.register(multipart, {
     limits: { fileSize: 50 * 1024 * 1024 }
+  })
+
+  // Serve os uploads locais (substitui o R2 — ver storage.service.ts).
+  // Sem autenticação por decisão explícita para desenvolvimento local; a proteção
+  // prática é o nome de arquivo aleatório. Ver docs/TechStack.md §11.
+  await ensureUploadsRoot()
+  await server.register(fastifyStatic, {
+    root: UPLOADS_ROOT,
+    prefix: '/uploads/',
   })
 
   if (config.features.swagger && config.isDevelopment) {

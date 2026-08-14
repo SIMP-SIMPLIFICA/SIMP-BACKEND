@@ -1,6 +1,43 @@
 import { FastifyReply, FastifyRequest } from 'fastify'
 import { prisma } from '@/lib/prisma.js'
 
+// ---------------------------------------------------------------------------
+// Kill switch — suspensão de organização
+// ---------------------------------------------------------------------------
+
+/**
+ * Cache do status de suspensão por organização. Espelha o `moduleCache` abaixo:
+ * `authenticate` roda em TODA requisição, e consultar o banco a cada uma seria um
+ * custo permanente para um estado que muda raríssimas vezes.
+ *
+ * O TTL curto é só rede de segurança para alterações feitas fora do endpoint
+ * (ex: SQL manual). Pelo caminho normal, `invalidateOrgStatusCache()` é chamado
+ * na alternância e o efeito é imediato na requisição seguinte.
+ */
+const orgStatusCache = new Map<string, { isActive: boolean; expiry: number }>()
+const ORG_STATUS_CACHE_TTL = 60 * 1000 // 60 segundos
+
+/** Invalida o status em cache de uma org (chamar ao suspender/reativar). */
+export function invalidateOrgStatusCache(orgId: string) {
+  orgStatusCache.delete(orgId)
+}
+
+/** Resolve se a organização está ativa, usando cache com fallback ao banco. */
+async function isOrganizationActive(orgId: string): Promise<boolean> {
+  const cached = orgStatusCache.get(orgId)
+  if (cached && cached.expiry > Date.now()) return cached.isActive
+
+  const org = await prisma.organization.findUnique({
+    where: { id: orgId },
+    select: { isActive: true },
+  })
+
+  // Organização inexistente é tratada como inativa (falha fechada).
+  const isActive = org?.isActive ?? false
+  orgStatusCache.set(orgId, { isActive, expiry: Date.now() + ORG_STATUS_CACHE_TTL })
+  return isActive
+}
+
 export async function authenticate(request: FastifyRequest, reply: FastifyReply) {
   // 0. Ignorar requisições OPTIONS (Preflight do CORS)
   if (request.method === 'OPTIONS') {
@@ -40,6 +77,33 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
     return reply.code(401).send({
       error: 'Unauthorized',
       message: 'Falha na autenticação'
+    })
+  }
+
+  // --- Kill switch: bloqueio de organização suspensa ---
+  // Fora do try/catch acima de propósito: uma falha de banco aqui não é uma falha
+  // de autenticação e não deve ser mascarada como 401 "token inválido".
+  //
+  // A ORDEM ABAIXO É CRÍTICA e não pode ser reorganizada:
+  const authUser = request.user as { organizationId?: string | null; isSuperAdmin?: boolean }
+
+  // 1º) Super Admin nativo retorna ANTES de qualquer consulta de organização.
+  //     Se essa checagem viesse depois, suspender todas as organizações
+  //     bloquearia o próprio Super Admin — e a única pessoa capaz de reativar
+  //     perderia o acesso para fazê-lo (bloqueio irreversível pela interface).
+  if (authUser.isSuperAdmin) return
+
+  // 2º) Usuário sem organização não tem o que estar suspenso — segue, e o acesso
+  //     continua governado por requireModule/permissões (que já recusam
+  //     "Usuário sem organização" com mensagem adequada).
+  if (!authUser.organizationId) return
+
+  // 3º) Demais usuários: organização suspensa derruba a requisição, mesmo com
+  //     token emitido antes da suspensão.
+  if (!(await isOrganizationActive(authUser.organizationId))) {
+    return reply.code(403).send({
+      error: 'ORGANIZATION_SUSPENDED',
+      message: 'Organização suspensa. Entre em contato com o suporte.'
     })
   }
 }

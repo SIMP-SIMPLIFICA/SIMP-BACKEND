@@ -6,7 +6,8 @@ import { authService } from '../services/auth.service.js'
 import { emailService } from '../services/email.service.js'
 import { authLogger } from '../utils/logger.js'
 import { DEFAULT_MODULES, ALL_MODULES, ModuleKey } from '../constants/modules.js'
-import { invalidateModuleCache } from '../middleware/auth.middleware.js'
+import { invalidateModuleCache, invalidateOrgStatusCache } from '../middleware/auth.middleware.js'
+import { ensureAdminRole } from '../services/rbac.service.js'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -129,7 +130,7 @@ export class AdminController {
         })),
       })
 
-      const adminRole = await tx.role.findFirst({ where: { name: 'admin' } })
+      const adminRole = await ensureAdminRole(tx)
 
       const adminUser = await tx.user.create({
         data: {
@@ -145,11 +146,9 @@ export class AdminController {
         },
       })
 
-      if (adminRole) {
-        await tx.userRole.create({
-          data: { userId: adminUser.id, roleId: adminRole.id, assignedBy: 'super-admin' },
-        })
-      }
+      await tx.userRole.create({
+        data: { userId: adminUser.id, roleId: adminRole.id, assignedBy: 'super-admin' },
+      })
 
       return { org, adminUser }
     })
@@ -231,6 +230,27 @@ export class AdminController {
       },
       select: { id: true, name: true, slug: true, plan: true, isActive: true, updatedAt: true },
     })
+
+    // Kill switch: o estado de suspensão é cacheado no middleware de autenticação.
+    // Invalidar aqui faz a suspensão/reativação valer já na requisição seguinte,
+    // em vez de esperar o TTL do cache.
+    if (data.isActive !== undefined && data.isActive !== org.isActive) {
+      invalidateOrgStatusCache(id)
+
+      const superAdmin = request.user as { id?: string }
+      await prisma.auditLog.create({
+        data: {
+          userId: superAdmin?.id ?? null,
+          action: data.isActive ? 'ORGANIZATION_REACTIVATED' : 'ORGANIZATION_SUSPENDED',
+          resource: 'ORGANIZATION',
+          resourceId: id,
+          ipAddress: request.ip,
+          success: true,
+          organizationId: id,
+          metadata: { organizationName: org.name, isActive: data.isActive },
+        },
+      }).catch(err => request.log.warn({ err }, 'Falha ao registrar auditoria de suspensão'))
+    }
 
     return reply.send({ message: 'Organização atualizada.', data: updated })
   }

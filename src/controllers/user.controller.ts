@@ -6,10 +6,7 @@ import { authLogger } from '@/utils/logger.js'
 import { assignRoleSchema, createUserSchema, updateUserSchema, userQuerySchema } from '@/schemas/auth.schemas.js'
 import { certificateService } from '@/services/certificate.service.js'
 import path from 'node:path'
-import crypto from 'node:crypto'
-import r2 from '@/lib/r2.js'
-import { PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+import { saveFile, getFileUrl, deleteFile } from '@/services/storage.service.js'
 
 export class UserController {
   async getUsers(request: FastifyRequest, reply: FastifyReply) {
@@ -542,31 +539,21 @@ export class UserController {
       const existingMeta = (existingUser?.metadata as any) || {}
       if (existingMeta?.logoKey) {
         try {
-          await r2.send(new DeleteObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: existingMeta.logoKey }))
+          await deleteFile(existingMeta.logoKey)
         } catch (_e) { /* ignora */ }
       }
 
-      // Gera nome único e faz upload para R2
+      // Grava em disco local — a extensão vem do mimetype quando o nome não tem uma
       const originalExt = path.extname(data.filename)
       const ext = originalExt || `.${data.mimetype.split('/')[1]}`
-      const fileHash = crypto.randomBytes(16).toString('hex')
-      const fileName = `${userId}_${fileHash}${ext}`
-      const orgId = (request.user as any)?.organizationId ?? 'global'
-      const logoKey = `organizations/${orgId}/logos/${fileName}`
 
-      await r2.send(new PutObjectCommand({
-        Bucket: process.env.R2_BUCKET_NAME,
-        Key: logoKey,
-        Body: fileBuffer,
-        ContentType: data.mimetype,
-      }))
+      const logoKey = await saveFile(fileBuffer, {
+        organizationId: (request.user as any)?.organizationId ?? null,
+        scope: 'logos',
+        originalName: `logo${ext}`,
+      })
 
-      // Gera presigned URL (30 dias)
-      const logoUrl = await getSignedUrl(
-        r2,
-        new GetObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: logoKey }),
-        { expiresIn: 2592000 }
-      )
+      const logoUrl = getFileUrl(logoKey)
 
       // Atualiza metadata com key (para deleção futura) e URL pública
       await prisma.user.update({
@@ -612,7 +599,7 @@ export class UserController {
       // Remove do R2 se existir
       if (existingMeta?.logoKey) {
         try {
-          await r2.send(new DeleteObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: existingMeta.logoKey }))
+          await deleteFile(existingMeta.logoKey)
         } catch (_e) { /* ignora */ }
       }
 

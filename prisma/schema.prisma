@@ -619,6 +619,11 @@ model VirtualProcess {
   companyName    String?   @map("company_name")
   startDate      DateTime? @map("start_date")
   endDate        DateTime? @map("end_date")
+  // Vigência/validade legal do processo — é ESTA data que dispara os alertas de
+  // vencimento na listagem. Distinta de endDate (quando o processo é arquivado).
+  validityDate   DateTime? @map("validity_date")
+  // Mesma convenção monetária de Covenant.transferValue.
+  totalValue     Decimal?  @db.Decimal(15, 2) @map("total_value")
   subject        String    @db.Text
   status         String    @default("Tramitando")
   category       String    @default("Outros")
@@ -630,6 +635,8 @@ model VirtualProcess {
   creator      User                     @relation("ProcessCreator", fields: [createdById], references: [id])
   documents    VirtualProcessDocument[]
   covenants    Covenant[]
+  // Documentos anexados via Convênio e atribuídos a este processo.
+  libraryDocuments LibraryDocument[]
 
   @@unique([organizationId, processNumber])
   @@map("virtual_processes")
@@ -763,6 +770,9 @@ model LibraryDocument {
   organizationId String   @map("organization_id")
   categoryId     String?  @map("category_id")
   covenantId     String?  @map("covenant_id")
+  // Documento anexado via Convênio que pertence a um Processo Virtual específico.
+  // Opcional: sem ele, o documento é "geral" do convênio.
+  virtualProcessId String? @map("virtual_process_id")
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt      @map("updated_at")
@@ -772,6 +782,9 @@ model LibraryDocument {
   organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   category     DocumentCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   covenant         Covenant?         @relation(fields: [covenantId], references: [id], onDelete: SetNull)
+  // SetNull (nunca Cascade): excluir um processo NÃO pode apagar documento do
+  // acervo do convênio — o arquivo apenas volta a ser "geral".
+  virtualProcess   VirtualProcess?   @relation(fields: [virtualProcessId], references: [id], onDelete: SetNull)
   officialDocument OfficialDocument?
 
   @@index([organizationId, accessLevel])
@@ -779,6 +792,7 @@ model LibraryDocument {
   @@index([uploaderId])
   @@index([categoryId])
   @@index([covenantId])
+  @@index([virtualProcessId])
   @@map("library_documents")
 }
 
@@ -902,6 +916,9 @@ enum OfficialDocumentCategory {
 enum OfficialDocumentNumberingType {
   SEQUENTIAL
   RANDOM
+  // MANUAL: número informado pelo usuário (Atos Normativos — Leis, Decretos, Portarias).
+  // A numeração oficial vem do processo legislativo/administrativo, externa ao sistema.
+  MANUAL
 }
 
 enum OfficialDocumentStatus {

@@ -9,28 +9,28 @@ export async function protocolRoutes(app: FastifyInstance) {
   // Gerar número oficial (RESERVADO)
   app.post(
     '/generate',
-    { preHandler: [requireAnyPermission(['protocols:write', 'protocols:admin'])] },
+    { preHandler: [requireAnyPermission(['protocols:write', 'protocols:admin', 'protocols:normativo', 'protocols:comunicacao'])] },
     protocolController.generate,
   )
 
   // Listar documentos emitidos
   app.get(
     '/',
-    { preHandler: [requireAnyPermission(['protocols:read', 'protocols:write', 'protocols:admin'])] },
+    { preHandler: [requireAnyPermission(['protocols:read', 'protocols:write', 'protocols:admin', 'protocols:normativo', 'protocols:comunicacao'])] },
     protocolController.list,
   )
 
   // Atualizar status — lógica fina (admin vs. criador) fica no controller
   app.patch(
     '/:id/status',
-    { preHandler: [requireAnyPermission(['protocols:read', 'protocols:write', 'protocols:admin'])] },
+    { preHandler: [requireAnyPermission(['protocols:read', 'protocols:write', 'protocols:admin', 'protocols:normativo', 'protocols:comunicacao'])] },
     protocolController.updateStatus,
   )
 
   // Excluir documento — lógica fina (admin vs. criador, apenas RESERVADO) fica no controller
   app.delete(
     '/:id',
-    { preHandler: [requireAnyPermission(['protocols:read', 'protocols:write', 'protocols:admin'])] },
+    { preHandler: [requireAnyPermission(['protocols:read', 'protocols:write', 'protocols:admin', 'protocols:normativo', 'protocols:comunicacao'])] },
     protocolController.delete,
   )
 

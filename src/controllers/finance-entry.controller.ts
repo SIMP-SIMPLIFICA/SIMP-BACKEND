@@ -2,11 +2,7 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { prisma } from '../lib/prisma.js';
 import { z } from 'zod';
 import { createEntrySchema, updateEntrySchema } from '../schemas/finance.schema.js';
-import * as path from 'node:path';
-import * as crypto from 'node:crypto';
-import r2 from '../lib/r2.js';
-import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { saveFile, getFileUrl, deleteFile } from '../services/storage.service.js';
 
 export class FinanceEntryController {
 
@@ -213,15 +209,8 @@ export class FinanceEntryController {
             orderBy: { createdAt: 'desc' }
         });
 
-        const mappedAttachments = await Promise.all(attachments.map(async att => {
-            // fileUrl stores the full R2 key (migrated from old path or set on upload)
-            const command = new GetObjectCommand({
-                Bucket: process.env.R2_BUCKET_NAME,
-                Key: att.fileUrl
-            });
-            const url = await getSignedUrl(r2, command, { expiresIn: 3600 });
-            return { ...att, url };
-        }));
+        // fileUrl guarda o fileKey completo (definido no upload)
+        const mappedAttachments = attachments.map(att => ({ ...att, url: getFileUrl(att.fileUrl) }));
 
         return reply.send(mappedAttachments);
     }
@@ -241,16 +230,11 @@ export class FinanceEntryController {
         if (!data) return reply.status(400).send({ message: 'Nenhum arquivo enviado' });
 
         const buffer = await data.toBuffer();
-        const fileExt = path.extname(data.filename);
-        const uniqueName = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${fileExt}`;
-        const fileKey = `organizations/${entry.organizationId}/finance/${uniqueName}`;
-
-        await r2.send(new PutObjectCommand({
-            Bucket: process.env.R2_BUCKET_NAME,
-            Key: fileKey,
-            Body: buffer,
-            ContentType: data.mimetype,
-        }));
+        const fileKey = await saveFile(buffer, {
+            organizationId: entry.organizationId,
+            scope: 'finance',
+            originalName: data.filename,
+        });
 
         const attachment = await prisma.financeAttachment.create({
             data: {
@@ -270,10 +254,7 @@ export class FinanceEntryController {
             });
         }
 
-        const command = new GetObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: fileKey });
-        const url = await getSignedUrl(r2, command, { expiresIn: 3600 });
-
-        return reply.status(201).send({ ...attachment, url });
+        return reply.status(201).send({ ...attachment, url: getFileUrl(fileKey) });
     }
 
     async deleteAttachment(request: FastifyRequest, reply: FastifyReply) {
@@ -298,12 +279,9 @@ export class FinanceEntryController {
         await prisma.financeAttachment.delete({ where: { id: attachmentId } });
 
         try {
-            await r2.send(new DeleteObjectCommand({
-                Bucket: process.env.R2_BUCKET_NAME,
-                Key: attachment.fileUrl  // full key already stored
-            }));
+            await deleteFile(attachment.fileUrl);
         } catch (_e) {
-            // ignore R2 delete errors
+            // falha ao apagar do disco não impede a exclusão do registro
         }
 
         const remaining = await prisma.financeAttachment.count({ where: { entryId } });

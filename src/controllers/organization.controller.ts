@@ -3,6 +3,7 @@ import { z, ZodError } from 'zod'
 import { randomUUID } from 'node:crypto'
 import { prisma } from '@/lib/prisma.js'
 import { authService } from '@/services/auth.service.js'
+import { ensureAdminRole } from '@/services/rbac.service.js'
 import { ALL_MODULES, DEFAULT_MODULES } from '@/constants/modules.js'
 
 const createOrgSchema = z.object({
@@ -97,12 +98,10 @@ export class OrganizationController {
         })
 
         // Atribuir role admin ao usuário
-        const adminRole = await tx.role.findFirst({ where: { name: 'admin' } })
-        if (adminRole) {
-          await tx.userRole.create({
-            data: { userId: adminUser.id, roleId: adminRole.id, assignedBy: 'system' }
-          })
-        }
+        const adminRole = await ensureAdminRole(tx)
+        await tx.userRole.create({
+          data: { userId: adminUser.id, roleId: adminRole.id, assignedBy: 'system' }
+        })
 
         // Criar módulos padrão para a nova organização
         await tx.organizationModule.createMany({

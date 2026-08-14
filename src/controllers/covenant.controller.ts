@@ -103,7 +103,9 @@ export class CovenantController {
           concedente:   { select: { id: true, name: true, cnpj: true } },
           virtualProcesses: {
             select: {
-              id: true, processNumber: true, status: true, subject: true,
+              // secretaria compõe o cabeçalho dos blocos da aba Documentos
+              // ("Processo nº X — Secretaria — Objeto").
+              id: true, processNumber: true, status: true, subject: true, secretaria: true,
               documents: {
                 select: {
                   id: true, tag: true, description: true,

@@ -247,6 +247,26 @@ export class AuthService {
         throw new Error('Invalid credentials')
       }
 
+      // Kill switch: organização suspensa impede o login.
+      // Verificado APÓS a senha de propósito — informar o estado da organização
+      // antes disso revelaria a existência da conta a quem não tem a credencial.
+      // Super Admin é imune (não pertence a nenhuma organização suspensa).
+      if (!user.isSuperAdmin && user.organizationId) {
+        const org = await prisma.organization.findUnique({
+          where: { id: user.organizationId },
+          select: { isActive: true },
+        })
+        if (!org?.isActive) {
+          logSecurity('login_attempt_suspended_org', 'medium', {
+            userId: user.id,
+            email: user.email,
+            organizationId: user.organizationId,
+            ip: ipAddress
+          })
+          throw new Error('ORGANIZATION_SUSPENDED')
+        }
+      }
+
       if (user.twoFactorEnabled) {
         return {
           user: {

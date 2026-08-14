@@ -2,6 +2,22 @@ import type { FastifyReply, FastifyRequest } from 'fastify'
 import { prisma } from '@/lib/prisma.js'
 import { z } from 'zod'
 import { MeetingStatus, AgendaItemStatus } from '@prisma/client'
+import {
+  isMeetingFrozen,
+  getMeetingFreezeAt,
+  MEETING_FROZEN_ERROR,
+  MEETING_FROZEN_MESSAGE,
+} from '@/services/council-compliance.js'
+
+/**
+ * Recusa padronizada quando o registro está congelado (>72h da reunião).
+ * Devolve `true` quando bloqueou, para o chamador apenas retornar.
+ */
+function blockIfFrozen(reply: FastifyReply, scheduledAt: Date): boolean {
+  if (!isMeetingFrozen(scheduledAt)) return false
+  reply.code(403).send({ error: MEETING_FROZEN_ERROR, message: MEETING_FROZEN_MESSAGE })
+  return true
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -88,7 +104,16 @@ export const meetingController = {
         },
       })
 
-      return reply.send({ data: meetings })
+      // O servidor é a fonte da verdade do congelamento: a interface apenas
+      // reflete. Se o frontend recalculasse, o relógio do navegador do usuário
+      // entraria na decisão e um registro poderia parecer editável e ser recusado.
+      return reply.send({
+        data: meetings.map(m => ({
+          ...m,
+          isFrozen: isMeetingFrozen(m.scheduledAt),
+          freezeAt: getMeetingFreezeAt(m.scheduledAt),
+        })),
+      })
     } catch (err) {
       if (err instanceof z.ZodError) return reply.code(400).send({ error: 'Validation Error', issues: err.issues })
       return reply.code(500).send({ error: 'List Meetings Failed', message: (err as Error).message })
@@ -149,7 +174,12 @@ export const meetingController = {
 
       if (!meeting) return reply.code(404).send({ error: 'Not Found', message: 'Reunião não encontrada.' })
 
-      return reply.send(meeting)
+      // Veredito do congelamento vem pronto do servidor (ver comentário em `list`).
+      return reply.send({
+        ...meeting,
+        isFrozen: isMeetingFrozen(meeting.scheduledAt),
+        freezeAt: getMeetingFreezeAt(meeting.scheduledAt),
+      })
     } catch (err) {
       if (err instanceof z.ZodError) return reply.code(400).send({ error: 'Validation Error', issues: err.issues })
       return reply.code(500).send({ error: 'Get Meeting Failed', message: (err as Error).message })
@@ -168,6 +198,7 @@ export const meetingController = {
 
       const existing = await prisma.councilMeeting.findFirst({ where: { id, councilId, ...orgFilter } })
       if (!existing) return reply.code(404).send({ error: 'Not Found', message: 'Reunião não encontrada.' })
+      if (blockIfFrozen(reply, existing.scheduledAt)) return
 
       const updated = await prisma.councilMeeting.update({ where: { id }, data: body })
       return reply.send(updated)
@@ -188,6 +219,7 @@ export const meetingController = {
 
       const existing = await prisma.councilMeeting.findFirst({ where: { id, councilId, ...orgFilter } })
       if (!existing) return reply.code(404).send({ error: 'Not Found', message: 'Reunião não encontrada.' })
+      if (blockIfFrozen(reply, existing.scheduledAt)) return
 
       await prisma.councilMeeting.delete({ where: { id } })
       return reply.code(204).send()
@@ -209,6 +241,7 @@ export const meetingController = {
 
       const existing = await prisma.councilMeeting.findFirst({ where: { id, councilId, ...orgFilter } })
       if (!existing) return reply.code(404).send({ error: 'Not Found', message: 'Reunião não encontrada.' })
+      if (blockIfFrozen(reply, existing.scheduledAt)) return
 
       const data: { status: MeetingStatus; endedAt?: Date } = { status }
       if (status === MeetingStatus.CONCLUIDA && !existing.endedAt) data.endedAt = new Date()
@@ -235,6 +268,7 @@ export const meetingController = {
 
       const meeting = await prisma.councilMeeting.findFirst({ where: { id: meetingId, councilId, ...orgFilter } })
       if (!meeting) return reply.code(404).send({ error: 'Not Found', message: 'Reunião não encontrada.' })
+      if (blockIfFrozen(reply, meeting.scheduledAt)) return
 
       const item = await prisma.meetingAgendaItem.create({
         data: {
@@ -264,6 +298,7 @@ export const meetingController = {
 
       const meeting = await prisma.councilMeeting.findFirst({ where: { id: meetingId, councilId, ...orgFilter } })
       if (!meeting) return reply.code(404).send({ error: 'Not Found', message: 'Reunião não encontrada.' })
+      if (blockIfFrozen(reply, meeting.scheduledAt)) return
 
       const item = await prisma.meetingAgendaItem.findFirst({ where: { id: itemId, meetingId } })
       if (!item) return reply.code(404).send({ error: 'Not Found', message: 'Item de pauta não encontrado.' })
@@ -287,6 +322,7 @@ export const meetingController = {
 
       const meeting = await prisma.councilMeeting.findFirst({ where: { id: meetingId, councilId, ...orgFilter } })
       if (!meeting) return reply.code(404).send({ error: 'Not Found', message: 'Reunião não encontrada.' })
+      if (blockIfFrozen(reply, meeting.scheduledAt)) return
 
       const item = await prisma.meetingAgendaItem.findFirst({ where: { id: itemId, meetingId } })
       if (!item) return reply.code(404).send({ error: 'Not Found', message: 'Item de pauta não encontrado.' })
@@ -356,6 +392,7 @@ export const meetingController = {
 
       const meeting = await prisma.councilMeeting.findFirst({ where: { id: meetingId, councilId, ...orgFilter } })
       if (!meeting) return reply.code(404).send({ error: 'Not Found', message: 'Reunião não encontrada.' })
+      if (blockIfFrozen(reply, meeting.scheduledAt)) return
 
       await Promise.all(
         attendance.map((entry) =>

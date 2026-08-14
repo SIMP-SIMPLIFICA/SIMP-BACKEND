@@ -68,13 +68,9 @@ const configSchema = z.object({
   SENTRY_DSN: z.string().url().optional().or(z.literal('')).transform(v => v || undefined),
   BETTERSTACK_SOURCE_TOKEN: z.string().optional(),
 
-  // Cloudflare R2 (S3-compatible object storage) — opcional: sem credenciais,
-  // uploads/downloads falham no ponto de uso em vez de bloquear o boot local.
-  R2_ENDPOINT: z.string().url().optional(),
-  R2_ACCESS_KEY_ID: z.string().optional(),
-  R2_SECRET_ACCESS_KEY: z.string().optional(),
-  R2_BUCKET_NAME: z.string().optional(),
-  R2_PUBLIC_URL: z.string().url().optional(),
+  // Armazenamento de arquivos: local em disco (pasta `uploads/`), servido em
+  // /uploads/ via @fastify/static. Zero credenciais de nuvem — ver
+  // src/services/storage.service.ts e a Constituição (Princípio I).
 
   // Gov.br OAuth2 + assinatura digital — USE_MOCK_GOVBR=true (padrão local)
   // simula o fluxo de assinatura sem exigir credenciais reais do gov.br.
@@ -183,15 +179,6 @@ export const config = {
   observability: {
     sentryDsn: env.SENTRY_DSN,
     betterstackToken: env.BETTERSTACK_SOURCE_TOKEN
-  },
-
-  // Cloudflare R2 (object storage)
-  r2: {
-    endpoint: env.R2_ENDPOINT,
-    accessKeyId: env.R2_ACCESS_KEY_ID,
-    secretAccessKey: env.R2_SECRET_ACCESS_KEY,
-    bucketName: env.R2_BUCKET_NAME,
-    publicUrl: env.R2_PUBLIC_URL
   },
 
   // Gov.br OAuth2 + assinatura digital

@@ -51,3 +51,6 @@ vitest.config.*.timestamp*
 .env
 .env.local
 .env.supabase
+
+# Uploads locais (substituem o R2 — nunca versionar arquivos enviados)
+uploads/

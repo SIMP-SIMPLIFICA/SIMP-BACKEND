@@ -2,7 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify'
 import { prisma } from '@/lib/prisma.js'
 import { z } from 'zod'
 import { randomBytes } from 'node:crypto'
-import { OfficialDocumentCategory, OfficialDocumentNumberingType, OfficialDocumentStatus } from '@prisma/client'
+import { Prisma, OfficialDocumentCategory, OfficialDocumentNumberingType, OfficialDocumentStatus } from '@prisma/client'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -17,6 +17,8 @@ interface RequestUser {
 
 // ─── Validation ───────────────────────────────────────────────────────────────
 
+export const DUPLICATE_NORMATIVO_MESSAGE = 'Já tem outra lei/documento com esse numero existente.'
+
 const generateSchema = z.object({
   documentCategory: z.nativeEnum(OfficialDocumentCategory),
   documentType:     z.string().min(1).max(100),
@@ -24,13 +26,25 @@ const generateSchema = z.object({
   subject:          z.string().min(1).max(500),
   recipient:        z.string().max(300).optional(),
   // COMUNICACAO: departmentId obrigatório. NORMATIVO: omitir (salvo como null).
-  departmentId:     z.string().uuid().optional(),
-})
+  // Department.id usa nanoid, não uuid — .uuid() rejeitaria todo departamento real.
+  departmentId:     z.string().min(1).optional(),
+  // NORMATIVO: número e ano informados manualmente pelo usuário — a numeração oficial
+  // vem do processo legislativo, externa ao sistema. z.coerce.number() normaliza
+  // "007" → 7, impedindo duplicata por diferença de formatação.
+  sequenceNumber:   z.coerce.number().int().positive().optional(),
+  year:             z.coerce.number().int().min(1900).max(2200).optional(),
+}).refine(
+  data => data.documentCategory !== OfficialDocumentCategory.NORMATIVO
+    || (data.sequenceNumber !== undefined && data.year !== undefined),
+  { message: 'Número e ano são obrigatórios para Ato Normativo.', path: ['sequenceNumber'] },
+)
 
 const updateStatusSchema = z.object({
   status:            z.enum(['EMITIDO', 'CANCELADO']),
   cancelReason:      z.string().min(1).optional(),
-  libraryDocumentId: z.string().uuid().optional(),
+  // LibraryDocument.id usa nanoid, não uuid — .uuid() rejeitava todo anexo real com
+  // 400 Bad Request. Mesma classe de bug que já ocorrera com departmentId.
+  libraryDocumentId: z.string().min(1).optional(),
 })
 
 const listQuerySchema = z.object({
@@ -75,6 +89,25 @@ function buildFormattedNumber(
   return `${type} Nº ${ref}/${year} - ${sector.toUpperCase()}`
 }
 
+/**
+ * Retenta uma transação Serializable até `maxAttempts` vezes quando o Postgres
+ * rejeita por conflito de serialização (Prisma P2034) — cenário esperado sob
+ * concorrência real no upsert de SequenceControl, não um erro de programação.
+ */
+async function withSerializableRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn()
+    } catch (err) {
+      const isSerializationConflict =
+        err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2034'
+      if (!isSerializationConflict || attempt === maxAttempts) throw err
+    }
+  }
+  // Inalcançável: o loop sempre retorna ou lança na última tentativa.
+  throw new Error('withSerializableRetry: falha inesperada')
+}
+
 // ─── Controller ───────────────────────────────────────────────────────────────
 
 export const protocolController = {
@@ -83,18 +116,21 @@ export const protocolController = {
     try {
       const { organizationId, id: creatorId } = (request as unknown as RequestUser).user
       const body = generateSchema.parse(request.body)
-      const year = currentYear()
 
       const isNormativo = body.documentCategory === OfficialDocumentCategory.NORMATIVO
 
-      // Normativos: sector = 'CENTRAL', departmentId = null, sempre SEQUENTIAL
+      // Normativo: ano informado pelo usuário (o ato pode ser de exercício anterior).
+      // Comunicação: ano corrente, definido pelo sistema.
+      const year = isNormativo ? body.year! : currentYear()
+
+      // Normativos: sector = 'CENTRAL', departmentId = null, numeração MANUAL
       let effectiveSector: string
       let resolvedDepartmentId: string | null = null
 
       if (isNormativo) {
         effectiveSector = 'CENTRAL'
-        // Forçar SEQUENTIAL independente do que vier no body
-        body.numberingType = OfficialDocumentNumberingType.SEQUENTIAL
+        // O número vem do usuário, não de uma sequência do sistema
+        body.numberingType = OfficialDocumentNumberingType.MANUAL
       } else {
         // COMUNICACAO: departmentId é obrigatório
         if (!body.departmentId) {
@@ -113,9 +149,30 @@ export const protocolController = {
 
       let sequenceNumber: number | null = null
 
-      if (body.numberingType === OfficialDocumentNumberingType.SEQUENTIAL) {
-        // Upsert atômico com transação Serializable para evitar race condition
-        const result = await prisma.$transaction(async (tx) => {
+      if (isNormativo) {
+        // Numeração manual: o número vem do usuário. Checagem prévia para devolver a
+        // mensagem de negócio; a garantia real sob concorrência é o índice único
+        // parcial no banco, tratado no catch do create abaixo.
+        sequenceNumber = body.sequenceNumber!
+
+        const duplicate = await prisma.officialDocument.findFirst({
+          where: {
+            organizationId,
+            documentCategory: OfficialDocumentCategory.NORMATIVO,
+            documentType:     body.documentType,
+            sequenceNumber,
+            year,
+          },
+          select: { id: true },
+        })
+        if (duplicate) {
+          return reply.code(409).send({ error: 'Conflict', message: DUPLICATE_NORMATIVO_MESSAGE })
+        }
+      } else if (body.numberingType === OfficialDocumentNumberingType.SEQUENTIAL) {
+        // Upsert atômico com transação Serializable para evitar race condition.
+        // Sob concorrência real, o Postgres pode rejeitar com P2034 (conflito de
+        // serialização) — retenta em vez de propagar como erro 500 opaco.
+        const result = await withSerializableRetry(() => prisma.$transaction(async (tx) => {
           return tx.sequenceControl.upsert({
             where: {
               organizationId_sector_documentType_year: {
@@ -138,7 +195,7 @@ export const protocolController = {
               currentNumber: { increment: 1 },
             },
           })
-        }, { isolationLevel: 'Serializable' })
+        }, { isolationLevel: 'Serializable' }))
         sequenceNumber = result.currentNumber
       }
 
@@ -150,26 +207,37 @@ export const protocolController = {
         body.documentCategory,
       )
 
-      const doc = await prisma.officialDocument.create({
-        data: {
-          organizationId,
-          creatorId,
-          documentCategory: body.documentCategory,
-          documentType:     body.documentType,
-          numberingType:    body.numberingType,
-          sequenceNumber,
-          year,
-          formattedNumber,
-          subject:          body.subject,
-          recipient:        body.recipient ?? null,
-          sector:           effectiveSector,
-          departmentId:     resolvedDepartmentId,
-          status:           OfficialDocumentStatus.RESERVADO,
-        },
-        include: {
-          creator: { select: { id: true, firstName: true, lastName: true } },
-        },
-      })
+      let doc
+      try {
+        doc = await prisma.officialDocument.create({
+          data: {
+            organizationId,
+            creatorId,
+            documentCategory: body.documentCategory,
+            documentType:     body.documentType,
+            numberingType:    body.numberingType,
+            sequenceNumber,
+            year,
+            formattedNumber,
+            subject:          body.subject,
+            recipient:        body.recipient ?? null,
+            sector:           effectiveSector,
+            departmentId:     resolvedDepartmentId,
+            status:           OfficialDocumentStatus.RESERVADO,
+          },
+          include: {
+            creator: { select: { id: true, firstName: true, lastName: true } },
+          },
+        })
+      } catch (err) {
+        // Índice único parcial (ver prisma/sql/001-unique-normativo-number.sql):
+        // fecha a janela de corrida entre a checagem acima e este insert. Traduzido
+        // para a mesma mensagem de negócio — o usuário nunca vê o erro técnico.
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+          return reply.code(409).send({ error: 'Conflict', message: DUPLICATE_NORMATIVO_MESSAGE })
+        }
+        throw err
+      }
 
       return reply.code(201).send(doc)
     } catch (err: unknown) {

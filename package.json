@@ -43,7 +43,7 @@
     "@logtail/pino": "^0.5.8",
     "@node-rs/argon2": "^2.0.2",
     "@prisma/client": "^6.8.2",
-    "@sentry/node": "^10.46.0",
+    "@sentry/node": "^10.70.0",
     "@types/archiver": "^7.0.0",
     "@types/node-cron": "^3.0.11",
     "archiver": "^7.0.1",

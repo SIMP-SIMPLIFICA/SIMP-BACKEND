@@ -114,7 +114,7 @@ jobs:
         run: npm run test:coverage
 
       - name: Upload coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: coverage-backend
@@ -159,7 +159,7 @@ jobs:
           upload-database: false
 
       - name: Save SARIF as artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: codeql-sarif
           path: /home/runner/work/_temp/codeql_databases

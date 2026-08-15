@@ -1,3 +1,6 @@
+import { initSentry } from '@/config/sentry.js'
+initSentry()
+
 import Fastify from 'fastify'
 import { config } from '@/config/config.js'
 import { logger } from '@/utils/logger.js'
@@ -7,12 +10,18 @@ import { AppServer } from '@/types/server'
 import * as crypto from 'node:crypto'
 import { registerRoutes } from './config/routes.js'
 import { registerPlugins } from './config/plugins.js'
+import { startExpireTasksJob } from './jobs/expire-tasks.job.js'
+import { startClearNotificationsJob } from './jobs/clear-notifications.job.js'
+import { startCleanupGovBrStatesJob } from './jobs/cleanup-govbr-states.job.js'
+import { createEmailNotificationWorker } from './lib/email-queue.js'
+import { createDocumentOcrWorker } from './lib/document-queue.js'
+import { libraryRoutes } from './routes/library.routes.js'
 
 // Import da rota de upload
 import { uploadRoutes } from './routes/upload.routes.js'
 
 const server: AppServer = Fastify({
-  logger: logger,
+  loggerInstance: logger,
   pluginTimeout: 40000,
   trustProxy: true,
   bodyLimit: config.server.maxBodySize,
@@ -35,12 +44,23 @@ async function start() {
     await db.connect()
     logger.info('✅ Database connected successfully')
 
+    startExpireTasksJob()
+    startClearNotificationsJob()
+    startCleanupGovBrStatesJob()
+
+    const emailWorker = createEmailNotificationWorker()
+    logger.info('📧 Email notification worker started')
+
+    const ocrWorker = createDocumentOcrWorker()
+    logger.info('📄 Document OCR worker started')
+
     logger.info('🛣️ Registering routes...')
     await registerRoutes(server)
 
     // Registramos APENAS a rota de upload aqui
     // (O prefixo /api/v1 garante que fique padronizado com o resto)
     await server.register(uploadRoutes, { prefix: '/api/v1' })
+    await server.register(libraryRoutes, { prefix: '/api/v1/library' })
 
     logger.info('✅ Routes registered successfully')
 
@@ -57,8 +77,10 @@ async function start() {
       logger.info(`🔍 Health check available at ${serverUrl}/health`)
     }
 
-    const shutdown = gracefulShutdown(server)
+    const shutdown = gracefulShutdown(server, emailWorker, ocrWorker)
+    // eslint-disable-next-line @typescript-eslint/no-misused-promises
     process.on('SIGINT', shutdown)
+    // eslint-disable-next-line @typescript-eslint/no-misused-promises
     process.on('SIGTERM', shutdown)
 
   } catch (error) {
@@ -77,4 +99,7 @@ process.on('unhandledRejection', (reason, promise) => {
   process.exit(1)
 })
 
-await start()
+start().catch((error) => {
+  console.error('Failed to start server', error)
+  process.exit(1)
+})

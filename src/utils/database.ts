@@ -1,71 +1,9 @@
 import { Prisma, PrismaClient } from '@prisma/client'
 import { config } from '@/config/config.js'
 import { dbLogger, logger } from './logger.js'
+import { connectDatabase, disconnectDatabase, prisma } from '@/lib/prisma.js'
 
-// Create Prisma client with enhanced configuration
-export const prisma = new PrismaClient({
-  log: config.isDevelopment
-    ? [
-        { emit: 'event', level: 'query' },
-        { emit: 'event', level: 'error' },
-        { emit: 'event', level: 'info' },
-        { emit: 'event', level: 'warn' }
-      ]
-    : [
-        { emit: 'event', level: 'error' },
-        { emit: 'event', level: 'warn' }
-      ],
-  datasources: {
-    db: {
-      url: config.database.url
-    }
-  }
-})
-
-// Enhanced logging for Prisma events
-prisma.$on('query', e => {
-  dbLogger.debug(
-    {
-      query: e.query,
-      params: e.params,
-      duration: `${e.duration}ms`,
-      target: e.target
-    },
-    'Database query executed'
-  )
-})
-
-prisma.$on('error', e => {
-  dbLogger.error(
-    {
-      target: e.target,
-      timestamp: e.timestamp
-    },
-    'Database error occurred'
-  )
-})
-
-prisma.$on('info', e => {
-  dbLogger.info(
-    {
-      message: e.message,
-      target: e.target,
-      timestamp: e.timestamp
-    },
-    'Database info'
-  )
-})
-
-prisma.$on('warn', e => {
-  dbLogger.warn(
-    {
-      message: e.message,
-      target: e.target,
-      timestamp: e.timestamp
-    },
-    'Database warning'
-  )
-})
+export { prisma }
 
 // Database connection health check
 export async function checkDatabaseConnection(): Promise<boolean> {
@@ -86,7 +24,7 @@ export const db = {
   // Connection info
   connect: async () => {
     try {
-      await prisma.$connect()
+      await connectDatabase()
       logger.info('✅ Database connected successfully')
     } catch (error) {
       logger.error(error, '❌ Failed to connect to database')
@@ -96,7 +34,7 @@ export const db = {
 
   disconnect: async () => {
     try {
-      await prisma.$disconnect()
+      await disconnectDatabase()
       logger.info('Database disconnected')
     } catch (error) {
       logger.error(error, 'Error disconnecting from database')
@@ -165,6 +103,15 @@ export const db = {
           include: {
             role: true
           }
+        },
+        organization: {
+          select: {
+            id: true, name: true, slug: true, plan: true, cnpj: true, isActive: true, createdAt: true,
+            modules: { select: { module: true, isEnabled: true } },
+          }
+        },
+        departments: {
+          select: { id: true, name: true, code: true, managerId: true }
         }
       }
     })

@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify'
 import { authController } from '../controllers/auth.controller.js'
 import { authenticate } from '../middleware/auth.middleware.js'
 
-export async function authRoutes(app: FastifyInstance) {
+export function authRoutes(app: FastifyInstance) {
   // --- Rotas Públicas ---
   app.post('/register', authController.register)
 

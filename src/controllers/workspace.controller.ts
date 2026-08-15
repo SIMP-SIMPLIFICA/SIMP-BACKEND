@@ -3,13 +3,27 @@ import { prisma } from '../lib/prisma.js';
 import { z } from 'zod';
 import { createWorkspaceSchema } from '../schemas/workspace.schemas.js';
 import { notificationService } from '../services/notification.service.js';
+import { PERMISSION_MISSING_MESSAGE, getUsersWithPermission, userHasPermission } from '../services/rbac.service.js';
 
 export class WorkspaceController {
   
   async create(request: FastifyRequest, reply: FastifyReply) {
     const data = createWorkspaceSchema.parse(request.body);
-    const userId = (request.user as any).id;
+    const userId = request.user.id;
     
+    if (data.departmentId) {
+      const dept = await prisma.department.findFirst({
+        where: { id: data.departmentId, organizationId: request.user.organizationId },
+      });
+      if (!dept) return reply.status(404).send({ message: 'Departamento não encontrado.' });
+
+      const isManager = dept.managerId === userId;
+      const isAdmin   = await userHasPermission(userId, 'system:admin');
+      if (!isManager && !isAdmin) {
+        return reply.status(403).send({ message: 'Apenas o Chefe do setor ou um Administrador pode criar workspaces setoriais.' });
+      }
+    }
+
     const baseSlug = data.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
     const uniqueSuffix = Date.now().toString().slice(-4);
     const slug = `${baseSlug}-${uniqueSuffix}`;
@@ -19,6 +33,8 @@ export class WorkspaceController {
         name: data.name,
         description: data.description,
         slug,
+        organizationId: request.user.organizationId,
+        departmentId: data.departmentId ?? null,
         members: { create: { userId, role: 'OWNER' } }
       }
     });
@@ -27,10 +43,23 @@ export class WorkspaceController {
 
   async list(request: FastifyRequest, reply: FastifyReply) {
     const userId = request.user.id;
+    const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId };
+
+    const userRecord = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { departments: { select: { id: true } } },
+    });
+
+    const deptIds = userRecord?.departments.map(d => d.id) ?? [];
+    const whereOr: object[] = [{ members: { some: { userId } }, ...orgFilter }];
+    if (deptIds.length > 0) {
+      whereOr.push({ departmentId: { in: deptIds }, ...orgFilter });
+    }
+
     const workspaces = await prisma.workspace.findMany({
-      where: { members: { some: { userId } } },
+      where: { OR: whereOr },
       include: { _count: { select: { members: true, tasks: true } } },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
     });
     return reply.send(workspaces);
   }
@@ -38,8 +67,9 @@ export class WorkspaceController {
   async getById(request: FastifyRequest, reply: FastifyReply) {
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const userId = request.user.id;
+    const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId };
     const workspace = await prisma.workspace.findFirst({
-      where: { id, members: { some: { userId } } },
+      where: { id, members: { some: { userId } }, ...orgFilter },
       include: {
         members: { include: { user: { select: { id: true, firstName: true, email: true, avatar: true } } } },
         _count: { select: { tasks: true } }
@@ -51,8 +81,12 @@ export class WorkspaceController {
 
   async addMember(request: FastifyRequest, reply: FastifyReply) {
     const { id } = z.object({ id: z.string() }).parse(request.params);
-    const userId = (request.user as any).id;
-    
+    const userId = request.user.id;
+    const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId };
+
+    const workspace = await prisma.workspace.findFirst({ where: { id, ...orgFilter } });
+    if (!workspace) return reply.status(404).send({ message: 'Workspace não encontrado' });
+
     const requester = await prisma.workspaceMember.findUnique({
         where: { workspaceId_userId: { workspaceId: id, userId } },
     });
@@ -66,25 +100,35 @@ export class WorkspaceController {
     const userToAdd = await prisma.user.findUnique({ where: { email } });
     if (!userToAdd) return reply.status(404).send({ message: 'Usuário não encontrado' });
 
+    // REGRA: usuário convidado deve pertencer à mesma organização
+    if (!request.user.isSuperAdmin && userToAdd.organizationId !== request.user.organizationId) {
+        return reply.status(403).send({ message: 'Usuário não pertence a esta organização.' });
+    }
+
+    // RBAC: usuário alvo deve ter permissão mínima de workspaces:read
+    const canUseWorkspaces = await userHasPermission(userToAdd.id, 'workspaces:read');
+    if (!canUseWorkspaces) {
+      return reply.status(400).send({ message: PERMISSION_MISSING_MESSAGE });
+    }
+
     const member = await prisma.workspaceMember.create({
       data: { workspaceId: id, userId: userToAdd.id, role: role as any }
     });
-
-    const workspace = await prisma.workspace.findUnique({ where: { id } });
 
     await notificationService.notify({
         userId: userToAdd.id,
         title: 'Novo Workspace',
         message: `Você foi adicionado ao workspace "${workspace?.name}"`,
         type: 'WORKSPACE_INVITE',
-        link: `/workspaces/${id}`
+        link: `/workspaces/${id}`,
+        entityId: id,
     });
     return reply.status(201).send(member);
   }
 
   async removeMember(request: FastifyRequest, reply: FastifyReply) {
     const { id, userId: targetUserId } = z.object({ id: z.string(), userId: z.string() }).parse(request.params);
-    const requesterId = (request.user as any).id;
+    const requesterId = request.user.id;
 
     const requesterMember = await prisma.workspaceMember.findUnique({
         where: { workspaceId_userId: { workspaceId: id, userId: requesterId } }
@@ -121,7 +165,8 @@ export class WorkspaceController {
             title: 'Removido do Workspace',
             message: `Você foi removido do workspace "${targetMember.workspace.name}"`,
             type: 'WORKSPACE_REMOVED',
-            link: `/workspaces` 
+            link: `/workspaces`,
+            entityId: id,
         });
     }
 
@@ -131,13 +176,18 @@ export class WorkspaceController {
   // REGRA: APENAS OWNER DELETA WORKSPACE
   async delete(request: FastifyRequest, reply: FastifyReply) {
     const { id } = z.object({ id: z.string() }).parse(request.params);
-    const userId = (request.user as any).id;
+    const userId = request.user.id;
+    const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId };
+
+    const workspace = await prisma.workspace.findFirst({ where: { id, ...orgFilter } });
+    if (!workspace) return reply.status(404).send({ message: 'Workspace não encontrado' });
+
     const member = await prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId: id, userId } } });
-    
-    if (!member || member.role !== 'OWNER') {
+
+    if (member?.role !== 'OWNER') {
         return reply.status(403).send({ message: 'Apenas o CRIADOR (Dono) pode excluir o workspace' });
     }
-    
+
     await prisma.workspace.delete({ where: { id } });
     return reply.status(204).send();
   }
@@ -146,11 +196,16 @@ export class WorkspaceController {
     const params = z.object({ workspaceId: z.string().optional(), id: z.string().optional() }).parse(request.params);
     const workspaceId = params.workspaceId || params.id;
     if (!workspaceId) return reply.status(400).send({ message: "Workspace ID is required" });
+    const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId };
+    const workspace = await prisma.workspace.findFirst({ where: { id: workspaceId, ...orgFilter } });
+    if (!workspace) return reply.status(404).send({ message: 'Workspace não encontrado' });
     const members = await prisma.workspaceMember.findMany({
       where: { workspaceId },
       include: { user: { select: { id: true, firstName: true, lastName: true, email: true, avatar: true } } },
       orderBy: { user: { firstName: 'asc' } }
     });
-    return reply.send(members.map(m => m.user));
+    const users = members.map(m => m.user);
+    const permitted = await getUsersWithPermission(users.map(u => u.id), 'tasks:read');
+    return reply.send(users.map(u => ({ ...u, hasPermission: permitted.has(u.id) })));
   }
 }

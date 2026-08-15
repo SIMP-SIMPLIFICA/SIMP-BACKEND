@@ -1,24 +1,49 @@
 import { FastifyInstance } from 'fastify'
 import { virtualProcessController } from '@/controllers/virtual-process.controller.js'
-import { authMiddleware, requireAnyPermission } from '@/middleware/auth.middleware.js'
+import { virtualProcessCategoryController } from '@/controllers/virtual-process-category.controller.js'
+import { companyController, sourceController } from '@/controllers/virtual-process-config.controller.js'
+import { authMiddleware, requireAnyPermission, requireModule } from '@/middleware/auth.middleware.js'
 
 export async function virtualProcessRoutes(app: FastifyInstance) {
+  // Auth deve rodar primeiro (preHandler), depois requireModule verifica o módulo
+  app.addHook('preHandler', authMiddleware)
+  app.addHook('preHandler', requireModule('virtual_processes'))
+  // --- Category routes ---
+  app.post('/categories', { preHandler: [authMiddleware] }, virtualProcessCategoryController.create.bind(virtualProcessCategoryController))
+  app.get('/categories', { preHandler: [authMiddleware] }, virtualProcessCategoryController.list.bind(virtualProcessCategoryController))
+  app.put('/categories/:id', { preHandler: [authMiddleware] }, virtualProcessCategoryController.update.bind(virtualProcessCategoryController))
+  app.delete('/categories/:id', { preHandler: [authMiddleware] }, virtualProcessCategoryController.delete.bind(virtualProcessCategoryController))
+
+  // --- Source routes (Origens do Recurso) ---
+  app.post('/sources', { preHandler: [authMiddleware] }, sourceController.create)
+  app.get('/sources', { preHandler: [authMiddleware] }, sourceController.list)
+  app.put('/sources/:id', { preHandler: [authMiddleware] }, sourceController.update)
+  app.delete('/sources/:id', { preHandler: [authMiddleware] }, sourceController.delete)
+
+  // --- Company routes (Empresas Contratadas) ---
+  app.post('/companies', { preHandler: [authMiddleware] }, companyController.create)
+  app.get('/companies', { preHandler: [authMiddleware] }, companyController.list)
+  app.put('/companies/:id', { preHandler: [authMiddleware] }, companyController.update)
+  app.delete('/companies/:id', { preHandler: [authMiddleware] }, companyController.delete)
+
+  // --- List + Create ---
   app.get(
     '/',
     { preHandler: [authMiddleware, requireAnyPermission(['processes:read', 'processes:write', 'processes:manage'])] },
     virtualProcessController.listProcesses.bind(virtualProcessController)
   )
 
-  app.get(
-    '/:id',
-    { preHandler: [authMiddleware, requireAnyPermission(['processes:read', 'processes:write', 'processes:manage'])] },
-    virtualProcessController.getProcessDetails.bind(virtualProcessController)
-  )
-
   app.post(
     '/',
     { preHandler: [authMiddleware, requireAnyPermission(['processes:write', 'processes:manage'])] },
     virtualProcessController.createProcess.bind(virtualProcessController)
+  )
+
+  // --- Resource-level routes ---
+  app.get(
+    '/:id',
+    { preHandler: [authMiddleware, requireAnyPermission(['processes:read', 'processes:write', 'processes:manage'])] },
+    virtualProcessController.getProcessDetails.bind(virtualProcessController)
   )
 
   app.patch(
@@ -31,6 +56,12 @@ export async function virtualProcessRoutes(app: FastifyInstance) {
     '/:id/company',
     { preHandler: [authMiddleware, requireAnyPermission(['processes:manage', 'processes:write'])] },
     virtualProcessController.updateCompanyInfo.bind(virtualProcessController)
+  )
+
+  app.patch(
+    '/:id/validity',
+    { preHandler: [authMiddleware, requireAnyPermission(['processes:manage', 'processes:write'])] },
+    virtualProcessController.updateValidity.bind(virtualProcessController)
   )
 
   app.delete(

@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import { prisma } from '@/utils/database.js'
+import { prisma } from '@/lib/prisma.js'
 import { z } from 'zod'
 
 const updateSettingsSchema = z.object({
@@ -22,7 +22,7 @@ export class SettingsController {
             }, {} as Record<string, any>)
 
             return reply.send(settingsMap)
-        } catch (error: any) {
+        } catch (_error: any) {
             return reply.code(500).send({ error: 'Failed to fetch settings' })
         }
     }
@@ -49,7 +49,7 @@ export class SettingsController {
             }
 
             return reply.send({ message: 'Settings updated', settings: results })
-        } catch (error: any) {
+        } catch (_error: any) {
             return reply.code(500).send({ error: 'Failed to update settings' })
         }
     }

@@ -4,7 +4,7 @@ import { authMiddleware } from '../middleware/auth.middleware.js'
 
 const taskController = new TaskController()
 
-export async function taskRoutes(app: FastifyInstance) {
+export function taskRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authMiddleware)
 
   // NOTA: As rotas de criar/listar por workspace foram movidas para workspace.routes.ts
@@ -23,7 +23,9 @@ export async function taskRoutes(app: FastifyInstance) {
   // Sub-recursos (Checklist, Notas)
   app.post('/:id/checklist', taskController.addChecklistItem)
   app.put('/checklist/:itemId', taskController.updateChecklistItem)
+  app.delete('/checklist/:itemId', taskController.deleteChecklistItem)
   app.post('/:id/notes', taskController.addNote)
+  app.delete('/:taskId/notes/:noteId', taskController.deleteNote)
   
   // Anexos
   app.post('/:id/attachments', taskController.uploadAttachment)

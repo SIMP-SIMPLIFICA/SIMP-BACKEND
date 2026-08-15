@@ -1,0 +1,47 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(printf '-- Init script for local development\\\\n-- The database is created by Docker via POSTGRES_DB env var.\\\\n-- Prisma migrations handle all schema creation.\\\\n')",
+      "Bash(docker exec fastify-postgres:*)",
+      "Bash(obsidian help:*)",
+      "Bash(where obsidian:*)",
+      "Read(//c/Users/carma/AppData/Local/Programs/**)",
+      "Read(//c/Program Files/Obsidian/**)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(k,v\\) for k,v in {**d.get\\('dependencies',{}\\),**d.get\\('devDependencies',{}\\)}.items\\(\\)]\")",
+      "Read(//usr/local/bin/**)",
+      "Read(//c/Users/carma/.local/bin/**)",
+      "Bash(ls ~/AppData/Local/Programs/obsidian*)",
+      "Read(//c/Users/carma/AppData/Local/**)",
+      "Read(//c/Users/carma/**)",
+      "Skill(gsd-progress)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\({k:d[k] for k in ['scripts','dependencies','devDependencies'] if k in d}, indent=2\\)\\)\")",
+      "Bash(nvm use:*)",
+      "Bash(npm install:*)",
+      "Bash(npx prisma:*)",
+      "Read(//d/PROJECTS/SIMP-FRONTEND/**)",
+      "Bash(npx tsc:*)",
+      "Skill(gsd-fast)",
+      "Bash(npm run:*)",
+      "Bash(./node_modules/.bin/eslint src:*)",
+      "Bash(npm audit:*)",
+      "Bash(node:*)",
+      "Bash(npx eslint:*)",
+      "Bash(npm list:*)",
+      "Bash(npm show:*)",
+      "Bash(npx --prefix \"D:/PROJECTS/SIMP-FRONTEND\" tsc -b \"D:/PROJECTS/SIMP-FRONTEND/tsconfig.json\")",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git -C \"D:/PROJECTS/SIMP-FRONTEND\" add src/lib/api/protocols.ts src/hooks/useProtocols.ts src/pages/protocolos/OfficialProtocolsPage.tsx)",
+      "Bash(git -C D:/PROJECTS/SIMP-FRONTEND commit -m ' *)",
+      "Bash(git -C \"D:/PROJECTS/SIMP-FRONTEND\" add src/pages/protocolos/OfficialProtocolsPage.tsx src/pages/protocolos/GenerateProtocolModal.tsx)",
+      "Read(//d/PROJECTS/**)",
+      "Bash(dir D:/PROJECTS/)",
+      "Bash(git commit *)",
+      "Bash(powershell *)"
+    ]
+  },
+  "enabledMcpjsonServers": [
+    "lightrag"
+  ],
+  "enableAllProjectMcpServers": true
+}

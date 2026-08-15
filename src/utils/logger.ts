@@ -1,40 +1,61 @@
 import pino from 'pino'
 import { config } from '@/config/config.js'
 
+function buildTransport(): Partial<pino.LoggerOptions> {
+  // pino/file é um transport built-in que escreve JSON em arquivo
+  // Agentes (Claude CLI, failure-analyst) podem grep/read esse arquivo localmente
+  const fileTarget: pino.TransportTargetOptions = {
+    target: 'pino/file',
+    options: { destination: './logs/app.log', mkdir: true },
+    level: 'info'
+  }
+
+  if (config.isDevelopment) {
+    return {
+      transport: {
+        targets: [
+          {
+            target: 'pino-pretty',
+            options: {
+              colorize: true,
+              translateTime: 'SYS:standard',
+              ignore: 'pid,hostname',
+              singleLine: false,
+              hideObject: false
+            },
+            level: config.logging.level
+          },
+          fileTarget
+        ]
+      }
+    }
+  }
+
+  const targets: pino.TransportTargetOptions[] = [fileTarget]
+
+  if (config.observability.betterstackToken) {
+    targets.push({
+      target: '@logtail/pino',
+      options: { sourceToken: config.observability.betterstackToken },
+      level: 'info'
+    })
+  }
+
+  return { transport: { targets } }
+}
+
 // Create base logger
+// Nota: formatters.level é incompatível com transport.targets (pino restrição).
+// Usamos mixin para campos extras (service, environment, version).
+// Níveis no arquivo JSON são numéricos: 30=info, 40=warn, 50=error, 60=fatal
 export const logger = pino({
   level: config.logging.level,
-  ...(config.isDevelopment
-    ? {
-        transport: {
-          target: 'pino-pretty',
-          options: {
-            colorize: true,
-            translateTime: 'SYS:standard',
-            ignore: 'pid,hostname',
-            singleLine: false,
-            hideObject: false,
-            customPrettifiers: {
-              // level: (logLevel: string) => `LEVEL: ${logLevel}`,
-              // time: (timestamp: string) => `🕐 ${timestamp}`
-            }
-          }
-        }
-      }
-    : {
-        formatters: {
-          level: (label: string) => ({ level: label }),
-          log: (object: Record<string, any>) => {
-            // Add common fields in production
-            return {
-              ...object,
-              environment: config.isDevelopment ? 'development' : 'production',
-              service: 'fastify-auth-api',
-              version: process.env.npm_package_version || '1.0.0'
-            }
-          }
-        }
-      })
+  mixin: () => ({
+    environment: config.isDevelopment ? 'development' : 'production',
+    service: 'simp-backend',
+    version: process.env.npm_package_version || '1.0.0'
+  }),
+  ...buildTransport()
 })
 
 // Child loggers for different modules

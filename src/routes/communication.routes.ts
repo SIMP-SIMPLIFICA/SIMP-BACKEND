@@ -1,10 +1,10 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { CommunicationController } from '@/controllers/communication.controller'
-import { createDocumentSchema, updateDocumentSchema, documentIdSchema } from '@/schemas/communication.schemas'
+import { authenticate, requireModule } from '@/middleware/auth.middleware.js'
+import { createMessageSchema, messageIdSchema, updateMessageSchema } from '@/schemas/communication.schemas'
 
 const listFiltersSchema = z.object({
-  type: z.enum(['ALL', 'MENSAGEM', 'DOCUMENTO']).optional(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
   personId: z.string().optional()
@@ -13,128 +13,85 @@ const listFiltersSchema = z.object({
 export async function communicationRoutes(app: FastifyInstance) {
   const controller = new CommunicationController()
 
-  // Validator compiler is now set globally in plugins.ts
+  app.addHook('preHandler', authenticate)
+  app.addHook('preHandler', requireModule('communication'))
 
-  // Middleware de autenticação
-  app.addHook('onRequest', async (request, reply) => {
-    try {
-      await request.jwtVerify()
-
-      // Garante compatibilidade: copia sub -> id para os controllers (igual ao authenticate middleware)
-      const user = request.user as any
-      if (user && user.sub && !user.id) {
-        user.id = user.sub
-      }
-    } catch (err) {
-      reply.send(err)
-    }
-  })
-
-  // POST (Criar Rascunho)
-  app.post('/documents', {
+  // POST — Upload de anexo (multipart)
+  app.post('/messages/upload', {
     schema: {
-      body: createDocumentSchema,
       tags: ['Communication'],
-      description: 'Create a new draft document'
+      description: 'Upload de arquivo para uso como anexo em mensagem',
+      consumes: ['multipart/form-data']
+    }
+  }, controller.uploadAttachment.bind(controller))
+
+  // POST — Criar e enviar mensagem
+  app.post('/messages', {
+    schema: {
+      body: createMessageSchema,
+      tags: ['Communication'],
+      description: 'Criar e enviar uma nova mensagem interna'
     }
   }, controller.create.bind(controller))
 
-  // GET (Listar Meus Rascunhos)
-  app.get('/drafts', {
+  // GET — Caixa de entrada
+  app.get('/inbox', {
     schema: {
       querystring: listFiltersSchema,
       tags: ['Communication'],
-      description: 'List user drafts'
+      description: 'Listar mensagens recebidas (inbox)'
     }
-  }, controller.listDrafts.bind(controller))
+  }, controller.listInbox.bind(controller))
 
-  // GET (Caixa de Entrada - Recebidos)
-  app.get('/received', {
-    schema: {
-      querystring: listFiltersSchema,
-      tags: ['Communication'],
-      description: 'List received documents (Inbox)'
-    }
-  }, controller.listReceived.bind(controller))
-
-  // GET (Enviados)
+  // GET — Enviados
   app.get('/sent', {
     schema: {
       querystring: listFiltersSchema,
       tags: ['Communication'],
-      description: 'List sent documents'
+      description: 'Listar mensagens enviadas'
     }
   }, controller.listSent.bind(controller))
 
-  // GET (Listar Destinatários Elegíveis)
+  // GET — Destinatários elegíveis
   app.get('/recipients', {
     schema: {
+      querystring: z.object({ search: z.string().optional() }),
       tags: ['Communication'],
-      description: 'List eligible document recipients'
+      description: 'Listar destinatários disponíveis'
     }
   }, controller.getRecipients.bind(controller))
 
-  // GET (Detalhes)
-  app.get('/documents/:id', {
+  // GET — Detalhe de mensagem
+  app.get('/messages/:id', {
     schema: {
-      params: documentIdSchema,
+      params: messageIdSchema,
       tags: ['Communication']
     }
   }, controller.getById.bind(controller))
 
-  // PUT (Atualizar)
-  app.put('/documents/:id', {
+  // PUT — Atualizar rascunho
+  app.put('/messages/:id', {
     schema: {
-      params: documentIdSchema,
-      body: updateDocumentSchema,
+      params: messageIdSchema,
+      body: updateMessageSchema,
       tags: ['Communication']
     }
   }, controller.update.bind(controller))
 
-  // DELETE (Excluir)
-  app.delete('/documents/:id', {
+  // DELETE — Excluir rascunho
+  app.delete('/messages/:id', {
     schema: {
-      params: documentIdSchema,
+      params: messageIdSchema,
       tags: ['Communication']
     }
   }, controller.delete.bind(controller))
 
-  app.post('/documents/:id/send', {
+  // GET — Download de anexo
+  app.get('/messages/:id/attachments/:attachmentId/download', {
     schema: {
-      params: documentIdSchema,
+      params: z.object({ id: z.string(), attachmentId: z.string() }),
       tags: ['Communication'],
-      description: 'Gera protocolo e envia o documento'
-    }
-  }, controller.send.bind(controller))
-
-  app.post('/documents/:id/sign', {
-    schema: {
-      params: documentIdSchema,
-      tags: ['Communication'],
-      description: 'Assina o documento digitalmente'
-    }
-  }, controller.sign.bind(controller))
-
-  // GET (Download de Anexo Específico)
-  app.get('/documents/:id/attachments/:attachmentId/download', {
-    schema: {
-      params: z.object({
-        id: z.string(),
-        attachmentId: z.string()
-      }),
-      tags: ['Communication'],
-      description: 'Download secure attachment'
+      description: 'Download de anexo de mensagem'
     }
   }, controller.downloadAttachment.bind(controller))
-
-  // GET (Download do Documento Principal - PDF do Protocolo)
-  app.get('/documents/:id/download', {
-    schema: {
-      params: z.object({
-        id: z.string()
-      }),
-      tags: ['Communication'],
-      description: 'Download the main protocol PDF of the document'
-    }
-  }, controller.downloadDocument.bind(controller))
 }

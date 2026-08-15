@@ -9,11 +9,19 @@ import { settingsRoutes } from '@/routes/settings.routes.js'
 import { financeRoutes } from '@/routes/finance.routes.js'
 import { calendarRoutes } from '@/routes/calendar.routes.js'
 import { notesRoutes } from '@/routes/notes.routes.js'
+import { organizationRoutes } from '@/routes/organization.routes.js'
+import { adminRoutes } from '@/routes/admin.routes.js'
 
 import { AppServer } from '@/types/server'
 import { db } from '@/utils/database.js'
+import { config } from '@/config/config.js'
 import { logger } from '@/utils/logger.js'
 import { virtualProcessRoutes } from '@/routes/virtual-process.routes.js'
+import { covenantRoutes } from '@/routes/covenant.routes.js'
+import { protocolRoutes } from '@/routes/protocol.routes.js'
+import { departmentRoutes } from '@/routes/department.routes.js'
+import { councilPublicRoutes, councilRoutes } from '@/routes/council.routes.js'
+import { supportRoutes } from '@/routes/support.routes.js'
 import { errorHandler } from '@/utils/error-handler.js'
 
 import { publicRoutes } from '@/routes/public.routes.js'
@@ -26,7 +34,7 @@ export async function registerRoutes(server: AppServer) {
   server.setErrorHandler(errorHandler)
 
   // --- NOT FOUND HANDLER ---
-  server.setNotFoundHandler(async (request, reply) => {
+  server.setNotFoundHandler((request, reply) => {
     return reply.code(404).send({
       error: 'Not Found',
       message: `Endpoint ${request.method}:${request.url} not found`,
@@ -35,6 +43,64 @@ export async function registerRoutes(server: AppServer) {
       requestId: request.id,
       suggestion: 'Check the API documentation at /documentation'
     })
+  })
+
+  // --- SENTRY TUNNEL ---
+  // Recebe envelopes do frontend e repassa para o Sentry.
+  // Necessário para contornar ad blockers que bloqueiam *.sentry.io diretamente.
+  server.addContentTypeParser('application/x-sentry-envelope', { parseAs: 'string' }, (_req, body, done) => {
+    done(null, body)
+  })
+
+  server.post('/api/sentry-tunnel', async (request, reply) => {
+    try {
+      const envelope = request.body as string
+      const firstLine = envelope.split('\n')[0]
+      const header = JSON.parse(firstLine) as { dsn?: string }
+
+      if (!header.dsn) {
+        return reply.code(400).send({ error: 'Missing DSN' })
+      }
+
+      // SSRF: a URL de destino é derivada EXCLUSIVAMENTE do DSN configurado no
+      // servidor (variável de ambiente). O DSN que vem no corpo da requisição é
+      // usado apenas para CONFERIR se bate com o do servidor — nunca para montar
+      // o destino do fetch. Assim o tunnel não pode ser usado como proxy genérico,
+      // mesmo que host e projectId do cliente sejam manipulados.
+      const serverDsnRaw = config.observability.sentryDsn
+      if (!serverDsnRaw) {
+        return reply.code(503).send({ error: 'Sentry tunnel not configured' })
+      }
+
+      const serverDsn = new URL(serverDsnRaw)
+      const projectId = serverDsn.pathname.replace(/^\//, '')
+
+      // Defesa em profundidade: host do próprio DSN do servidor precisa ser Sentry
+      // e o projectId precisa ser numérico (formato do Sentry).
+      if (!serverDsn.hostname.endsWith('.sentry.io') || !/^\d+$/.test(projectId)) {
+        return reply.code(503).send({ error: 'Sentry tunnel misconfigured' })
+      }
+
+      // O envelope só é encaminhado se o cliente declarou o mesmo projeto do servidor.
+      const clientDsn = new URL(header.dsn)
+      if (clientDsn.hostname !== serverDsn.hostname
+        || clientDsn.pathname.replace(/^\//, '') !== projectId) {
+        return reply.code(400).send({ error: 'DSN mismatch' })
+      }
+
+      const sentryUrl = `https://${serverDsn.hostname}/api/${projectId}/envelope/`
+
+      const response = await fetch(sentryUrl, {
+        method: 'POST',
+        body: envelope,
+        headers: { 'Content-Type': 'application/x-sentry-envelope' }
+      })
+
+      return reply.code(response.status).send()
+    } catch (err) {
+      request.log.error(err, 'Sentry tunnel error')
+      return reply.code(500).send({ error: 'Tunnel error' })
+    }
   })
 
   // --- HEALTH CHECK ---
@@ -53,8 +119,12 @@ export async function registerRoutes(server: AppServer) {
   await server.register(
     async server => {
       await server.register(authRoutes, { prefix: '/auth', logLevel: 'info' })
+      await server.register(organizationRoutes, { prefix: '/organizations', logLevel: 'info' })
       await server.register(userRoutes, { prefix: '/users', logLevel: 'info' })
       await server.register(roleRoutes, { prefix: '/roles', logLevel: 'info' })
+
+      // Módulo de Comunicação
+      await server.register(adminRoutes, { prefix: '/admin', logLevel: 'info' })
 
       // Módulo de Comunicação
       await server.register(communicationRoutes, { prefix: '/communication', logLevel: 'info' })
@@ -81,9 +151,15 @@ export async function registerRoutes(server: AppServer) {
   // Módulo Financeiro
   await server.register(financeRoutes, { prefix: '/finance', logLevel: 'info' })
   await server.register(virtualProcessRoutes, { prefix: '/virtual-processes', logLevel: 'info' })
+  await server.register(covenantRoutes, { prefix: '/covenants', logLevel: 'info' })
+  await server.register(protocolRoutes, { prefix: '/protocols', logLevel: 'info' })
+  await server.register(departmentRoutes, { prefix: '/departments', logLevel: 'info' })
+  await server.register(councilRoutes, { prefix: '/councils', logLevel: 'info' })
+  await server.register(councilPublicRoutes, { prefix: '/councils', logLevel: 'info' })
+  await server.register(supportRoutes, { prefix: '/support', logLevel: 'info' })
 
   // --- TEST ENDPOINT ---
-  server.get('/test', async (request, reply) => {
+  server.get('/test', (request, reply) => {
     logger.info('Test endpoint hit')
     return reply.send({ message: 'Test endpoint working', timestamp: new Date().toISOString() })
   })

@@ -1,12 +1,12 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { authService } from '@/services/auth.service.js'
-import { db, prisma } from '@/utils/database.js'
+import { db } from '@/utils/database.js'
+import { prisma } from '@/lib/prisma.js'
 import { authLogger } from '@/utils/logger.js'
 import { assignRoleSchema, createUserSchema, updateUserSchema, userQuerySchema } from '@/schemas/auth.schemas.js'
 import { certificateService } from '@/services/certificate.service.js'
-import fs from 'node:fs'
 import path from 'node:path'
-import crypto from 'node:crypto'
+import { deleteFile, getFileUrl, saveFile } from '@/services/storage.service.js'
 
 export class UserController {
   async getUsers(request: FastifyRequest, reply: FastifyReply) {
@@ -14,12 +14,17 @@ export class UserController {
       const query = userQuerySchema.parse(request.query)
       const where: any = {}
 
+      // Isolamento por organização
+      if (!request.user.isSuperAdmin) {
+        where.organizationId = request.user.organizationId
+      }
+
       if (query.search) {
         where.OR = [
           { email: { contains: query.search, mode: 'insensitive' } },
           { firstName: { contains: query.search, mode: 'insensitive' } },
           { lastName: { contains: query.search, mode: 'insensitive' } },
-          { username: { contains: query.search, mode: 'insensitive' } }
+          { username: { contains: query.search, mode: 'insensitive' } },
         ]
       }
 
@@ -27,8 +32,12 @@ export class UserController {
       if (query.isVerified !== undefined) where.isVerified = query.isVerified
       if (query.createdAfter) where.createdAt = { gte: query.createdAfter }
       if (query.createdBefore) where.createdAt = { ...where.createdAt, lte: query.createdBefore }
-
       if (query.role) where.roles = { some: { role: { name: query.role } } }
+
+      // Super admin pode filtrar por organização específica
+      if (request.user.isSuperAdmin && query.organizationId) {
+        where.organizationId = query.organizationId
+      }
 
       const orderBy: any = {}
       if (query.sortBy) orderBy[query.sortBy] = query.sortOrder
@@ -39,8 +48,9 @@ export class UserController {
         where, orderBy, skip: (query.page - 1) * query.limit, take: query.limit,
         select: {
           id: true, email: true, username: true, firstName: true, lastName: true,
-          avatar: true, isActive: true, isVerified: true, twoFactorEnabled: true,
+          avatar: true, isActive: true, isVerified: true,
           lastLoginAt: true, createdAt: true, updatedAt: true,
+          organization: { select: { id: true, name: true } },
           roles: { select: { role: { select: { id: true, name: true, displayName: true, color: true } } } }
         }
       })
@@ -79,11 +89,13 @@ export class UserController {
       }
       // --- FIM DA CORREÇÃO ---
 
-      const user = await prisma.user.findUnique({
-        where: { id },
+      const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
+
+      const user = await prisma.user.findFirst({
+        where: { id, ...orgFilter },
         select: {
           id: true, email: true, username: true, firstName: true, lastName: true,
-          avatar: true, isActive: true, isVerified: true, twoFactorEnabled: true,
+          avatar: true, isActive: true, isVerified: true,
           lastLoginAt: true, createdAt: true, updatedAt: true, preferences: true, metadata: true,
           roles: { select: { id: true, assignedAt: true, expiresAt: true, role: { select: { id: true, name: true, displayName: true, description: true, color: true, permissions: true } } } }
         }
@@ -109,7 +121,12 @@ export class UserController {
 
   async createUser(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const data = createUserSchema.parse(request.body)
+      const parseResult = createUserSchema.safeParse(request.body)
+      if (!parseResult.success) {
+        const firstIssue = parseResult.error.issues[0]
+        return reply.code(400).send({ error: 'Validation Error', message: firstIssue.message })
+      }
+      const data = parseResult.data
       const existingUser = await db.findUserByEmail(data.email)
       if (existingUser) return reply.code(400).send({ error: 'User Exists', message: 'User with this email already exists' })
 
@@ -119,10 +136,14 @@ export class UserController {
       }
 
       const hashedPassword = await authService.hashPassword(data.password)
+
       const user = await prisma.user.create({
         data: {
-          email: data.email.toLowerCase(), password: hashedPassword, firstName: data.firstName,
-          lastName: data.lastName, username: data.username, isActive: data.isActive ?? true, isVerified: data.isVerified ?? false
+          id: crypto.randomUUID(),
+          email: data.email.toLowerCase(), firstName: data.firstName,
+          lastName: data.lastName, username: data.username, isActive: data.isActive ?? true, isVerified: data.isVerified ?? false,
+          password: hashedPassword,
+          organizationId: request.user.organizationId
         },
         select: { id: true, email: true, username: true, firstName: true, lastName: true, isActive: true, isVerified: true, createdAt: true }
       })
@@ -157,9 +178,15 @@ export class UserController {
   async updateUser(request: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = request.params as { id: string }
-      const data = updateUserSchema.parse(request.body)
+      const parseResult = updateUserSchema.safeParse(request.body)
+      if (!parseResult.success) {
+        const firstIssue = parseResult.error.issues[0]
+        return reply.code(400).send({ error: 'Validation Error', message: firstIssue.message })
+      }
+      const data = parseResult.data
 
-      const existingUser = await prisma.user.findUnique({ where: { id } })
+      const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
+      const existingUser = await prisma.user.findFirst({ where: { id, ...orgFilter } })
       if (!existingUser) return reply.code(404).send({ error: 'User Not Found', message: 'User with specified ID not found' })
 
       if (data.email && data.email !== existingUser.email) {
@@ -203,7 +230,8 @@ export class UserController {
   async deleteUser(request: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = request.params as { id: string }
-      const user = await prisma.user.findUnique({ where: { id }, select: { id: true, email: true } })
+      const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
+      const user = await prisma.user.findFirst({ where: { id, ...orgFilter }, select: { id: true, email: true } })
       if (!user) return reply.code(404).send({ error: 'User Not Found', message: 'User with specified ID not found' })
 
       if (user.id === (request as any).user?.id) {
@@ -236,7 +264,8 @@ export class UserController {
       const { id } = request.params as { id: string }
       const data = assignRoleSchema.parse(request.body)
 
-      const user = await prisma.user.findUnique({ where: { id } })
+      const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
+      const user = await prisma.user.findFirst({ where: { id, ...orgFilter } })
       if (!user) return reply.code(404).send({ error: 'User Not Found', message: 'User with specified ID not found' })
 
       const roles = await prisma.role.findMany({ where: { id: { in: data.roleIds } } })
@@ -275,7 +304,8 @@ export class UserController {
       const { id } = request.params as { id: string }
       const { roleIds } = request.body as { roleIds: string[] }
 
-      const user = await prisma.user.findUnique({ where: { id } })
+      const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
+      const user = await prisma.user.findFirst({ where: { id, ...orgFilter } })
       if (!user) return reply.code(404).send({ error: 'User Not Found', message: 'User with specified ID not found' })
 
       const roles = await prisma.role.findMany({ where: { id: { in: roleIds } }, select: { id: true, name: true } })
@@ -301,6 +331,9 @@ export class UserController {
   async getUserSessions(request: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = request.params as { id: string }
+      const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
+      const targetUser = await prisma.user.findFirst({ where: { id, ...orgFilter }, select: { id: true } })
+      if (!targetUser) return reply.code(404).send({ error: 'User Not Found', message: 'User with specified ID not found' })
       const sessions = await prisma.userSession.findMany({
         where: { userId: id, isActive: true, expiresAt: { gt: new Date() } },
         select: { id: true, fingerprint: true, ipAddress: true, userAgent: true, deviceType: true, deviceName: true, lastUsedAt: true, createdAt: true, expiresAt: true },
@@ -316,6 +349,9 @@ export class UserController {
   async terminateUserSessions(request: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = request.params as { id: string }
+      const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
+      const targetUser = await prisma.user.findFirst({ where: { id, ...orgFilter }, select: { id: true } })
+      if (!targetUser) return reply.code(404).send({ error: 'User Not Found', message: 'User with specified ID not found' })
       const result = await prisma.userSession.updateMany({ where: { userId: id, isActive: true }, data: { isActive: false } })
 
       await db.createAuditLog({
@@ -335,14 +371,37 @@ export class UserController {
     }
   }
 
+  async terminateSingleSession(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { id, sessionId } = request.params as { id: string; sessionId: string }
+      const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
+      const targetUser = await prisma.user.findFirst({ where: { id, ...orgFilter }, select: { id: true } })
+      if (!targetUser) return reply.code(404).send({ error: 'User Not Found', message: 'User with specified ID not found' })
+
+      const session = await prisma.userSession.findFirst({ where: { id: sessionId, userId: id, isActive: true } })
+      if (!session) return reply.code(404).send({ error: 'Session Not Found', message: 'Session not found or already terminated' })
+
+      await prisma.userSession.update({ where: { id: sessionId }, data: { isActive: false } })
+
+      return reply.send({ message: 'Session terminated successfully' })
+    } catch (error: any) {
+      authLogger.error(error, 'Failed to terminate single session')
+      return reply.code(500).send({ error: 'Session Termination Failed', message: error.message })
+    }
+  }
+
   async changeUserStatus(request: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = request.params as { id: string }
       const { isActive, reason } = request.body as { isActive: boolean; reason?: string }
 
-      if (!isActive && id === (request as any).user?.id) {
+      if (!isActive && id === request.user.id) {
         return reply.code(400).send({ error: 'Self Deactivation', message: 'Cannot deactivate your own account' })
       }
+
+      const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
+      const existingUser = await prisma.user.findFirst({ where: { id, ...orgFilter }, select: { id: true } })
+      if (!existingUser) return reply.code(404).send({ error: 'User Not Found', message: 'User with specified ID not found' })
 
       const user = await prisma.user.update({ where: { id }, data: { isActive }, select: { id: true, email: true, isActive: true } })
 
@@ -370,7 +429,8 @@ export class UserController {
   async forcePasswordReset(request: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = request.params as { id: string }
-      const user = await prisma.user.findUnique({ where: { id }, select: { id: true, email: true } })
+      const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
+      const user = await prisma.user.findFirst({ where: { id, ...orgFilter }, select: { id: true, email: true } })
       if (!user) return reply.code(404).send({ error: 'User Not Found', message: 'User with specified ID not found' })
 
       await authService.forgotPassword(user.email, request.ip)
@@ -398,7 +458,7 @@ export class UserController {
     try {
       const fullUser = await prisma.user.findUnique({
         where: { id: userId },
-        include: { department: true }
+        include: { departments: { take: 1 } }
       })
 
       if (!fullUser) {
@@ -409,7 +469,7 @@ export class UserController {
         username: fullUser.username || 'usuario',
         fullName: `${fullUser.firstName || ''} ${fullUser.lastName || ''}`.trim(),
         email: fullUser.email,
-        department: fullUser.department?.name || 'Geral'
+        department: fullUser.departments[0]?.name || 'Geral'
       })
 
       await certificateService.saveUserCertificate(userId, pfxBuffer)
@@ -474,41 +534,34 @@ export class UserController {
         return reply.code(400).send({ message: 'Arquivo muito grande. O limite é 5MB.' })
       }
 
-      // Cria diretório de logos se não existir
-      const logoDir = path.join(process.cwd(), 'uploads', 'logos')
-      if (!fs.existsSync(logoDir)) {
-        fs.mkdirSync(logoDir, { recursive: true })
-      }
-
-      // Remove logo antiga se existir
+      // Remove logo antiga do R2 se existir
       const existingUser = await prisma.user.findUnique({ where: { id: userId } })
       const existingMeta = (existingUser?.metadata as any) || {}
-      if (existingMeta?.logoUrl) {
-        const oldRelative = existingMeta.logoUrl.startsWith('/') ? existingMeta.logoUrl.slice(1) : existingMeta.logoUrl
-        const oldAbsolute = path.resolve(process.cwd(), oldRelative)
-        if (fs.existsSync(oldAbsolute)) {
-          try { fs.unlinkSync(oldAbsolute) } catch (_e) { /* ignora */ }
-        }
+      if (existingMeta?.logoKey) {
+        try {
+          await deleteFile(existingMeta.logoKey)
+        } catch (_e) { /* ignora */ }
       }
 
-      // Gera nome único para o arquivo
+      // Grava em disco local — a extensão vem do mimetype quando o nome não tem uma
       const originalExt = path.extname(data.filename)
       const ext = originalExt || `.${data.mimetype.split('/')[1]}`
-      const fileHash = crypto.randomBytes(16).toString('hex')
-      const fileName = `${userId}_${fileHash}${ext}`
-      const savePath = path.join(logoDir, fileName)
 
-      // Salva o arquivo em disco
-      fs.writeFileSync(savePath, fileBuffer)
+      const logoKey = await saveFile(fileBuffer, {
+        organizationId: (request.user as any)?.organizationId ?? null,
+        scope: 'logos',
+        originalName: `logo${ext}`,
+      })
 
-      const logoUrl = `/uploads/logos/${fileName}`
+      const logoUrl = getFileUrl(logoKey)
 
-      // Atualiza metadata do usuário com a URL da nova logo
+      // Atualiza metadata com key (para deleção futura) e URL pública
       await prisma.user.update({
         where: { id: userId },
         data: {
           metadata: {
             ...existingMeta,
+            logoKey,
             logoUrl
           }
         }
@@ -543,17 +596,15 @@ export class UserController {
 
       const existingMeta = (existingUser.metadata as any) || {}
 
-      // Remove arquivo físico se existir
-      if (existingMeta?.logoUrl) {
-        const oldRelative = existingMeta.logoUrl.startsWith('/') ? existingMeta.logoUrl.slice(1) : existingMeta.logoUrl
-        const oldAbsolute = path.resolve(process.cwd(), oldRelative)
-        if (fs.existsSync(oldAbsolute)) {
-          try { fs.unlinkSync(oldAbsolute) } catch (_e) { /* ignora */ }
-        }
+      // Remove do R2 se existir
+      if (existingMeta?.logoKey) {
+        try {
+          await deleteFile(existingMeta.logoKey)
+        } catch (_e) { /* ignora */ }
       }
 
-      // Remove logoUrl da metadata
-      const { logoUrl: _removed, ...restMeta } = existingMeta
+      // Remove logoKey e logoUrl da metadata
+      const { logoKey: _key, logoUrl: _url, ...restMeta } = existingMeta
       await prisma.user.update({
         where: { id: userId },
         data: { metadata: restMeta }

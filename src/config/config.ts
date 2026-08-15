@@ -15,6 +15,10 @@ const configSchema = z.object({
 
   // Database
   DATABASE_URL: z.string().url(),
+  // Opcionais: URL direta (sem pooler) para rodar migrations e URL de réplica de leitura.
+  // Localmente, ambas ficam sem uso — o Postgres local não tem pooler nem réplica.
+  DATABASE_MIGRATION_URL: z.string().url().optional(),
+  DATABASE_REPLICA_URL: z.string().url().optional(),
 
   // Redis
   REDIS_URL: z.string().url(),
@@ -58,7 +62,24 @@ const configSchema = z.object({
 
   // Logging
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
-  ENABLE_REQUEST_LOGGING: z.coerce.boolean().default(true)
+  ENABLE_REQUEST_LOGGING: z.coerce.boolean().default(true),
+
+  // Observability (optional — features activate only when set)
+  SENTRY_DSN: z.string().url().optional().or(z.literal('')).transform(v => v || undefined),
+  BETTERSTACK_SOURCE_TOKEN: z.string().optional(),
+
+  // Armazenamento de arquivos: local em disco (pasta `uploads/`), servido em
+  // /uploads/ via @fastify/static. Zero credenciais de nuvem — ver
+  // src/services/storage.service.ts e a Constituição (Princípio I).
+
+  // Gov.br OAuth2 + assinatura digital — USE_MOCK_GOVBR=true (padrão local)
+  // simula o fluxo de assinatura sem exigir credenciais reais do gov.br.
+  GOVBR_CLIENT_ID: z.string().optional(),
+  GOVBR_CLIENT_SECRET: z.string().optional(),
+  GOVBR_REDIRECT_URI: z.string().url().optional(),
+  GOVBR_AUTH_URL: z.string().url().default('https://sso.staging.acesso.gov.br'),
+  GOVBR_SIGN_API_URL: z.string().url().default('https://assinatura-api.staging.iti.br'),
+  USE_MOCK_GOVBR: z.coerce.boolean().default(true)
 })
 
 const parsedEnv = configSchema.safeParse(process.env)
@@ -87,7 +108,9 @@ export const config = {
 
   // Database
   database: {
-    url: env.DATABASE_URL
+    url: env.DATABASE_URL,
+    migrationUrl: env.DATABASE_MIGRATION_URL,
+    replicaUrl: env.DATABASE_REPLICA_URL
   },
 
   // Redis
@@ -150,6 +173,22 @@ export const config = {
   logging: {
     level: env.LOG_LEVEL,
     enableRequestLogging: env.ENABLE_REQUEST_LOGGING
+  },
+
+  // Observability
+  observability: {
+    sentryDsn: env.SENTRY_DSN,
+    betterstackToken: env.BETTERSTACK_SOURCE_TOKEN
+  },
+
+  // Gov.br OAuth2 + assinatura digital
+  govbr: {
+    clientId: env.GOVBR_CLIENT_ID,
+    clientSecret: env.GOVBR_CLIENT_SECRET,
+    redirectUri: env.GOVBR_REDIRECT_URI,
+    authUrl: env.GOVBR_AUTH_URL,
+    signApiUrl: env.GOVBR_SIGN_API_URL,
+    useMock: env.USE_MOCK_GOVBR
   }
 } as const
 

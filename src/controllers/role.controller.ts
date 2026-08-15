@@ -1,76 +1,10 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import { db, prisma } from '@/utils/database.js'
+import { db } from '@/utils/database.js'
+import { prisma } from '@/lib/prisma.js'
 import { authLogger } from '@/utils/logger.js'
 import { createRoleSchema, paginationSchema, updateRoleSchema } from '@/schemas/auth.schemas.js'
 import { z } from 'zod'
-
-const AVAILABLE_PERMISSIONS = {
-  users: {
-    displayName: 'Gestão de Usuários',
-    permissions: [
-      { key: 'users:read', description: 'Visualizar listagem de usuários', level: 'read' },
-      { key: 'users:write', description: 'Criar e editar usuários', level: 'write' },
-      { key: 'users:delete', description: 'Excluir usuários', level: 'delete' },
-      { key: 'users:manage', description: 'Controle total de usuários (inclui reset de senha)', level: 'admin' }
-    ]
-  },
-  roles: {
-    displayName: 'Gestão de Perfis (Roles)',
-    permissions: [
-      { key: 'roles:read', description: 'Visualizar perfis de acesso', level: 'read' },
-      { key: 'roles:write', description: 'Criar e editar perfis', level: 'write' },
-      { key: 'roles:delete', description: 'Excluir perfis', level: 'delete' },
-      { key: 'roles:manage', description: 'Gerenciar permissões avançadas', level: 'admin' }
-    ]
-  },
-  finance: {
-    displayName: 'Módulo Financeiro',
-    permissions: [
-      { key: 'finance:read', description: 'Visualizar relatórios financeiros', level: 'read' },
-      { key: 'finance:write', description: 'Lançar despesas e receitas', level: 'write' },
-      { key: 'finance:approve', description: 'Aprovar transações', level: 'admin' },
-      { key: 'finance:export', description: 'Exportar dados financeiros', level: 'read' }
-    ]
-  },
-  settings: {
-    displayName: 'Configurações do Sistema',
-    permissions: [
-      { key: 'settings:read', description: 'Ver configurações globais', level: 'read' },
-      { key: 'settings:write', description: 'Alterar configurações globais', level: 'write' },
-      { key: 'system:admin', description: 'Acesso de Super Administrador', level: 'admin' },
-      { key: 'audit:read', description: 'Acessar logs de auditoria', level: 'read' },
-      { key: 'audit:export', description: 'Baixar logs de auditoria', level: 'read' }
-    ]
-  },
-  communication: {
-    displayName: 'Comunicação e Protocolo',
-    permissions: [
-      { key: 'documents:read', description: 'Visualizar documentos e processos', level: 'read' },
-      { key: 'documents:create', description: 'Criar novos documentos (Memorandos, Ofícios)', level: 'write' },
-      { key: 'documents:manage', description: 'Gerenciar todos os documentos (Editar/Excluir)', level: 'admin' },
-      { key: 'documents:sign', description: 'Assinar documentos digitalmente', level: 'write' },
-      { key: 'documents:send', description: 'Enviar documentos (Protocolar)', level: 'write' }
-    ]
-  },
-  security: {
-    displayName: 'Segurança & Sessões',
-    permissions: [
-      { key: 'sessions:view', description: 'Ver sessões ativas', level: 'read' },
-      { key: 'sessions:manage', description: 'Derrubar sessões de usuários', level: 'admin' },
-      { key: 'backup:create', description: 'Gerar backup manual', level: 'admin' },
-      { key: 'backup:restore', description: 'Restaurar sistema', level: 'admin' }
-    ]
-  },
-  processes: {
-    displayName: 'Processos Virtuais',
-    permissions: [
-      { key: 'processes:read', description: 'Visualizar processos virtuais', level: 'read' },
-      { key: 'processes:write', description: 'Criar e editar processos', level: 'write' },
-      { key: 'processes:download', description: 'Baixar documentos de processos', level: 'read' },
-      { key: 'processes:manage', description: 'Gerenciar todos os processos', level: 'admin' }
-    ]
-  }
-}
+import { AVAILABLE_PERMISSIONS } from '@/constants/permissions.js'
 
 export class RoleController {
   async getRoles(request: FastifyRequest, reply: FastifyReply) {
@@ -86,14 +20,22 @@ export class RoleController {
         .parse(request.query)
 
       const where: any = {}
+      const andConditions: any[] = []
+
+      // Isolamento: mostra roles do sistema (isSystem) + roles da própria org
+      if (!request.user.isSuperAdmin) {
+        andConditions.push({ OR: [{ organizationId: request.user.organizationId }, { isSystem: true }] })
+      }
 
       if (query.search) {
-        where.OR = [
+        andConditions.push({ OR: [
           { name: { contains: query.search, mode: 'insensitive' } },
           { displayName: { contains: query.search, mode: 'insensitive' } },
           { description: { contains: query.search, mode: 'insensitive' } }
-        ]
+        ]})
       }
+
+      if (andConditions.length > 0) where.AND = andConditions
 
       if (query.isActive !== undefined) where.isActive = query.isActive
       if (query.isSystem !== undefined) where.isSystem = query.isSystem
@@ -160,6 +102,11 @@ export class RoleController {
         return reply.code(404).send({ error: 'Role Not Found', message: 'Role with specified ID not found' })
       }
 
+      // Verificar acesso: role deve ser do sistema ou da org do usuário
+      if (!request.user.isSuperAdmin && !role.isSystem && role.organizationId !== request.user.organizationId) {
+        return reply.code(404).send({ error: 'Role Not Found', message: 'Role with specified ID not found' })
+      }
+
       await db.createAuditLog({
         userId: (request as any).user?.id,
         action: 'role_viewed',
@@ -202,7 +149,8 @@ export class RoleController {
           parentId: data.parentId,
           metadata: data.metadata,
           isSystem: false,
-          isActive: true
+          isActive: true,
+          organizationId: request.user.organizationId
         }
       })
 
@@ -235,8 +183,12 @@ export class RoleController {
         return reply.code(404).send({ error: 'Role Not Found', message: 'Role with specified ID not found' })
       }
 
-      if (existingRole.isSystem) {
-        return reply.code(400).send({ error: 'System Role', message: 'Cannot modify system roles' })
+      if (!request.user.isSuperAdmin && !existingRole.isSystem && existingRole.organizationId !== request.user.organizationId) {
+        return reply.code(404).send({ error: 'Role Not Found', message: 'Role with specified ID not found' })
+      }
+
+      if (existingRole.isSystem && data.name && data.name !== existingRole.name) {
+        return reply.code(400).send({ error: 'System Role', message: 'Cannot rename system roles' })
       }
 
       if (data.name && data.name !== existingRole.name) {
@@ -270,6 +222,9 @@ export class RoleController {
 
       const role = await prisma.role.findUnique({ where: { id }, include: { _count: { select: { users: true } } } })
       if (!role) return reply.code(404).send({ error: 'Role Not Found', message: 'Role with specified ID not found' })
+      if (!request.user.isSuperAdmin && !role.isSystem && role.organizationId !== request.user.organizationId) {
+        return reply.code(404).send({ error: 'Role Not Found', message: 'Role with specified ID not found' })
+      }
       if (role.isSystem) return reply.code(400).send({ error: 'System Role', message: 'Cannot delete system roles' })
       if (role._count.users > 0) return reply.code(400).send({ error: 'Role In Use', message: `Role is assigned to ${role._count.users} user(s).` })
 
@@ -304,6 +259,7 @@ export class RoleController {
 
       const where: any = { roles: { some: { roleId: id } } }
       if (query.isActive !== undefined) where.isActive = query.isActive
+      if (!request.user.isSuperAdmin) where.organizationId = request.user.organizationId
 
       const total = await prisma.user.count({ where })
       const users = await prisma.user.findMany({
@@ -328,10 +284,39 @@ export class RoleController {
 
   async getAvailablePermissions(request: FastifyRequest, reply: FastifyReply) {
     try {
-      // Retorna as permissões formatadas para o frontend
+      const isSuperAdmin = request.user?.isSuperAdmin ?? false
+
+      if (isSuperAdmin) {
+        return reply.send({
+          permissions: AVAILABLE_PERMISSIONS,
+          categories: Object.keys(AVAILABLE_PERMISSIONS),
+        })
+      }
+
+      // Org admins: strip super-admin-only permissions
+      // - system:admin  → not a real role permission (it's a User field)
+      // - audit:*        → system-level audit logs, not org-scoped
+      // - backup:*       → infrastructure ops, not available to orgs
+      const SUPER_ADMIN_ONLY_PERMS = new Set([
+        'system:admin',
+        'audit:read',
+        'audit:export',
+        'backup:create',
+        'backup:restore',
+      ])
+
+      const filtered: Record<string, typeof AVAILABLE_PERMISSIONS[keyof typeof AVAILABLE_PERMISSIONS]> = {}
+
+      for (const [catKey, cat] of Object.entries(AVAILABLE_PERMISSIONS)) {
+        const visiblePerms = cat.permissions.filter(p => !SUPER_ADMIN_ONLY_PERMS.has(p.key))
+        if (visiblePerms.length > 0) {
+          filtered[catKey] = { ...cat, permissions: visiblePerms }
+        }
+      }
+
       return reply.send({
-        permissions: AVAILABLE_PERMISSIONS,
-        categories: Object.keys(AVAILABLE_PERMISSIONS)
+        permissions: filtered,
+        categories: Object.keys(filtered),
       })
     } catch (error: any) {
       authLogger.error(error, 'Failed to get available permissions')
@@ -355,7 +340,8 @@ export class RoleController {
           name, displayName, description: description || `Copy of ${sourceRole.displayName}`,
           color: sourceRole.color, permissions: sourceRole.permissions || [],
           parentId: sourceRole.parentId, metadata: sourceRole.metadata || {},
-          isSystem: false, isActive: true
+          isSystem: false, isActive: true,
+          organizationId: request.user.organizationId
         }
       })
 
@@ -378,8 +364,12 @@ export class RoleController {
 
   async getRoleHierarchy(request: FastifyRequest, reply: FastifyReply) {
     try {
+      const hierarchyWhere: any = { isActive: true }
+      if (!request.user.isSuperAdmin) {
+        hierarchyWhere.OR = [{ organizationId: request.user.organizationId }, { isSystem: true }]
+      }
       const roles = await prisma.role.findMany({
-        where: { isActive: true },
+        where: hierarchyWhere,
         select: { id: true, name: true, displayName: true, parentId: true },
         orderBy: { name: 'asc' }
       })

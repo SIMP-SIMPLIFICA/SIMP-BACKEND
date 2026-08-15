@@ -26,7 +26,7 @@ export async function connectRedis() {
 }
 
 export const redis = {
-  get: (key: string) => redisClient.get(key) as Promise<string | null>,
+  get: (key: string) => redisClient.get(key),
   set: (key: string, value: string, ttl?: number) =>
     ttl ? redisClient.setEx(key, ttl, value) : redisClient.set(key, value),
   del: (key: string) => redisClient.del(key),
@@ -34,8 +34,8 @@ export const redis = {
   setJSON: (key: string, value: any, ttl?: number) =>
     ttl ? redisClient.setEx(key, ttl, JSON.stringify(value)) : redisClient.set(key, JSON.stringify(value)),
   getJSON: async <T>(key: string): Promise<T | null> => {
-    const value = await redisClient.get(key) as string | null
-    return value ? JSON.parse(value) : null
+    const value = await redisClient.get(key)
+    return value ? JSON.parse(value) as T : null
   },
   scan: (cursor: number, pattern?: string, count?: number) =>
     redisClient.scan(cursor, { MATCH: pattern, COUNT: count }),

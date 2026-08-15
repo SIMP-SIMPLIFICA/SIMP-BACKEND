@@ -1,14 +1,10 @@
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { prisma } from '../lib/prisma.js';
-import { createTaskSchema, updateTaskSchema, createChecklistItemSchema, updateChecklistItemSchema } from '../schemas/task.schemas.js';
+import { createChecklistItemSchema, createTaskSchema, updateChecklistItemSchema, updateTaskSchema } from '../schemas/task.schemas.js';
 import { notificationService } from '../services/notification.service.js';
+import { PERMISSION_MISSING_MESSAGE, userHasPermission } from '../services/rbac.service.js';
 import { z } from 'zod';
-import { pipeline } from 'node:stream/promises';
-import { createWriteStream } from 'node:fs';
-import { join } from 'node:path';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import * as crypto from 'node:crypto';
+import { deleteFile, getFileUrl, saveFile } from '../services/storage.service.js';
 
 // --- HELPERS ---
 
@@ -38,8 +34,9 @@ export class TaskController {
     const data = createTaskSchema.parse(request.body);
     const userId = request.user.id; 
 
-    // Buscamos o workspace para ter o nome na notificação
-    const workspace = await prisma.workspace.findUnique({ where: { id: workspaceId } });
+    // Buscamos o workspace para ter o nome na notificação + validar org
+    const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId };
+    const workspace = await prisma.workspace.findFirst({ where: { id: workspaceId, ...orgFilter } });
     if (!workspace) return reply.status(404).send({ message: "Workspace não encontrado" });
 
     const canCreate = await checkPermission(workspaceId, userId, ['OWNER', 'ADMIN', 'MEMBER']);
@@ -68,10 +65,10 @@ export class TaskController {
     if (recipients.length > 0) {
         await notificationService.notifyMany(recipients, {
             title: 'Nova Tarefa',
-            // Contexto: Workspace -> Tarefa
             message: `[${workspace.name}] Você foi vinculado à nova tarefa "${task.title}"`,
             type: 'TASK_CREATED',
-            link: `/workspaces/${workspaceId}?taskId=${task.id}`
+            link: `/workspaces/${workspaceId}?taskId=${task.id}`,
+            entityId: task.id,
         });
     }
 
@@ -100,6 +97,8 @@ export class TaskController {
   // --- DETAILS ---
   async details(request: FastifyRequest, reply: FastifyReply) {
     const { id } = z.object({ id: z.string() }).parse(request.params);
+    const userId = request.user.id;
+
     const task = await prisma.task.findUnique({
       where: { id },
       include: {
@@ -111,8 +110,22 @@ export class TaskController {
         creator: { select: { id: true, firstName: true } }
       }
     });
+
     if (!task) return reply.status(404).send({ message: 'Tarefa não encontrada' });
-    return reply.send(task);
+
+    // Garante que o usuário é membro do workspace da tarefa
+    const member = await prisma.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId: task.workspaceId, userId } }
+    });
+    if (!member) return reply.status(403).send({ message: 'Sem permissão.' });
+
+    // URL pública local de cada anexo (antes: presigned URL do R2)
+    const attachmentsWithUrls = task.attachments.map((att) => ({
+      ...att,
+      signedUrl: getFileUrl(att.fileUrl),
+    }));
+
+    return reply.send({ ...task, attachments: attachmentsWithUrls });
   }
 
   // --- UPDATE ---
@@ -157,7 +170,8 @@ export class TaskController {
                 title: 'Tarefa Atualizada',
                 message: `[${updatedTask.workspace.name}] ${userActor?.firstName} atualizou "${updatedTask.title}" (${changes.join(', ')})`,
                 type: 'TASK_UPDATE',
-                link: `/workspaces/${updatedTask.workspaceId}?taskId=${id}`
+                link: `/workspaces/${updatedTask.workspaceId}?taskId=${id}`,
+                entityId: id,
             });
         }
     }
@@ -168,7 +182,7 @@ export class TaskController {
   // --- TOGGLE STATUS ---
   async toggleStatus(request: FastifyRequest, reply: FastifyReply) {
     const { id } = z.object({ id: z.string() }).parse(request.params);
-    const { status } = z.object({ status: z.enum(['TODO', 'IN_PROGRESS', 'IN_REVIEW', 'DONE', 'CANCELED']) }).parse(request.body);
+    const { status } = z.object({ status: z.enum(['TODO', 'IN_PROGRESS', 'IN_REVIEW', 'DONE', 'EXPIRED']) }).parse(request.body);
     const userId = request.user.id;
 
     // Incluindo Workspace
@@ -196,7 +210,8 @@ export class TaskController {
             title: 'Status Alterado',
             message: `[${task.workspace.name}] ${userActor?.firstName} moveu "${task.title}" para ${status}`,
             type: 'TASK_STATUS',
-            link: `/workspaces/${task.workspaceId}?taskId=${id}`
+            link: `/workspaces/${task.workspaceId}?taskId=${id}`,
+            entityId: id,
         });
     }
 
@@ -207,13 +222,19 @@ export class TaskController {
   async addAssignee(request: FastifyRequest, reply: FastifyReply) {
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const { userId } = z.object({ userId: z.string() }).parse(request.body);
-    const requesterId = (request.user as any).id;
+    const requesterId = request.user.id;
 
     const task = await prisma.task.findUnique({ where: { id }, include: { workspace: { include: { members: true } } } });
     if (!task) return reply.status(404).send();
 
     const canAssign = await checkPermission(task.workspaceId, requesterId, ['OWNER', 'ADMIN', 'MEMBER']);
     if (!canAssign) return reply.status(403).send({ message: 'Sem permissão.' });
+
+    // RBAC: usuário alvo deve ter permissão mínima de tasks:read
+    const targetCanUseTasks = await userHasPermission(userId, 'tasks:read');
+    if (!targetCanUseTasks) {
+      return reply.status(400).send({ message: PERMISSION_MISSING_MESSAGE });
+    }
 
     const assignee = await prisma.taskAssignee.create({
       data: { taskId: id, userId },
@@ -230,7 +251,8 @@ export class TaskController {
             title: 'Você foi atribuído',
             message: `[${task.workspace.name}] Você é responsável pela tarefa "${task.title}"`,
             type: 'TASK_ASSIGNED',
-            link: `/workspaces/${task.workspaceId}?taskId=${id}`
+            link: `/workspaces/${task.workspaceId}?taskId=${id}`,
+            entityId: id,
         });
     }
 
@@ -240,7 +262,7 @@ export class TaskController {
   // --- REMOVE ASSIGNEE ---
   async removeAssignee(request: FastifyRequest, reply: FastifyReply) {
     const { id, userId: targetUserId } = z.object({ id: z.string(), userId: z.string() }).parse(request.params);
-    const requesterId = (request.user as any).id;
+    const requesterId = request.user.id;
 
     const task = await prisma.task.findUnique({
         where: { id },
@@ -280,7 +302,8 @@ export class TaskController {
               title: 'Removido da Tarefa',
               message: `[${task.workspace.name}] Você foi removido da tarefa "${task.title}"`,
               type: 'TASK_UNASSIGNED',
-              link: `/workspaces/${task.workspaceId}?taskId=${id}`
+              link: `/workspaces/${task.workspaceId}?taskId=${id}`,
+              entityId: id,
           });
       }
 
@@ -293,11 +316,12 @@ export class TaskController {
               title: 'Responsáveis Atualizados',
               message: `[${task.workspace.name}] ${actor?.firstName} removeu ${targetUser?.firstName} da tarefa "${task.title}".`,
               type: 'TASK_UPDATE',
-              link: `/workspaces/${task.workspaceId}?taskId=${id}`
+              link: `/workspaces/${task.workspaceId}?taskId=${id}`,
+              entityId: id,
           });
       }
 
-    } catch (error) {
+    } catch (_error) {
        return reply.status(404).send({ message: 'Usuário não encontrado.' });
     }
 
@@ -319,15 +343,15 @@ export class TaskController {
     const data = await request.file();
     if (!data) return reply.status(400).send();
 
-    const uploadDir = join(process.cwd(), 'uploads');
-    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+    const chunks: Buffer[] = [];
+    for await (const chunk of data.file) chunks.push(chunk);
+    const fileBuffer = Buffer.concat(chunks);
 
-    const fileExt = path.extname(data.filename);
-    const uniqueName = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${fileExt}`;
-    const uploadPath = join(uploadDir, uniqueName);
-
-    await pipeline(data.file, createWriteStream(uploadPath));
-    const stats = fs.statSync(uploadPath);
+    const fileKey = await saveFile(fileBuffer, {
+        organizationId: request.user.organizationId ?? null,
+        scope: 'tasks',
+        originalName: data.filename,
+    });
 
     const attachment = await prisma.taskAttachment.create({
         data: {
@@ -335,8 +359,8 @@ export class TaskController {
             uploaderId: userId,
             fileName: data.filename,
             fileType: data.mimetype,
-            fileSize: stats.size,
-            fileUrl: uniqueName
+            fileSize: fileBuffer.length,
+            fileUrl: fileKey
         }
     });
 
@@ -352,7 +376,8 @@ export class TaskController {
             title: 'Novo Anexo',
             message: `[${task.workspace.name}] ${uploader?.firstName} anexou arquivo em "${task.title}"`,
             type: 'FILE_UPLOAD',
-            link: `/workspaces/${task.workspaceId}?taskId=${id}`
+            link: `/workspaces/${task.workspaceId}?taskId=${id}`,
+            entityId: id,
         });
     }
 
@@ -377,9 +402,8 @@ export class TaskController {
 
     await prisma.taskAttachment.delete({ where: { id: attachmentId } });
     try {
-        const filePath = join(process.cwd(), 'uploads', attachment.fileUrl);
-        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-    } catch (e) { console.error(e); }
+        await deleteFile(attachment.fileUrl);
+    } catch (_e) { /* ignore */ }
     
     await prisma.taskHistory.create({
         data: { taskId: attachment.taskId, userId, action: `Removeu anexo: "${attachment.fileName}"` }
@@ -393,7 +417,8 @@ export class TaskController {
             title: 'Anexo Removido',
             message: `[${attachment.task.workspace.name}] ${actor?.firstName} removeu arquivo de "${attachment.task.title}"`,
             type: 'TASK_UPDATE',
-            link: `/workspaces/${attachment.task.workspaceId}?taskId=${attachment.taskId}`
+            link: `/workspaces/${attachment.task.workspaceId}?taskId=${attachment.taskId}`,
+            entityId: attachment.taskId,
         });
     }
 
@@ -423,7 +448,8 @@ export class TaskController {
               title: 'Checklist Atualizado',
               message: `[${task.workspace.name}] ${actor?.firstName} adicionou item na tarefa "${task.title}"`,
               type: 'TASK_UPDATE',
-              link: `/workspaces/${task.workspaceId}?taskId=${id}`
+              link: `/workspaces/${task.workspaceId}?taskId=${id}`,
+              entityId: id,
           });
       }
 
@@ -461,7 +487,8 @@ export class TaskController {
                     title: 'Item Concluído',
                     message: `[${item.task.workspace.name}] ${actor?.firstName} completou "${item.title}" em "${item.task.title}"`,
                     type: 'CHECKLIST_DONE',
-                    link: `/workspaces/${item.task.workspaceId}?taskId=${item.taskId}`
+                    link: `/workspaces/${item.task.workspaceId}?taskId=${item.taskId}`,
+                    entityId: item.taskId,
                 });
             }
           }
@@ -494,7 +521,8 @@ export class TaskController {
             title: 'Novo Comentário',
             message: `[${task.workspace.name}] ${note.author.firstName} comentou em "${task.title}"`,
             type: 'TASK_COMMENT',
-            link: `/workspaces/${task.workspaceId}?taskId=${id}`
+            link: `/workspaces/${task.workspaceId}?taskId=${id}`,
+            entityId: id,
         });
     }
 
@@ -504,7 +532,7 @@ export class TaskController {
   // --- DELETE TASK ---
   async delete(request: FastifyRequest, reply: FastifyReply) {
       const { id } = z.object({ id: z.string() }).parse(request.params);
-      const userId = (request.user as any).id;
+      const userId = request.user.id;
       
       const task = await prisma.task.findUnique({ where: { id }, include: { assignees: true, workspace: true } });
       if (!task) return reply.status(404).send();
@@ -520,11 +548,57 @@ export class TaskController {
               title: 'Tarefa Excluída',
               message: `[${task.workspace.name}] ${actor?.firstName} excluiu a tarefa "${task.title}"`,
               type: 'TASK_DELETED',
-              link: `/workspaces/${task.workspaceId}`
+              link: `/workspaces/${task.workspaceId}`,
+              entityId: id,
           });
       }
 
       await prisma.task.delete({ where: { id } });
+      return reply.status(204).send();
+  }
+
+  // --- DELETE CHECKLIST ITEM ---
+  async deleteChecklistItem(request: FastifyRequest, reply: FastifyReply) {
+      const { itemId } = z.object({ itemId: z.string() }).parse(request.params);
+      const userId = request.user.id;
+
+      const item = await prisma.checklistItem.findUnique({
+          where: { id: itemId },
+          include: { task: { include: { assignees: true, workspace: true } } }
+      });
+      if (!item) return reply.status(404).send();
+
+      const canDelete = await checkPermission(item.task.workspaceId, userId, ['OWNER', 'ADMIN', 'MEMBER']);
+      if (!canDelete) return reply.status(403).send();
+
+      await prisma.checklistItem.delete({ where: { id: itemId } });
+      await prisma.taskHistory.create({
+          data: { taskId: item.taskId, userId, action: `Removeu do checklist: "${item.title}"` }
+      });
+
+      return reply.status(204).send();
+  }
+
+  // --- DELETE NOTE ---
+  async deleteNote(request: FastifyRequest, reply: FastifyReply) {
+      const { taskId, noteId } = z.object({ taskId: z.string(), noteId: z.string() }).parse(request.params);
+      const userId = request.user.id;
+
+      const note = await prisma.taskNote.findUnique({
+          where: { id: noteId },
+          include: { task: { include: { workspace: true } } }
+      });
+      if (note?.taskId !== taskId) return reply.status(404).send();
+
+      const isAuthor = note.authorId === userId;
+      const canDelete = isAuthor || await checkPermission(note.task.workspaceId, userId, ['OWNER', 'ADMIN']);
+      if (!canDelete) return reply.status(403).send();
+
+      await prisma.taskNote.delete({ where: { id: noteId } });
+      await prisma.taskHistory.create({
+          data: { taskId, userId, action: 'Removeu um comentário' }
+      });
+
       return reply.status(204).send();
   }
 }

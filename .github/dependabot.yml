@@ -1,0 +1,32 @@
+version: 2
+updates:
+  # Mantém as GitHub Actions atualizadas automaticamente
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "chore(deps)"
+
+  # Mantém as dependências npm atualizadas
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    # Limita a 5 PRs abertos ao mesmo tempo para não poluir
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    ignore:
+      # Prisma: atualizar manualmente (pode ter breaking changes no schema)
+      - dependency-name: "@prisma/*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "prisma"
+        update-types: ["version-update:semver-major"]
+    commit-message:
+      prefix: "chore(deps)"

@@ -6,7 +6,7 @@ import { authMiddleware, requirePermission } from '../middleware/auth.middleware
 const workspaceController = new WorkspaceController()
 const taskController = new TaskController()
 
-export async function workspaceRoutes(app: FastifyInstance) {
+export function workspaceRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authMiddleware)
 
   // --- Rotas de Workspace ---

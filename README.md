@@ -1,377 +1,189 @@
-# 🚀 Fastify Auth Boilerplate - Installation Guide
+# SIMP Backend
 
-## Prerequisites
+Backend do **SIMP — Sistema Integrado de Gestão Municipal**. Plataforma SaaS B2B para administração municipal.
 
-- **Node.js 20+** (LTS recommended)
-- **Docker & Docker Compose** (for local development)
-- **Git** (for version control)
+**Stack:** Fastify 5.7 · Prisma 6 · PostgreSQL 16 · Redis 7 · TypeScript · JWT/Argon2 · Cloudflare R2 · Brevo (email)
 
-## Quick Start (Automated Setup)
-
-```bash
-# 1. Clone the repository
-git clone <your-repository-url>
-cd fastify-auth-boilerplate
-
-# 2. Make setup script executable
-chmod +x scripts/setup.sh
-
-# 3. Run automated setup
-./scripts/setup.sh
-```
-
-The script will:
-- Install dependencies
-- Setup environment variables
-- Start Docker services
-- Run database migrations
-- Seed initial data
-- Create admin user
-
-## Manual Setup
-
-### 1. Install Dependencies
-
-```bash
-npm install
-```
-
-### 2. Environment Configuration
-
-```bash
-# Copy environment template
-cp .env.example .env
-
-# Edit environment variables
-nano .env
-```
-
-**Important:** Generate secure secrets for JWT tokens:
-
-```bash
-# Generate JWT secrets (Linux/macOS)
-openssl rand -hex 32
-
-# Or use Node.js
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-```
-
-### 3. Start Services
-
-```bash
-# Start PostgreSQL, Redis, MailHog, Adminer
-docker-compose up -d
-
-# Verify services are running
-docker-compose ps
-```
-
-### 4. Database Setup
-
-```bash
-# Generate Prisma client
-npm run db:generate
-
-# Run migrations
-npm run db:migrate
-
-# Seed database with initial data
-npm run db:seed
-```
-
-### 5. Start Development Server
-
-```bash
-# Start in development mode
-npm run dev
-
-# Or build and start production
-npm run build
-npm start
-```
-
-## Available Services
-
-| Service | URL | Description |
-|---------|-----|-------------|
-| **API Server** | http://localhost:3000 | Main API server |
-| **API Documentation** | http://localhost:3000/documentation | Swagger UI |
-| **Health Check** | http://localhost:3000/health | Server health status |
-| **Prisma Studio** | http://localhost:5555 | Database GUI |
-| **MailHog** | http://localhost:8025 | Email testing |
-| **Adminer** | http://localhost:8080 | Database admin |
-
-## Default Accounts
-
-After seeding, these accounts are available:
-
-| Role | Email | Password | Permissions |
-|------|-------|----------|-------------|
-| **Super Admin** | admin@example.com | Admin123!@# | Full system access |
-| **Moderator** | moderator@example.com | Moderator123! | User management |
-| **User** | user@example.com | User123! | Standard access |
-
-> ⚠️ **Security**: Change all default passwords before production deployment!
-
-## API Endpoints
-
-### Authentication
-
-```bash
-# Register new user
-POST /api/v1/auth/register
-{
-  "email": "user@example.com",
-  "password": "SecurePass123!",
-  "firstName": "John",
-  "lastName": "Doe"
-}
-
-# Login
-POST /api/v1/auth/login
-{
-  "email": "user@example.com",
-  "password": "SecurePass123!"
-}
-
-# Get profile (requires auth)
-GET /api/v1/auth/me
-Authorization: Bearer <token>
-
-# Enable 2FA
-POST /api/v1/auth/2fa/setup
-Authorization: Bearer <token>
-{
-  "password": "current-password"
-}
-```
-
-### User Management (Admin only)
-
-```bash
-# Get users list
-GET /api/v1/users?page=1&limit=20
-Authorization: Bearer <admin-token>
-
-# Create user
-POST /api/v1/users
-Authorization: Bearer <admin-token>
-{
-  "email": "newuser@example.com",
-  "password": "SecurePass123!",
-  "roles": ["user"]
-}
-```
-
-## Development Commands
-
-### Database
-
-```bash
-npm run db:generate     # Generate Prisma client
-npm run db:push         # Push schema changes (dev)
-npm run db:migrate      # Create and run migrations
-npm run db:studio       # Open Prisma Studio
-npm run db:seed         # Seed database
-npm run db:reset        # Reset database
-```
-
-### Development
-
-```bash
-npm run dev            # Start development server
-npm run build          # Build for production
-npm run start          # Start production server
-npm run type-check     # TypeScript check only
-```
-
-### Code Quality
-
-```bash
-npm run lint           # Lint code
-npm run lint:fix       # Fix linting issues
-npm run format         # Format code with Prettier
-```
-
-### Testing
-
-```bash
-npm run test           # Run tests
-npm run test:ui        # Open test UI
-npm run test:coverage  # Run with coverage
-```
-
-### Docker
-
-```bash
-npm run docker:up      # Start all services
-npm run docker:down    # Stop all services
-npm run docker:logs    # View logs
-```
-
-## Environment Variables
-
-### Required Variables
-
-```bash
-# Database
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/fastify_auth"
-
-# Redis
-REDIS_URL="redis://:redis123@localhost:6379"
-
-# JWT Secrets (MUST BE CHANGED)
-JWT_ACCESS_SECRET="your-32-char-secret-here"
-JWT_REFRESH_SECRET="your-32-char-secret-here"
-SESSION_SECRET="your-32-char-secret-here"
-```
-
-### Optional Variables
-
-```bash
-# Server
-NODE_ENV="development"
-PORT=3000
-HOST="localhost"
-
-# Email (MailHog for development)
-SMTP_HOST="localhost"
-SMTP_PORT=1025
-SMTP_FROM="noreply@yourapp.com"
-
-# Features
-ENABLE_2FA=true
-ENABLE_EMAIL_VERIFICATION=true
-SWAGGER_ENABLED=true
-```
-
-## Production Deployment
-
-### 1. Environment Setup
-
-```bash
-# Production environment variables
-NODE_ENV=production
-DATABASE_URL="postgresql://user:pass@prod-host:5432/dbname"
-REDIS_URL="redis://user:pass@prod-host:6379"
-
-# Use strong, unique secrets
-JWT_ACCESS_SECRET="production-secret-32-chars-min"
-JWT_REFRESH_SECRET="production-secret-32-chars-min"
-SESSION_SECRET="production-secret-32-chars-min"
-
-# Production email service
-SMTP_HOST="smtp.sendgrid.net"
-SMTP_PORT=587
-SMTP_USER="apikey"
-SMTP_PASS="your-sendgrid-api-key"
-```
-
-### 2. Build and Deploy
-
-```bash
-# Build application
-npm run build
-
-# Start production server
-npm start
-
-# Or use PM2 for process management
-npm install -g pm2
-pm2 start dist/index.js --name "fastify-auth"
-```
-
-### 3. Docker Production
-
-```dockerfile
-# Build production image
-docker build -t fastify-auth .
-
-# Run container
-docker run -p 3000:3000 \
-  -e NODE_ENV=production \
-  -e DATABASE_URL="..." \
-  -e JWT_ACCESS_SECRET="..." \
-  fastify-auth
-```
-
-## Troubleshooting
-
-### Common Issues
-
-**Port already in use:**
-```bash
-# Check what's using the port
-lsof -i :3000
-# Kill the process
-kill -9 <PID>
-```
-
-**Database connection failed:**
-```bash
-# Check if PostgreSQL is running
-docker-compose ps postgres
-# Check logs
-docker-compose logs postgres
-```
-
-**Redis connection failed:**
-```bash
-# Check Redis status
-docker-compose ps redis
-# Test connection
-redis-cli -h localhost -p 6379 ping
-```
-
-**Prisma client issues:**
-```bash
-# Regenerate client
-npm run db:generate
-# Reset database
-npm run db:reset
-```
-
-### Debugging
-
-Enable debug logging:
-```bash
-# In .env file
-LOG_LEVEL="debug"
-ENABLE_REQUEST_LOGGING=true
-```
-
-View detailed logs:
-```bash
-# Application logs
-npm run dev
-
-# Docker service logs
-npm run docker:logs
-
-# Specific service logs
-docker-compose logs -f postgres
-docker-compose logs -f redis
-```
-
-## Security Checklist
-
-- [ ] Change all default passwords
-- [ ] Use strong JWT secrets (32+ characters)
-- [ ] Enable HTTPS in production
-- [ ] Configure proper CORS origins
-- [ ] Set up rate limiting
-- [ ] Enable audit logging
-- [ ] Configure email verification
-- [ ] Set up 2FA for admin accounts
-- [ ] Regular security updates
-- [ ] Monitor for suspicious activity
-
-## Support
-
-- **Documentation**: Check the README.md and code comments
-- **Issues**: Create issues in the repository
-- **Security**: Report security issues privately
+**Repositório frontend:** [SIMP-FRONTEND](https://github.com/SIMP-SIMPLIFICA/SIMP-FRONTEND)
 
 ---
 
-Happy coding! 🎉
+## Pré-requisitos
+
+- Node 22 (`nvm use 22`)
+- Docker e Docker Compose
+- PostgreSQL 16 (via Docker ou externo)
+- Redis 7 (via Docker ou externo)
+
+---
+
+## Setup local
+
+```bash
+# 1. Instalar dependências
+nvm use 22
+npm install
+
+# 2. Configurar variáveis de ambiente
+cp .env.example .env
+# Editar .env com suas credenciais
+
+# 3. Subir PostgreSQL + Redis
+docker-compose up -d
+
+# 4. Gerar client Prisma + aplicar migrations
+npx prisma generate
+npx prisma migrate dev
+
+# 5. Popular banco com dados iniciais
+npm run db:seed
+
+# 6. Iniciar servidor de desenvolvimento
+npm run dev
+```
+
+Servidor disponível em `http://localhost:3000`
+
+---
+
+## Variáveis de ambiente
+
+Copiar `.env.example` e preencher:
+
+| Variável | Obrigatória | Descrição |
+|----------|-------------|-----------|
+| `DATABASE_URL` | ✅ | Connection string PostgreSQL |
+| `REDIS_URL` | ✅ | Connection string Redis |
+| `JWT_ACCESS_SECRET` | ✅ | Segredo JWT access token (32+ chars) |
+| `JWT_REFRESH_SECRET` | ✅ | Segredo JWT refresh token (32+ chars) |
+| `SESSION_SECRET` | ✅ | Segredo de sessão (32+ chars) |
+| `APP_URL` | ✅ | URL do backend (ex: `http://localhost:3000`) |
+| `FRONTEND_URL` | ✅ | URL do frontend (ex: `http://localhost:5173`) |
+| `CORS_ORIGIN` | ✅ | Origins permitidos no CORS (vírgula-separados) |
+| `SMTP_HOST` | ✅ | Host SMTP (Brevo em produção) |
+| `SMTP_PORT` | ✅ | Porta SMTP |
+| `SMTP_USER` | ✅ | Usuário SMTP |
+| `SMTP_PASS` | ✅ | Senha SMTP |
+| `R2_ACCOUNT_ID` | ✅ | ID da conta Cloudflare R2 |
+| `R2_ACCESS_KEY_ID` | ✅ | Access key R2 |
+| `R2_SECRET_ACCESS_KEY` | ✅ | Secret key R2 |
+| `R2_BUCKET_NAME` | ✅ | Nome do bucket R2 |
+| `R2_PUBLIC_URL` | ✅ | URL pública do bucket R2 |
+| `SENTRY_DSN` | opcional | DSN do Sentry para error tracking |
+| `BETTERSTACK_SOURCE_TOKEN` | opcional | Token Betterstack para logs |
+
+Gerar segredos seguros:
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+---
+
+## Comandos
+
+```bash
+# Desenvolvimento
+npm run dev              # Servidor com hot-reload
+
+# Build
+npm run build            # Compila TypeScript para dist/src/
+npm start                # Inicia servidor compilado
+
+# Banco de dados
+npx prisma migrate dev   # Cria e aplica migration de desenvolvimento
+npx prisma migrate deploy  # Aplica migrations em produção
+npx prisma generate      # Gera Prisma Client
+npx prisma studio        # GUI do banco (localhost:5555)
+npm run db:seed          # Popula banco com dados iniciais
+
+# Qualidade
+npm run lint             # ESLint
+npm run lint:fix         # ESLint com auto-fix
+npx tsc -b               # Type check (usar este, não tsc --noEmit)
+
+# Testes
+npm run test             # Vitest
+npm run test:coverage    # Vitest com cobertura
+```
+
+---
+
+## Estrutura do projeto
+
+```
+src/
+├── config/          # Configurações (database, redis, sentry, env)
+├── controllers/     # Handlers de cada módulo
+├── middleware/      # authenticate, authorize, rateLimiter
+├── plugins/         # Fastify plugins (jwt, cors, multipart...)
+├── routes/          # Definição de rotas por módulo
+├── services/        # Lógica de negócio (pdf, certificate, email...)
+├── utils/           # Utilitários (pagination, r2, pdf.utils...)
+└── index.ts         # Entry point
+
+prisma/
+├── schema.prisma    # Schema do banco
+├── migrations/      # Histórico de migrations
+└── seeds/           # Dados iniciais
+```
+
+---
+
+## Módulos da API
+
+| Módulo | Prefixo | Descrição |
+|--------|---------|-----------|
+| Auth | `/api/v1/auth` | Login, registro, refresh, 2FA, reset de senha |
+| Users | `/api/v1/users` | CRUD de usuários + busca org-scoped |
+| Roles | `/api/v1/roles` | RBAC — papéis e permissões |
+| Organizations | `/api/v1/organizations` | Multi-tenant — gestão de organizações |
+| Finance | `/api/v1/finance` | Lançamentos, categorias, contas, relatórios, exportação |
+| Workspaces | `/api/v1/workspaces` | Boards Kanban, membros |
+| Tasks | `/api/v1/tasks` | Tarefas, checklist, comentários, anexos |
+| Communication | `/api/v1/communication` | Ofícios, memorandos, mensagens |
+| Virtual Process | `/api/v1/virtual-process` | Processos digitais municipais |
+| Notifications | `/api/v1/notifications` | SSE — notificações em tempo real |
+| Calendar | `/api/v1/calendar` | Eventos do calendário |
+| Notes | `/api/v1/notes` | Anotações |
+| Upload | `/api/v1/upload` | Upload genérico → Cloudflare R2 |
+| Admin | `/api/v1/admin` | Painel superadmin |
+
+Documentação interativa: `http://localhost:3000/documentation` (Swagger)
+
+---
+
+## Deploy (Render)
+
+O arquivo `render.yaml` define o blueprint do ambiente dev:
+
+- **Serviço:** `simp-backend-dev` (branch `develop`, free plan, Oregon)
+- **Build:** `npm ci --include=dev && npx prisma generate && npm run build`
+- **Start:** `npx prisma migrate deploy && node dist/src/index.js`
+- **Banco:** PostgreSQL `simp-db-dev` (free, expira periodicamente)
+- **Cache:** Redis `simp-redis-dev` (free)
+
+Auto-deploy ativado na branch `develop`.
+
+---
+
+## Contas de desenvolvimento (após seed)
+
+| Role | Email | Senha |
+|------|-------|-------|
+| Super Admin | admin@example.com | Admin123!@# |
+| Admin Itapevi | admin.itapevi@example.com | Admin123!@# |
+| Admin Cotia | admin.cotia@example.com | Admin123!@# |
+
+> Alterar todas as senhas antes de expor em produção real.
+
+---
+
+## CI/CD
+
+| Pipeline | Trigger | O que faz |
+|----------|---------|-----------|
+| `ci.yml` | push/PR → develop/main | Lint + type check + testes + build |
+| `security.yml` | push/PR + semanal | npm audit + CodeQL + TruffleHog + Claude Review |
+| `failure-analyst.yml` | CI falha | Claude Haiku analisa logs → Issue + Discord |
+| `meta-agent.yml` | Mensal | Revisa versões de dependências → PR de manutenção |
+| `pr-review.yml` | Todo PR | Claude AI faz code review |

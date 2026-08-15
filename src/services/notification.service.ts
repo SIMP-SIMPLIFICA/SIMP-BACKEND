@@ -1,30 +1,42 @@
-import { prisma } from '../lib/prisma.js';
-import { FastifyReply } from 'fastify';
-import { EventEmitter } from 'events';
+import { prisma } from '../lib/prisma.js'
+import type { FastifyReply } from 'fastify'
+import type { ServerResponse } from 'node:http'
+import { EventEmitter } from 'events'
+import { emailNotificationQueue } from '@/lib/email-queue.js'
 
 class NotificationService extends EventEmitter {
-  private clients: Map<string, FastifyReply[]> = new Map();
+  private clients: Map<string, (FastifyReply & { raw: ServerResponse })[]> = new Map()
 
-  addClient(userId: string, reply: FastifyReply) {
+  addClient(userId: string, reply: FastifyReply & { raw: ServerResponse }) {
     if (!this.clients.has(userId)) {
-      this.clients.set(userId, []);
+      this.clients.set(userId, [])
     }
-    this.clients.get(userId)?.push(reply);
+    this.clients.get(userId)?.push(reply)
 
     reply.raw.on('close', () => {
-      this.removeClient(userId, reply);
-    });
+      this.removeClient(userId, reply)
+    })
   }
 
-  removeClient(userId: string, reply: FastifyReply) {
-    const userClients = this.clients.get(userId);
+  removeClient(userId: string, reply: FastifyReply & { raw: ServerResponse }) {
+    const userClients = this.clients.get(userId)
     if (userClients) {
-      this.clients.set(userId, userClients.filter(c => c !== reply));
+      this.clients.set(userId, userClients.filter(c => c !== reply))
     }
   }
 
-  async notify(data: { userId: string; title: string; message: string; type: string; link?: string }) {
-    // 1. Salvar no Banco
+  async notify(data: {
+    userId: string
+    title: string
+    message: string
+    type: string
+    link?: string
+    entityId?: string
+    senderName?: string
+    messageSubject?: string
+    messageBody?: string
+  }) {
+    // 1. Salvar no banco
     const notification = await prisma.notification.create({
       data: {
         userId: data.userId,
@@ -32,24 +44,61 @@ class NotificationService extends EventEmitter {
         message: data.message,
         type: data.type,
         link: data.link,
+        entityId: data.entityId,
         read: false
       }
-    });
+    })
 
-    // 2. Enviar Real-time (se o usuário estiver online)
-    const userClients = this.clients.get(data.userId);
+    // 2. Enviar Real-time via SSE (se o usuário estiver online)
+    const userClients = this.clients.get(data.userId)
     if (userClients && userClients.length > 0) {
-      const payload = `data: ${JSON.stringify(notification)}\n\n`;
-      userClients.forEach(client => client.raw.write(payload));
+      const payload = `data: ${JSON.stringify(notification)}\n\n`
+      userClients.forEach(client => client.raw.write(payload))
     }
 
-    return notification;
+    // 3. Enfileirar e-mail em background (sem bloquear o event loop)
+    const user = await prisma.user.findUnique({
+      where: { id: data.userId },
+      select: { email: true, emailNotifications: true, firstName: true, lastName: true }
+    })
+
+    if (user?.emailNotifications) {
+      const recipientName = user.firstName
+        ? `${user.firstName}${user.lastName ? ` ${user.lastName}` : ''}`
+        : undefined
+
+      await emailNotificationQueue.add('send-notification-email', {
+        to: user.email,
+        subject: data.title,
+        title: data.title,
+        message: data.message,
+        link: data.link,
+        recipientName,
+        senderName: data.senderName,
+        messageSubject: data.messageSubject,
+        messageBody: data.messageBody,
+      })
+    }
+
+    return notification
   }
 
   // Helper para notificar múltiplos usuários
-  async notifyMany(userIds: string[], data: { title: string; message: string; type: string; link?: string }) {
-    return Promise.all(userIds.map(id => this.notify({ ...data, userId: id })));
+  async notifyMany(
+    userIds: string[],
+    data: {
+      title: string
+      message: string
+      type: string
+      link?: string
+      entityId?: string
+      senderName?: string
+      messageSubject?: string
+      messageBody?: string
+    }
+  ) {
+    return Promise.all(userIds.map(id => this.notify({ ...data, userId: id })))
   }
 }
 
-export const notificationService = new NotificationService();
+export const notificationService = new NotificationService()

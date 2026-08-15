@@ -61,7 +61,7 @@ class EmailService {
         subject: options.subject,
         html: options.html,
         text: options.text,
-        attachments: options.attachments as any
+        attachments: options.attachments
       })
 
       emailLogger.info(
@@ -100,6 +100,44 @@ class EmailService {
       </body>
       </html>
     `
+  }
+
+  async sendPasswordResetEmail(email: string, token: string): Promise<void> {
+    const resetUrl = `${config.urls.frontend}/reset-password?token=${token}`
+    const content = `
+      <p>Recebemos uma solicitação para redefinir a senha da sua conta SIMP.</p>
+      <p>Clique no botão abaixo para criar uma nova senha. O link expira em <strong>1 hora</strong>.</p>
+      <p>Se você não solicitou a redefinição, ignore este e-mail — sua senha permanece a mesma.</p>
+    `
+    await this.sendEmail({
+      to: email,
+      subject: 'Redefinição de senha — SIMP',
+      html: this.generateEmailTemplate(
+        'Redefinir senha',
+        content,
+        { text: 'Redefinir minha senha', url: resetUrl }
+      ),
+      text: `Acesse o link para redefinir sua senha: ${resetUrl}\n\nO link expira em 1 hora.`
+    })
+  }
+
+  async sendTempPasswordEmail(email: string, tempPassword: string): Promise<void> {
+    const loginUrl = `${config.urls.frontend}/login`
+    const content = `
+      <p>Uma conta foi criada para você no SIMP.</p>
+      <p>Sua senha temporária é: <strong>${tempPassword}</strong></p>
+      <p>Por segurança, recomendamos alterá-la assim que fizer o primeiro acesso.</p>
+    `
+    await this.sendEmail({
+      to: email,
+      subject: 'Sua conta SIMP foi criada',
+      html: this.generateEmailTemplate(
+        'Bem-vindo ao SIMP',
+        content,
+        { text: 'Acessar o sistema', url: loginUrl }
+      ),
+      text: `Sua senha temporária: ${tempPassword}\n\nAcesse: ${loginUrl}`
+    })
   }
 
   async sendWelcomeEmail(email: string, name?: string): Promise<void> {

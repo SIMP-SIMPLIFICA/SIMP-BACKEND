@@ -1,12 +1,28 @@
+import { randomInt, randomUUID } from 'node:crypto'
 import { hash, verify } from '@node-rs/argon2'
 import { SignJWT, jwtVerify } from 'jose'
 import { nanoid } from 'nanoid'
 import { config } from '@/config/config.js'
 import { db, prisma } from '@/utils/database.js'
-import { emailService } from './email.service.js'
 import { authLogger, logSecurity } from '@/utils/logger.js'
+import { emailService } from '@/services/email.service.js'
 
 export class AuthService {
+  /** Gera uma senha temporária forte para contas criadas por um admin (nunca retornada na resposta da API — apenas por e-mail). */
+  generateTempPassword(): string {
+    const lower = 'abcdefghijkmnpqrstuvwxyz'
+    const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
+    const nums = '23456789'
+    const special = '@$!%*?&'
+    // randomInt (CSPRNG) em vez de Math.random(): este valor é uma CREDENCIAL.
+    // Math.random() é um PRNG previsível — conhecendo saídas anteriores é possível
+    // inferir as próximas, o que tornaria senhas temporárias adivinháveis
+    // (CodeQL: insecure randomness).
+    const rand = (s: string) => s[randomInt(s.length)]
+    const base = Array.from({ length: 6 }, () => rand(lower)).join('')
+    return rand(upper) + base + rand(nums) + rand(special)
+  }
+
   async hashPassword(password: string): Promise<string> {
     try {
       return await hash(password, {
@@ -16,7 +32,9 @@ export class AuthService {
       })
     } catch (error) {
       authLogger.error(error, 'Failed to hash password')
-      throw new Error('Password hashing failed')
+      // `cause` preserva a origem: sem isso, a causa real do erro se perde ao
+      // trocar a exceção por uma mensagem genérica.
+      throw new Error('Password hashing failed', { cause: error })
     }
   }
 
@@ -29,13 +47,20 @@ export class AuthService {
     }
   }
 
-  async generateAccessToken(userId: string, permissions: string[]): Promise<string> {
+  async generateAccessToken(
+    userId: string,
+    permissions: string[],
+    organizationId: string | null,
+    isSuperAdmin: boolean
+  ): Promise<string> {
     const secret = new TextEncoder().encode(config.jwt.accessSecret)
     const jti = nanoid()
 
     return await new SignJWT({
       sub: userId,
       permissions,
+      organizationId,
+      isSuperAdmin,
       type: 'access'
     })
       .setProtectedHeader({ alg: 'HS256' })
@@ -47,9 +72,10 @@ export class AuthService {
       .sign(secret)
   }
 
-  async generateRefreshToken(userId: string): Promise<string> {
+  async generateRefreshToken(userId: string, rememberMe = false): Promise<string> {
     const secret = new TextEncoder().encode(config.jwt.refreshSecret)
     const jti = nanoid()
+    const expiry = rememberMe ? '30d' : config.jwt.refreshExpiresIn
 
     return await new SignJWT({
       sub: userId,
@@ -58,7 +84,7 @@ export class AuthService {
       .setProtectedHeader({ alg: 'HS256' })
       .setJti(jti)
       .setIssuedAt()
-      .setExpirationTime(config.jwt.refreshExpiresIn)
+      .setExpirationTime(expiry)
       .setIssuer(config.urls.app)
       .setAudience(config.urls.app)
       .sign(secret)
@@ -74,15 +100,29 @@ export class AuthService {
     }
   }
 
-  async generateTokenPair(userId: string) {
-    const permissions = await db.getUserPermissions(userId)
-    const accessToken = await this.generateAccessToken(userId, permissions)
-    const refreshToken = await this.generateRefreshToken(userId)
+  async generateTokenPair(userId: string, rememberMe = false) {
+    const [permissions, user] = await Promise.all([
+      db.getUserPermissions(userId),
+      prisma.user.findUnique({
+        where: { id: userId },
+        select: { organizationId: true, isSuperAdmin: true }
+      })
+    ])
+
+    const accessToken = await this.generateAccessToken(
+      userId,
+      permissions,
+      user?.organizationId ?? null,
+      user?.isSuperAdmin ?? false
+    )
+
+    const refreshDays = rememberMe ? 30 : 7
+    const refreshToken = await this.generateRefreshToken(userId, rememberMe)
 
     await db.createUserSession({
       userId,
       refreshToken,
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+      expiresAt: new Date(Date.now() + refreshDays * 24 * 60 * 60 * 1000)
     })
 
     return {
@@ -113,6 +153,7 @@ export class AuthService {
 
       const user = await prisma.user.create({
         data: {
+          id: randomUUID(),
           email: data.email.toLowerCase(),
           username: data.username,
           firstName: data.firstName,
@@ -212,6 +253,26 @@ export class AuthService {
         throw new Error('Invalid credentials')
       }
 
+      // Kill switch: organização suspensa impede o login.
+      // Verificado APÓS a senha de propósito — informar o estado da organização
+      // antes disso revelaria a existência da conta a quem não tem a credencial.
+      // Super Admin é imune (não pertence a nenhuma organização suspensa).
+      if (!user.isSuperAdmin && user.organizationId) {
+        const org = await prisma.organization.findUnique({
+          where: { id: user.organizationId },
+          select: { isActive: true },
+        })
+        if (!org?.isActive) {
+          logSecurity('login_attempt_suspended_org', 'medium', {
+            userId: user.id,
+            email: user.email,
+            organizationId: user.organizationId,
+            ip: ipAddress
+          })
+          throw new Error('ORGANIZATION_SUSPENDED')
+        }
+      }
+
       if (user.twoFactorEnabled) {
         return {
           user: {
@@ -233,7 +294,7 @@ export class AuthService {
         data: { lastLoginAt: new Date() }
       })
 
-      const tokens = await this.generateTokenPair(user.id)
+      const tokens = await this.generateTokenPair(user.id, data.rememberMe === true)
 
       await db.createAuditLog({
         userId: user.id,
@@ -427,7 +488,7 @@ export class AuthService {
         }
       })
 
-      // await (emailService as any).sendPasswordResetEmail(user.email, resetToken)
+      await emailService.sendPasswordResetEmail(user.email, resetToken)
 
       await db.createAuditLog({
         userId: user.id,

@@ -1,11 +1,7 @@
 import forge from 'node-forge';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import crypto from 'node:crypto'; // <--- ESTA LINHA ESTAVA FALTANDO
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import crypto from 'node:crypto';
 
 export class CertificateService {
     

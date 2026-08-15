@@ -1,4 +1,4 @@
-import { FastifyRequest } from 'fastify'
+export {}
 
 declare module '@fastify/jwt' {
   interface FastifyJWT {
@@ -9,7 +9,15 @@ declare module '@fastify/jwt' {
 
 declare module 'fastify' {
   interface FastifyRequest {
-    user: any
-    permissions: any
+    user: {
+      id: string
+      sub?: string
+      email?: string
+      permissions: string[]
+      organizationId: string | null
+      isSuperAdmin: boolean
+      [key: string]: unknown
+    }
+    permissions: string[]
   }
 }

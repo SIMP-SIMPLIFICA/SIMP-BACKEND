@@ -8,14 +8,15 @@ import underPressure from '@fastify/under-pressure'
 import cookie from '@fastify/cookie'
 import formbody from '@fastify/formbody'
 import multipart from '@fastify/multipart'
-import jwt from '@fastify/jwt'
 import fastifyStatic from '@fastify/static'
-import { join } from 'node:path'
-import { jsonSchemaTransform, validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod'
+import jwt from '@fastify/jwt'
+import { jsonSchemaTransform, serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod'
 
 import { config } from './config.js'
+import { Sentry } from './sentry.js'
 import { AppServer } from '@/types/server.js'
 import { db } from '@/utils/database.js'
+import { UPLOADS_ROOT, ensureUploadsRoot } from '@/services/storage.service.js'
 
 export async function registerPlugins(server: AppServer) {
   // Set global validator and serializer compilers for Zod
@@ -56,8 +57,8 @@ export async function registerPlugins(server: AppServer) {
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-request-id'],
-    exposedHeaders: ['set-cookie']
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-request-id', 'Last-Event-ID'],
+    exposedHeaders: ['set-cookie', 'Content-Type', 'Content-Disposition']
   })
 
   if (!config.isTest) {
@@ -132,13 +133,16 @@ export async function registerPlugins(server: AppServer) {
 
   // --- ARQUIVOS ---
   await server.register(multipart, {
-    limits: { fileSize: 10 * 1024 * 1024 }
+    limits: { fileSize: 50 * 1024 * 1024 }
   })
 
+  // Serve os uploads locais (substitui o R2 — ver storage.service.ts).
+  // Sem autenticação por decisão explícita para desenvolvimento local; a proteção
+  // prática é o nome de arquivo aleatório. Ver docs/TechStack.md §11.
+  await ensureUploadsRoot()
   await server.register(fastifyStatic, {
-    root: join(process.cwd(), 'uploads'),
+    root: UPLOADS_ROOT,
     prefix: '/uploads/',
-    decorateReply: false
   })
 
   if (config.features.swagger && config.isDevelopment) {
@@ -152,7 +156,7 @@ export async function registerPlugins(server: AppServer) {
       transform: (params) => {
         try {
           return jsonSchemaTransform(params)
-        } catch (error) {
+        } catch (_error) {
           // Se falhar (ex: schema JSON puro que o Zod transform não entende), retorna o schema original
           // Isso corrige o erro "Cannot read properties of undefined (reading 'parent')"
           return { schema: params.schema, url: params.url }
@@ -167,8 +171,13 @@ export async function registerPlugins(server: AppServer) {
   }
 
   if (config.logging.enableRequestLogging) {
-    server.addHook('onRequest', async request => {
+    // eslint-disable-next-line @typescript-eslint/require-await
+    server.addHook('onRequest', async (request) => {
       request.log.info({ method: request.method, url: request.url }, 'Incoming request')
     })
+  }
+
+  if (config.observability.sentryDsn) {
+    Sentry.setupFastifyErrorHandler(server)
   }
 }

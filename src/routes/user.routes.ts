@@ -21,6 +21,7 @@ export async function userRoutes(server: FastifyInstance) {
           isActive: z.coerce.boolean().optional(),
           isVerified: z.coerce.boolean().optional(),
           role: z.string().optional(),
+          organizationId: z.string().optional(),
           sortBy: z.enum(['createdAt', 'email', 'firstName', 'lastName']).optional(),
           sortOrder: z.enum(['asc', 'desc']).default('desc')
         })
@@ -232,6 +233,21 @@ export async function userRoutes(server: FastifyInstance) {
       }
     },
     userController.terminateUserSessions.bind(userController)
+  )
+
+  // Terminate single session
+  server.delete(
+    '/:id/sessions/:sessionId',
+    {
+      preHandler: [authenticate],
+      schema: {
+        description: 'Terminate a specific user session',
+        tags: ['User Management'],
+        security: [{ bearerAuth: [] }],
+        params: z.object({ id: z.string(), sessionId: z.string() })
+      }
+    },
+    userController.terminateSingleSession.bind(userController)
   )
 
   // Activate/Deactivate user

@@ -1,35 +1,119 @@
 generator client {
   provider        = "prisma-client-js"
-  previewFeatures = ["relationJoins"]
+  previewFeatures = ["relationJoins", "postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [unaccent]
+}
+
+enum AppRole {
+  superadmin
+  admin
+  standard_user
+
+  @@map("user_role")
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  cnpj      String?  @unique
+  plan      String   @default("basic")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users                  User[]
+  roles                  Role[]
+  departments            Department[]
+  workspaces             Workspace[]
+  communicationDocuments CommunicationDocument[]
+  notes                  Note[]
+  calendarEvents         CalendarEvent[]
+  auditLogs              AuditLog[]
+  settings               Setting[]
+  notifications          Notification[]
+  bankAccounts           BankAccount[]
+  financeCategories      FinanceCategory[]
+  financeEntries         FinanceEntry[]
+  virtualProcesses       VirtualProcess[]
+  virtualProcessCategories VirtualProcessCategory[]
+  virtualProcessSources  VirtualProcessSource[]
+  virtualProcessCompanies VirtualProcessCompany[]
+  modules                OrganizationModule[]
+  libraryDocuments       LibraryDocument[]
+  documentCategories     DocumentCategory[]
+  covenants              Covenant[]
+  covenantTypes          CovenantType[]
+  convenentes            Convenente[]
+  concedentes            Concedente[]
+  officialDocuments      OfficialDocument[]
+  sequenceControls       SequenceControl[]
+  councils               Council[]
+  councilMemberships     CouncilMembership[]
+  councilMeetings        CouncilMeeting[]
+  councilDocuments       CouncilDocument[]
+  signatureRequests      SignatureRequest[]
+  supportRequests        SupportRequest[]
+
+  @@map("organizations")
+}
+
+model OrganizationModule {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  module         String
+  isEnabled      Boolean  @default(true) @map("is_enabled")
+  enabledById    String?  @map("enabled_by_id")
+  notes          String?
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, module])
+  @@index([organizationId])
+  @@map("organization_modules")
 }
 
 model User {
-  id                   String    @id @default(nanoid())
-  email                String    @unique
-  username             String?   @unique
-  firstName            String?
-  lastName             String?
-  avatar               String?
+  id                 String    @id @db.Uuid
+  email              String    @unique
+  username           String?   @unique
+  firstName          String?   @map("first_name")
+  lastName           String?   @map("last_name")
+  fullName           String?   @map("full_name")
+  avatar             String?
+
+  // Autenticação local (argon2 + jose) — Supabase Auth foi removido, ver ADR em docs/ProjectGoals.md §4
   password             String
-  jobTitle             String?   @map("job_title")
-  isActive             Boolean   @default(false)
-  isVerified           Boolean   @default(false)
-  verifyToken          String?
-  passwordResetToken   String?
-  passwordResetExpires DateTime?
-  lastLoginAt          DateTime?
-  twoFactorEnabled     Boolean   @default(false)
-  twoFactorSecret      String?
-  backupCodes          String[]
-  metadata             Json?
-  preferences          Json?
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
+  verifyToken          String?   @map("verify_token")
+  passwordResetToken   String?   @map("password_reset_token")
+  passwordResetExpires DateTime? @map("password_reset_expires")
+  twoFactorEnabled     Boolean   @default(false) @map("two_factor_enabled")
+  twoFactorSecret      String?   @map("two_factor_secret")
+  backupCodes          String[]  @map("backup_codes")
+
+  jobTitle           String?   @map("job_title")
+  municipalityName   String?   @map("municipality_name")
+  role               AppRole   @default(standard_user) @map("role")
+  isActive           Boolean   @default(true)  @map("is_active")
+  isVerified         Boolean   @default(true)  @map("is_verified")
+  lastLoginAt        DateTime? @map("last_login_at")
+  metadata           Json?
+  preferences        Json?
+  isSuperAdmin       Boolean   @default(false) @map("is_super_admin")
+  emailNotifications Boolean   @default(true)  @map("email_notifications")
+  autoClearDays      Int       @default(30)     @map("auto_clear_days")
+  clearanceLevel     Int       @default(1)      @map("clearance_level")
+  createdAt          DateTime  @default(now())  @map("created_at")
+  updatedAt          DateTime  @updatedAt       @map("updated_at")
+
+  organizationId String?       @map("organization_id")
+  organization   Organization? @relation(fields: [organizationId], references: [id])
 
   auditLogs AuditLog[]
   roles     UserRole[]
@@ -44,21 +128,31 @@ model User {
 
   createdDocuments   CommunicationDocument[] @relation("DocumentCreator")
   documentRecipients DocumentRecipient[]
-  documentSignatures DocumentSignature[]
 
-  calendarEvents     CalendarEvent[]
-  notes              Note[]
+  calendarEvents CalendarEvent[]
+  notes          Note[]
 
-  department   Department? @relation(fields: [departmentId], references: [id])
-  departmentId String?
+  departments        Department[] @relation("DepartmentMembers")
+  managedDepartments Department[] @relation("DepartmentManager")
 
-  createdFinanceEntries FinanceEntry[] @relation("FinanceEntryCreator")
-  updatedFinanceEntries FinanceEntry[] @relation("FinanceEntryUpdater")
+  createdFinanceEntries FinanceEntry[]      @relation("FinanceEntryCreator")
+  updatedFinanceEntries FinanceEntry[]      @relation("FinanceEntryUpdater")
+  financeAttachments    FinanceAttachment[]
 
   createdProcesses         VirtualProcess[]         @relation("ProcessCreator")
   uploadedProcessDocuments VirtualProcessDocument[] @relation("ProcessDocumentUploader")
 
-  @@map("users")
+  uploadedLibraryDocs LibraryDocument[]  @relation("LibraryDocumentUploader")
+  officialDocuments   OfficialDocument[]
+
+  councilMemberships     CouncilMembership[] @relation("CouncilMemberships")
+  councilMeetingsCreated CouncilMeeting[]    @relation("CouncilMeetingCreator")
+  uploadedCouncilDocs    CouncilDocument[]   @relation("CouncilDocumentUploader")
+  signatureRequests      SignatureRequest[]  @relation("SignatureRequester")
+  supportRequests        SupportRequest[]   @relation("SupportAuthor")
+  supportMessages        SupportMessage[]   @relation("SupportMessageSender")
+
+  @@map("profiles")
 }
 
 model Role {
@@ -75,6 +169,9 @@ model Role {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  organizationId String?       @map("organization_id")
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+
   parent   Role?      @relation("RoleHierarchy", fields: [parentId], references: [id])
   children Role[]     @relation("RoleHierarchy")
   users    UserRole[]
@@ -84,7 +181,7 @@ model Role {
 
 model UserRole {
   id         String    @id @default(nanoid())
-  userId     String
+  userId     String    @db.Uuid
   roleId     String
   expiresAt  DateTime?
   assignedBy String?
@@ -100,7 +197,7 @@ model UserRole {
 
 model UserSession {
   id           String   @id @default(nanoid())
-  userId       String
+  userId       String   @db.Uuid
   refreshToken String   @unique
   fingerprint  String?
   ipAddress    String?
@@ -121,7 +218,7 @@ model UserSession {
 
 model AuditLog {
   id           String   @id @default(nanoid())
-  userId       String?
+  userId       String?  @db.Uuid
   action       String
   resource     String
   resourceId   String?
@@ -137,6 +234,9 @@ model AuditLog {
   createdAt    DateTime @default(now())
 
   user User? @relation(fields: [userId], references: [id])
+
+  organizationId String?       @map("organization_id")
+  organization   Organization? @relation(fields: [organizationId], references: [id])
 
   @@index([userId])
   @@index([action])
@@ -169,20 +269,32 @@ model Setting {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  organizationId String?       @map("organization_id")
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+
   @@map("settings")
 }
 
 model Department {
   id          String   @id @default(nanoid())
   name        String
-  code        String   @unique
+  code        String
   description String?
+  isActive    Boolean  @default(true) @map("is_active")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  users     User[]
-  documents CommunicationDocument[]
+  organizationId String?       @map("organization_id")
+  organization   Organization? @relation(fields: [organizationId], references: [id])
 
+  managerId String? @map("manager_id") @db.Uuid
+  manager   User?   @relation("DepartmentManager", fields: [managerId], references: [id])
+
+  members           User[]             @relation("DepartmentMembers")
+  workspaces        Workspace[]
+  officialDocuments OfficialDocument[]
+
+  @@unique([organizationId, code])
   @@map("departments")
 }
 
@@ -191,7 +303,7 @@ enum TaskStatus {
   IN_PROGRESS
   IN_REVIEW
   DONE
-  CANCELED
+  EXPIRED
 }
 
 enum TaskPriority {
@@ -216,16 +328,20 @@ model Workspace {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  members           WorkspaceMember[]
-  tasks             Task[]
-  financeCategories FinanceCategory[]
-  financeEntries    FinanceEntry[]
+  organizationId String?       @map("organization_id")
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+
+  departmentId String?     @map("department_id")
+  department   Department? @relation(fields: [departmentId], references: [id])
+
+  members WorkspaceMember[]
+  tasks   Task[]
 }
 
 model WorkspaceMember {
   id          String        @id @default(uuid())
   workspaceId String
-  userId      String
+  userId      String        @db.Uuid
   role        WorkspaceRole @default(MEMBER)
   joinedAt    DateTime      @default(now())
 
@@ -245,7 +361,7 @@ model Task {
   dueDate     DateTime?
 
   workspaceId String
-  creatorId   String
+  creatorId   String   @db.Uuid
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -262,7 +378,7 @@ model Task {
 
 model TaskAssignee {
   taskId String
-  userId String
+  userId String @db.Uuid
 
   task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -298,7 +414,7 @@ model TaskNote {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   taskId    String
-  authorId  String
+  authorId  String   @db.Uuid
 
   task   Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
   author User @relation(fields: [authorId], references: [id])
@@ -310,7 +426,7 @@ model TaskHistory {
   metadata  Json?
   createdAt DateTime @default(now())
   taskId    String
-  userId    String
+  userId    String   @db.Uuid
 
   task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id])
@@ -320,20 +436,23 @@ model Notification {
   id        String   @id @default(uuid())
   title     String
   message   String
-  userId    String
+  userId    String   @db.Uuid
   read      Boolean  @default(false)
   type      String
   link      String?
+  entityId  String?
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  organizationId String?       @map("organization_id")
+  organization   Organization? @relation(fields: [organizationId], references: [id])
 }
 
 enum DocumentStatus {
   DRAFT
   SENT
   READ
-  SIGNED
   ARCHIVED
 }
 
@@ -343,48 +462,25 @@ enum DocumentRole {
   BCC
 }
 
-enum SignatureType {
-  DIGITAL
-  MANUAL
-  BIOMETRIC
-}
-
 model CommunicationDocument {
-  id             String         @id @default(nanoid())
-  protocolNumber String?        @unique @map("protocol_number")
-  documentNumber String?        @map("document_number")
-  title          String         @db.VarChar(500)
-  content        String         @db.Text
-  documentType   String         @map("document_type")
-  status         DocumentStatus @default(DRAFT)
-  priority       TaskPriority   @default(MEDIUM)
+  id      String         @id @default(nanoid())
+  title   String         @db.VarChar(500)
+  content String         @db.Text
+  status  DocumentStatus @default(DRAFT)
 
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
-  sentAt      DateTime? @map("sent_at")
-  deliveredAt DateTime? @map("delivered_at")
-  readAt      DateTime? @map("read_at")
-  signedAt    DateTime? @map("signed_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  sentAt    DateTime? @map("sent_at")
+  readAt    DateTime? @map("read_at")
 
-  originalHash String? @map("original_hash") @db.VarChar(128)
-  currentHash  String? @map("current_hash") @db.VarChar(128)
-  qrCodeHash   String? @map("qr_code_hash") @db.VarChar(128)
-
-  createdBy String @map("created_by")
+  createdBy String @map("created_by") @db.Uuid
   creator   User   @relation("DocumentCreator", fields: [createdBy], references: [id])
 
-  departmentId String?     @map("department_id")
-  department   Department? @relation(fields: [departmentId], references: [id])
+  organizationId String?       @map("organization_id")
+  organization   Organization? @relation(fields: [organizationId], references: [id])
 
   recipients  DocumentRecipient[]
-  signatures  DocumentSignature[]
   attachments CommunicationAttachment[]
-  metadata    Json?
-
-  protocol   Protocol? @relation(fields: [protocolId], references: [id])
-  protocolId String?   @unique @map("protocol_id")
-
-  pageCount Int? @default(1) @map("page_count")
 
   @@map("communication_documents")
 }
@@ -392,19 +488,10 @@ model CommunicationDocument {
 model DocumentRecipient {
   id         String       @id @default(nanoid())
   documentId String       @map("document_id")
-  userId     String       @map("user_id")
+  userId     String       @map("user_id") @db.Uuid
   role       DocumentRole @default(TO)
-
-  canView Boolean @default(true) @map("can_view")
-  canSign Boolean @default(false) @map("can_sign")
-
-  readAt   DateTime? @map("read_at")
-  signedAt DateTime? @map("signed_at")
-
-  readIp        String? @map("read_ip") @db.VarChar(45)
-  readLocation  String? @map("read_location") @db.VarChar(200)
-  readUserAgent String? @map("read_user_agent")
-  readDeviceId  String? @map("read_device_id") @db.VarChar(100)
+  canView    Boolean      @default(true) @map("can_view")
+  readAt     DateTime?    @map("read_at")
 
   document CommunicationDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
   user     User                  @relation(fields: [userId], references: [id])
@@ -412,24 +499,6 @@ model DocumentRecipient {
   @@map("document_recipients")
 }
 
-model DocumentSignature {
-  id              String        @id @default(nanoid())
-  documentId      String        @map("document_id")
-  userId          String        @map("user_id")
-  signatureType   SignatureType @map("signature_type")
-  certificateData Json?         @map("certificate_data")
-
-  signedAt      DateTime  @default(now()) @map("signed_at")
-  ipAddress     String?   @map("ip_address") @db.VarChar(45)
-  validityUntil DateTime? @map("validity_until")
-  isValid       Boolean   @default(true) @map("is_valid")
-  sealData      Json?     @map("seal_data")
-
-  document CommunicationDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  user     User                  @relation(fields: [userId], references: [id])
-
-  @@map("document_signatures")
-}
 
 model CommunicationAttachment {
   id         String @id @default(nanoid())
@@ -446,87 +515,169 @@ model CommunicationAttachment {
   @@map("communication_attachments")
 }
 
-model Protocol {
-  id             String   @id @default(nanoid())
-  protocolNumber String   @unique @map("protocol_number")
-  year           Int
-  createdAt      DateTime @default(now()) @map("created_at")
-
-  document CommunicationDocument?
-
-  @@map("protocols")
-}
 
 enum FinanceEntryType {
   EXPENSE
   INCOME
 }
 
+model BankAccount {
+  id                  String   @id @default(uuid())
+  organizationId      String   @map("organization_id")
+  name                String
+  agency              String?
+  accountNumber       String?
+  initialBalanceCents Int      @default(0)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  entries      FinanceEntry[]
+
+  @@map("bank_accounts")
+}
+
 model FinanceCategory {
-  id          String   @id @default(uuid())
-  workspaceId String
-  name        String
-  description String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  name           String
+  description    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  workspace Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  entries   FinanceEntry[]
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  entries      FinanceEntry[]
 
-  @@unique([workspaceId, name])
+  @@unique([organizationId, name])
   @@map("finance_categories")
 }
 
 model FinanceEntry {
   id                String           @id @default(uuid())
-  workspaceId       String
+  organizationId    String           @map("organization_id")
   occurredAt        DateTime
   description       String
   amountCents       Int
   type              FinanceEntryType @default(EXPENSE)
   categoryId        String?
+  accountId         String?
+  subcategoryName   String?
+  nfeNumber         String?
+  issueDate         DateTime?
+  providerDocument  String? // CPF/CNPJ
+  empenhoNumber     String?
+  liquidacaoNumber  String?
+  deliveryDate      DateTime?
   attachmentsStatus String           @default("none")
-  createdById       String
-  updatedById       String?
+  createdById       String           @db.Uuid
+  updatedById       String?          @db.Uuid
   deletedAt         DateTime?
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 
-  workspace Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  category  FinanceCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  createdBy User             @relation("FinanceEntryCreator", fields: [createdById], references: [id])
-  updatedBy User?            @relation("FinanceEntryUpdater", fields: [updatedById], references: [id])
+  attachments  FinanceAttachment[]
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  category     FinanceCategory?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  account      BankAccount?        @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  createdBy    User                @relation("FinanceEntryCreator", fields: [createdById], references: [id])
+  updatedBy    User?               @relation("FinanceEntryUpdater", fields: [updatedById], references: [id])
 
-  @@index([workspaceId, occurredAt])
+  @@index([organizationId, occurredAt])
   @@index([categoryId])
+  @@index([accountId])
   @@map("finance_entries")
 }
 
-model VirtualProcess {
-  id            String  @id @default(uuid())
-  processNumber String  @unique @map("process_number")
-  secretaria    String
-  source        String
-  sourceDetail  String? @map("source_detail")
-  bankAccount   String? @map("bank_account")
-  agency        String?
-  bankName      String? @map("bank_name")
-  companyCnpj   String? @map("company_cnpj")
-  companyName   String? @map("company_name")
-  startDate     DateTime? @map("start_date")
-  endDate       DateTime? @map("end_date")
-  subject       String  @db.Text
-  status        String  @default("Tramitando")
-  category      String  @default("Outros")
+model FinanceAttachment {
+  id         String   @id @default(uuid())
+  entryId    String
+  uploaderId String   @db.Uuid
+  fileName   String
+  fileType   String
+  fileSize   Int
+  fileUrl    String
+  createdAt  DateTime @default(now())
 
+  entry    FinanceEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  uploader User         @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
+
+  @@index([entryId])
+  @@map("finance_attachments")
+}
+
+model VirtualProcess {
+  id             String    @id @default(uuid())
+  organizationId String    @map("organization_id")
+  processNumber  String    @map("process_number")
+  secretaria     String
+  source         String
+  sourceDetail   String?   @map("source_detail")
+  bankAccount    String?   @map("bank_account")
+  agency         String?
+  bankName       String?   @map("bank_name")
+  companyCnpj    String?   @map("company_cnpj")
+  companyName    String?   @map("company_name")
+  startDate      DateTime? @map("start_date")
+  endDate        DateTime? @map("end_date")
+  // Vigência/validade legal do processo — é ESTA data que dispara os alertas de
+  // vencimento na listagem. Distinta de endDate (quando o processo é arquivado).
+  validityDate   DateTime? @map("validity_date")
+  // Mesma convenção monetária de Covenant.transferValue.
+  totalValue     Decimal?  @db.Decimal(15, 2) @map("total_value")
+  subject        String    @db.Text
+  status         String    @default("Tramitando")
+  category       String    @default("Outros")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
-  createdById String   @map("created_by_id")
+  createdById String   @map("created_by_id") @db.Uuid
 
-  creator   User                     @relation("ProcessCreator", fields: [createdById], references: [id])
-  documents VirtualProcessDocument[]
+  organization Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  creator      User                     @relation("ProcessCreator", fields: [createdById], references: [id])
+  documents    VirtualProcessDocument[]
+  covenants    Covenant[]
+  // Documentos anexados via Convênio e atribuídos a este processo.
+  libraryDocuments LibraryDocument[]
 
+  @@unique([organizationId, processNumber])
   @@map("virtual_processes")
+}
+
+model VirtualProcessCategory {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  name           String
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, name])
+  @@map("virtual_process_categories")
+}
+
+model VirtualProcessSource {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  name           String
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, name])
+  @@map("virtual_process_sources")
+}
+
+model VirtualProcessCompany {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  name           String
+  cnpj           String?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  covenants    Covenant[]
+
+  @@unique([organizationId, name])
+  @@map("virtual_process_companies")
 }
 
 model VirtualProcessDocument {
@@ -537,7 +688,7 @@ model VirtualProcessDocument {
   fileName         String   @map("file_name")
   fileUrl          String   @map("file_url")
   fileSize         Int      @map("file_size")
-  uploadedById     String   @map("uploaded_by_id")
+  uploadedById     String   @map("uploaded_by_id") @db.Uuid
   uploadedAt       DateTime @default(now()) @map("uploaded_at")
 
   process  VirtualProcess @relation(fields: [virtualProcessId], references: [id], onDelete: Cascade)
@@ -553,13 +704,16 @@ model CalendarEvent {
   startAt     DateTime  @map("start_at")
   endAt       DateTime? @map("end_at")
   allDay      Boolean   @default(false) @map("all_day")
-  color       String    @default("#3B82F6") // tailwind blue-500
+  color       String    @default("#3B82F6")
   location    String?
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
-  
-  userId      String    @map("user_id")
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  userId String @map("user_id") @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  organizationId String?       @map("organization_id")
+  organization   Organization? @relation(fields: [organizationId], references: [id])
 
   attachments CalendarAttachment[]
 
@@ -583,16 +737,495 @@ model CalendarAttachment {
 }
 
 model Note {
-  id          String   @id @default(nanoid())
-  title       String?  @db.VarChar(255)
-  content     String   @db.Text
-  color       String   @default("#fef08a") // Default post-it color
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id        String   @id @default(nanoid())
+  title     String?  @db.VarChar(255)
+  content   String   @db.Text
+  color     String   @default("#fef08a")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-  userId      String   @map("user_id")
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String @map("user_id") @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  organizationId String?       @map("organization_id")
+  organization   Organization? @relation(fields: [organizationId], references: [id])
 
   @@index([userId])
   @@map("notes")
+}
+
+// ─── Biblioteca Digital (GED) ────────────────────────────────────────────────
+
+model LibraryDocument {
+  id           String    @id @default(nanoid())
+  title        String    @db.VarChar(500)
+  fileName     String    @map("file_name")
+  fileKey      String    @map("file_key")          // chave no R2: organizations/{orgId}/library/{name}
+  fileSize     Int       @map("file_size")          // bytes
+  mimeType     String    @default("application/pdf") @map("mime_type")
+  accessLevel  Int       @default(1)                @map("access_level") // 1 | 2 | 3
+  textContent  String?   @db.Text                   @map("text_content") // OCR para busca profunda
+
+  uploaderId     String   @map("uploader_id") @db.Uuid
+  organizationId String   @map("organization_id")
+  categoryId     String?  @map("category_id")
+  covenantId     String?  @map("covenant_id")
+  // Documento anexado via Convênio que pertence a um Processo Virtual específico.
+  // Opcional: sem ele, o documento é "geral" do convênio.
+  virtualProcessId String? @map("virtual_process_id")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt      @map("updated_at")
+  deletedAt DateTime?                 @map("deleted_at")
+
+  uploader     User              @relation("LibraryDocumentUploader", fields: [uploaderId], references: [id])
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  category     DocumentCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  covenant         Covenant?         @relation(fields: [covenantId], references: [id], onDelete: SetNull)
+  // SetNull (nunca Cascade): excluir um processo NÃO pode apagar documento do
+  // acervo do convênio — o arquivo apenas volta a ser "geral".
+  virtualProcess   VirtualProcess?   @relation(fields: [virtualProcessId], references: [id], onDelete: SetNull)
+  officialDocument OfficialDocument?
+
+  @@index([organizationId, accessLevel])
+  @@index([organizationId, deletedAt])
+  @@index([uploaderId])
+  @@index([categoryId])
+  @@index([covenantId])
+  @@index([virtualProcessId])
+  @@map("library_documents")
+}
+
+model DocumentCategory {
+  id             String   @id @default(nanoid())
+  name           String
+  organizationId String   @map("organization_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt      @map("updated_at")
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  documents    LibraryDocument[]
+
+  @@unique([organizationId, name])
+  @@map("document_categories")
+}
+
+// ─── Convênios, Emendas e Transferências ─────────────────────────────────────
+
+model CovenantType {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  name           String
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  covenants    Covenant[]
+
+  @@unique([organizationId, name])
+  @@map("covenant_types")
+}
+
+model Convenente {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  name           String
+  cnpj           String?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  covenants    Covenant[]
+
+  @@unique([organizationId, name])
+  @@map("convenentes")
+}
+
+model Concedente {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  name           String
+  cnpj           String?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  covenants    Covenant[]
+
+  @@unique([organizationId, name])
+  @@map("concedentes")
+}
+
+enum CovenantStatus {
+  EM_ANALISE
+  APROVADO
+  EM_EXECUCAO
+  PRESTACAO_CONTAS
+  CONCLUIDO
+  DEVOLVIDO
+}
+
+model Covenant {
+  id             String  @id @default(uuid())
+  organizationId String  @map("organization_id")
+  number         String
+
+  typeId         String?  @map("type_id")
+  proponentId    String?  @map("proponent_id")
+  convenenteId   String?  @map("convenente_id")
+  concedenteId   String?  @map("concedente_id")
+
+  processObject   String  @db.Text @map("process_object")
+  budgetaryAction String? @map("budgetary_action")
+
+  executionStartDate DateTime?  @map("execution_start_date")
+  validityStartDate  DateTime?  @map("validity_start_date")
+  validityEndDate    DateTime?  @map("validity_end_date")
+  termDays           Int?       @map("term_days")
+
+  transferValue    Decimal?  @db.Decimal(15, 2) @map("transfer_value")
+  counterpartValue Decimal?  @db.Decimal(15, 2) @map("counterpart_value")
+
+  status       CovenantStatus @default(EM_ANALISE)
+
+  bankName     String?  @map("bank_name")
+  bankAgency   String?  @map("bank_agency")
+  bankAccount  String?  @map("bank_account")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  organization     Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  covenantType     CovenantType?          @relation(fields: [typeId], references: [id], onDelete: SetNull)
+  proponent        VirtualProcessCompany? @relation(fields: [proponentId], references: [id], onDelete: SetNull)
+  convenente       Convenente?            @relation(fields: [convenenteId], references: [id], onDelete: SetNull)
+  concedente       Concedente?            @relation(fields: [concedenteId], references: [id], onDelete: SetNull)
+  virtualProcesses VirtualProcess[]
+  libraryDocuments LibraryDocument[]
+
+  @@unique([organizationId, number])
+  @@index([organizationId, status])
+  @@index([organizationId, typeId])
+  @@map("covenants")
+}
+
+// ─── Protocolos e Numeração Oficial ───────────────────────────────────────────
+
+enum OfficialDocumentCategory {
+  COMUNICACAO
+  NORMATIVO
+}
+
+enum OfficialDocumentNumberingType {
+  SEQUENTIAL
+  RANDOM
+  // MANUAL: número informado pelo usuário (Atos Normativos — Leis, Decretos, Portarias).
+  // A numeração oficial vem do processo legislativo/administrativo, externa ao sistema.
+  MANUAL
+}
+
+enum OfficialDocumentStatus {
+  RESERVADO
+  EMITIDO
+  CANCELADO
+}
+
+model SequenceControl {
+  id               String   @id @default(uuid())
+  organizationId   String   @map("organization_id")
+  documentCategory OfficialDocumentCategory @map("document_category")
+  documentType     String   @map("document_type")
+  sector           String
+  departmentId     String?  @map("department_id")
+  year             Int
+  currentNumber    Int      @default(0) @map("current_number")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, sector, documentType, year])
+  @@map("sequence_controls")
+}
+
+model OfficialDocument {
+  id               String   @id @default(uuid())
+  organizationId   String   @map("organization_id")
+  creatorId        String   @map("creator_id") @db.Uuid
+
+  documentCategory    OfficialDocumentCategory    @map("document_category")
+  documentType        String                       @map("document_type")
+  numberingType       OfficialDocumentNumberingType @map("numbering_type")
+
+  sequenceNumber      Int?     @map("sequence_number")
+  year                Int
+  formattedNumber     String   @map("formatted_number")
+
+  subject             String   @db.Text
+  recipient           String?
+
+  sector              String
+  departmentId        String?  @map("department_id")
+
+  status              OfficialDocumentStatus @default(RESERVADO)
+  cancelReason        String?  @db.Text @map("cancel_reason")
+
+  libraryDocumentId   String?  @unique @map("library_document_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  creator         User            @relation(fields: [creatorId], references: [id])
+  department      Department?     @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  libraryDocument LibraryDocument? @relation(fields: [libraryDocumentId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, documentCategory, year])
+  @@index([organizationId, status])
+  @@map("official_documents")
+}
+
+// ─── Conselhos Municipais ──────────────────────────────────────────────────────
+
+enum CouncilMemberRole {
+  PRESIDENTE
+  VICE_PRESIDENTE
+  SECRETARIO
+  MEMBRO_TITULAR
+  MEMBRO_SUPLENTE
+}
+
+enum MeetingStatus {
+  AGENDADA
+  EM_ANDAMENTO
+  CONCLUIDA
+  CANCELADA
+}
+
+enum CouncilDocumentType {
+  ATA
+  RESOLUCAO
+  CONVOCACAO
+  PARECER
+  OUTROS
+}
+
+enum SignatureStatus {
+  PENDENTE
+  ASSINADO
+  FALHOU
+  EXPIRADO
+}
+
+enum AgendaItemStatus {
+  PENDENTE
+  APROVADO_UNANIMIDADE
+  APROVADO_MAIORIA
+  APROVADO_RESSALVAS
+  REPROVADO
+  VISTAS_ADIADO
+}
+
+model Council {
+  id             String   @id @default(nanoid())
+  organizationId String   @map("organization_id")
+  name           String
+  acronym        String?
+  description    String?  @db.Text
+  legalBasis     String?  @map("legal_basis")
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  memberships  CouncilMembership[]
+  meetings     CouncilMeeting[]
+
+  @@unique([organizationId, acronym])
+  @@index([organizationId, isActive])
+  @@map("councils")
+}
+
+model CouncilMembership {
+  id             String            @id @default(nanoid())
+  organizationId String            @map("organization_id")
+  councilId      String            @map("council_id")
+  userId         String            @map("user_id") @db.Uuid
+  role           CouncilMemberRole @default(MEMBRO_TITULAR)
+  startDate      DateTime?         @map("start_date")
+  endDate        DateTime?         @map("end_date")
+  isActive       Boolean           @default(true) @map("is_active")
+  createdAt      DateTime          @default(now()) @map("created_at")
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  council      Council            @relation(fields: [councilId], references: [id], onDelete: Cascade)
+  user         User               @relation("CouncilMemberships", fields: [userId], references: [id])
+  attendance   MeetingAttendance[]
+
+  @@unique([councilId, userId, role])
+  @@index([organizationId])
+  @@index([councilId, isActive])
+  @@map("council_memberships")
+}
+
+model CouncilMeeting {
+  id             String        @id @default(nanoid())
+  organizationId String        @map("organization_id")
+  councilId      String        @map("council_id")
+  title          String
+  description    String?       @db.Text
+  location       String?
+  scheduledAt    DateTime      @map("scheduled_at")
+  endedAt        DateTime?     @map("ended_at")
+  status         MeetingStatus @default(AGENDADA)
+  quorum         Int?
+  createdById    String        @map("created_by_id") @db.Uuid
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  council      Council             @relation(fields: [councilId], references: [id], onDelete: Cascade)
+  createdBy    User                @relation("CouncilMeetingCreator", fields: [createdById], references: [id])
+  agendaItems  MeetingAgendaItem[]
+  documents    CouncilDocument[]
+  attendance   MeetingAttendance[]
+
+  @@index([organizationId, scheduledAt])
+  @@index([councilId, status])
+  @@map("council_meetings")
+}
+
+model MeetingAgendaItem {
+  id             String           @id @default(nanoid())
+  meetingId      String           @map("meeting_id")
+  order          Int
+  title          String
+  description    String?          @db.Text
+  status         AgendaItemStatus @default(PENDENTE)
+  votingRemarks  String?          @db.Text @map("voting_remarks")
+
+  meeting CouncilMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@index([meetingId])
+  @@map("meeting_agenda_items")
+}
+
+model MeetingAttendance {
+  id               String  @id @default(nanoid())
+  meetingId        String  @map("meeting_id")
+  membershipId     String  @map("membership_id")
+  isPresent        Boolean @default(false) @map("is_present")
+  justifiedAbsence Boolean? @map("justified_absence")
+
+  meeting    CouncilMeeting    @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  membership CouncilMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, membershipId])
+  @@index([meetingId])
+  @@map("meeting_attendance")
+}
+
+model CouncilDocument {
+  id             String              @id @default(nanoid())
+  organizationId String              @map("organization_id")
+  meetingId      String              @map("meeting_id")
+  documentType   CouncilDocumentType @default(ATA) @map("document_type")
+  title          String
+  fileKey        String              @map("file_key")
+  fileName       String              @map("file_name")
+  fileSize       Int                 @map("file_size")
+  mimeType       String              @default("application/pdf") @map("mime_type")
+  sha256Hash     String?             @map("sha256_hash")
+  uploadedById   String              @map("uploaded_by_id") @db.Uuid
+  createdAt      DateTime            @default(now()) @map("created_at")
+  updatedAt      DateTime            @updatedAt @map("updated_at")
+
+  organization      Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  meeting           CouncilMeeting    @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  uploadedBy        User              @relation("CouncilDocumentUploader", fields: [uploadedById], references: [id])
+  signatureRequests SignatureRequest[]
+
+  @@index([organizationId])
+  @@index([meetingId])
+  @@map("council_documents")
+}
+
+model SignatureRequest {
+  id             String          @id @default(nanoid())
+  organizationId String          @map("organization_id")
+  documentId     String          @map("document_id")
+  requestedById  String          @map("requested_by_id") @db.Uuid
+  status         SignatureStatus @default(PENDENTE)
+  pkcs7Data      String?         @db.Text @map("pkcs7_data")
+  signedAt       DateTime?       @map("signed_at")
+  errorMsg       String?         @map("error_msg")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  document     CouncilDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  requestedBy  User            @relation("SignatureRequester", fields: [requestedById], references: [id])
+
+  @@index([organizationId, status])
+  @@index([documentId])
+  @@map("signature_requests")
+}
+
+model GovBrOAuthState {
+  id             String   @id @default(nanoid())
+  state          String   @unique
+  nonce          String
+  documentId     String   @map("document_id")
+  userId         String   @map("user_id")
+  organizationId String   @map("organization_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  expiresAt      DateTime @map("expires_at")
+
+  @@index([state])
+  @@index([expiresAt])
+  @@map("govbr_oauth_states")
+}
+
+// ─── Suporte In-App ───────────────────────────────────────────────────────────
+
+enum SupportType {
+  TICKET
+  CHAT
+}
+
+enum SupportStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+model SupportRequest {
+  id             String        @id @default(nanoid())
+  authorId       String        @map("author_id") @db.Uuid
+  organizationId String        @map("organization_id")
+  type           SupportType
+  status         SupportStatus @default(OPEN)
+  subject        String?
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  author       User         @relation("SupportAuthor", fields: [authorId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  messages     SupportMessage[]
+
+  @@index([organizationId, status])
+  @@index([authorId])
+  @@map("support_requests")
+}
+
+model SupportMessage {
+  id        String   @id @default(nanoid())
+  requestId String   @map("request_id")
+  senderId  String   @map("sender_id") @db.Uuid
+  content   String   @db.Text
+  isRead    Boolean  @default(false) @map("is_read")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  request SupportRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  sender  User           @relation("SupportMessageSender", fields: [senderId], references: [id])
+
+  @@index([requestId, createdAt])
+  @@index([requestId, isRead])
+  @@map("support_messages")
 }

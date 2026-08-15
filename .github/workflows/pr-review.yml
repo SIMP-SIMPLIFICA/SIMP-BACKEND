@@ -1,0 +1,68 @@
+name: Review Agent (Claude AI)
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+  issue_comment:
+    types: [created]
+
+jobs:
+  claude-review:
+    name: Claude AI Code Review
+    runs-on: ubuntu-latest
+    # Só roda em PRs da org, não de forks externos (segurança)
+    if: |
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       contains(github.event.comment.body, '@claude'))
+
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      # Necessário para o OIDC token da claude-code-action
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Claude Code Review
+        uses: anthropics/claude-code-action@beta
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Prompt do Review Agent — contexto específico do SIMP
+          custom_instructions: |
+            Você é o Review Agent do projeto SIMP — Sistema Integrado de Gestão Municipal.
+            Stack: Fastify 5 + Prisma + PostgreSQL + Redis + TypeScript (ESM).
+
+            Ao revisar um PR, avalie:
+
+            **Segurança (prioridade máxima):**
+            - SQL injection via queries Prisma manuais
+            - JWT sem validação de `iss`/`aud`
+            - Secrets hardcodados ou logados
+            - Rate limiting ausente em rotas sensíveis
+            - Input não validado com Zod antes de usar
+
+            **Qualidade:**
+            - Services com lógica de negócio (não controllers)
+            - Tratamento de erros com mensagens úteis
+            - Transações Prisma em operações multi-tabela
+            - Tipos TypeScript corretos (sem `any` desnecessário)
+
+            **Testes:**
+            - Novo código tem teste correspondente?
+            - Casos de erro cobertos?
+            - Mocks de DB desnecessários (preferir DB real em test)
+
+            **Performance:**
+            - N+1 queries no Prisma
+            - `select: {}` desnecessariamente amplo
+            - Cache Redis onde faz sentido
+
+            Seja direto e construtivo. Priorize issues de segurança.
+            Responda em português.

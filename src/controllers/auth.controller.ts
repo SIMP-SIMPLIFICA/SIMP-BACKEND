@@ -1,17 +1,23 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
+import { ZodError } from 'zod'
 import { authService } from '@/services/auth.service.js'
-import { db, prisma } from '@/utils/database.js'
+import { db } from '@/utils/database.js'
 import { authLogger } from '@/utils/logger.js'
 import {
-  changePasswordSchema,
   forgotPasswordSchema,
   loginSchema,
   refreshTokenSchema,
   registerSchema,
   resetPasswordSchema,
-  updateProfileSchema,
-  verifyEmailSchema
+  updateProfileSchema
 } from '@/schemas/auth.schemas.js'
+
+function zodErrorMessage(error: unknown): string {
+  if (error instanceof ZodError) {
+    return error.issues.map(i => i.message).join('. ')
+  }
+  return error instanceof Error ? error.message : String(error)
+}
 
 export class AuthController {
   // ... register, login, refreshToken, logout (mantidos igual) ...
@@ -25,9 +31,9 @@ export class AuthController {
         httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict', maxAge: 7 * 24 * 60 * 60 * 1000
       })
       return reply.code(201).send({ message: 'User registered successfully', user: result.user, tokens: { accessToken: result.tokens.accessToken, expiresIn: result.tokens.expiresIn } })
-    } catch (error: any) {
+    } catch (error: unknown) {
       authLogger.error(error, 'Registration failed')
-      return reply.code(400).send({ error: 'Registration Failed', message: error.message })
+      return reply.code(400).send({ error: 'Registration Failed', message: error instanceof Error ? error.message : String(error) })
     }
   }
 
@@ -40,12 +46,24 @@ export class AuthController {
       if (result.requiresTwoFactor) {
         return reply.send({ message: 'Two-factor authentication required', requiresTwoFactor: true, tempUserId: result.user.id })
       }
+      const cookieDays = data.rememberMe ? 30 : 7
       reply.setCookie('refreshToken', result.tokens.refreshToken, {
-        httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict', maxAge: 7 * 24 * 60 * 60 * 1000
+        httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict', maxAge: cookieDays * 24 * 60 * 60 * 1000
       })
       return reply.send({ message: 'Login successful', user: result.user, tokens: { accessToken: result.tokens.accessToken, expiresIn: result.tokens.expiresIn } })
-    } catch (error: any) {
-      return reply.code(400).send({ error: 'Login Failed', message: error.message })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error)
+
+      // Organização suspensa: erro identificável, para o frontend explicar a causa
+      // em vez de exibir a mensagem genérica de credenciais inválidas.
+      if (message === 'ORGANIZATION_SUSPENDED') {
+        return reply.code(403).send({
+          error: 'ORGANIZATION_SUSPENDED',
+          message: 'Organização suspensa. Entre em contato com o suporte.'
+        })
+      }
+
+      return reply.code(400).send({ error: 'Login Failed', message })
     }
   }
 
@@ -58,8 +76,8 @@ export class AuthController {
         httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict', maxAge: 7 * 24 * 60 * 60 * 1000
       })
       return reply.send({ message: 'Token refreshed successfully', tokens: { accessToken: tokens.accessToken, expiresIn: tokens.expiresIn } })
-    } catch (error: any) {
-      return reply.code(401).send({ error: 'Token Refresh Failed', message: error.message })
+    } catch (error: unknown) {
+      return reply.code(401).send({ error: 'Token Refresh Failed', message: error instanceof Error ? error.message : String(error) })
     }
   }
 
@@ -70,8 +88,8 @@ export class AuthController {
       if (refreshToken && userId) await authService.logout(refreshToken, userId, request.ip)
       reply.clearCookie('refreshToken')
       return reply.send({ message: 'Logged out successfully' })
-    } catch (error: any) {
-      return reply.code(400).send({ error: 'Logout Failed', message: error.message })
+    } catch (error: unknown) {
+      return reply.code(400).send({ error: 'Logout Failed', message: error instanceof Error ? error.message : String(error) })
     }
   }
 
@@ -94,20 +112,28 @@ export class AuthController {
         })
       }
 
+      const enabledModules: string[] = (user as any).organization?.modules
+        ?.filter((m: { isEnabled: boolean }) => m.isEnabled)
+        .map((m: { module: string }) => m.module) ?? []
+
       // IMPORTANTE: Retorna { user: ... }
       return reply.send({
         user: {
           ...user,
+          organization: user.organization
+            ? { ...(user.organization as any), modules: undefined }
+            : null,
+          enabledModules,
           password: undefined,
           twoFactorSecret: undefined,
           verifyToken: undefined,
           passwordResetToken: undefined
         }
       })
-    } catch (error: any) {
+    } catch (error: unknown) {
       return reply.code(500).send({
         error: 'Profile Fetch Failed',
-        message: error.message
+        message: error instanceof Error ? error.message : String(error)
       })
     }
   }
@@ -137,13 +163,34 @@ export class AuthController {
       })
     }
   }
-  async changePassword(request: FastifyRequest, reply: FastifyReply) { /* ... */ }
-  async forgotPassword(request: FastifyRequest, reply: FastifyReply) { /* ... */ }
-  async resetPassword(request: FastifyRequest, reply: FastifyReply) { /* ... */ }
-  async verifyEmail(request: FastifyRequest, reply: FastifyReply) { /* ... */ }
-  async getSessions(request: FastifyRequest, reply: FastifyReply) { /* ... */ }
-  async terminateSession(request: FastifyRequest, reply: FastifyReply) { /* ... */ }
-  async terminateAllSessions(request: FastifyRequest, reply: FastifyReply) { /* ... */ }
+  async changePassword(_request: FastifyRequest, _reply: FastifyReply) { /* ... */ }
+
+  async forgotPassword(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { email } = forgotPasswordSchema.parse(request.body)
+      await authService.forgotPassword(email, request.ip)
+      // Sempre retorna 200 para não vazar se o e-mail existe
+      return reply.send({ message: 'Se o e-mail estiver cadastrado, você receberá as instruções em breve.' })
+    } catch (error: unknown) {
+      authLogger.error(error, 'Forgot password failed')
+      return reply.code(400).send({ error: 'Request Failed', message: error instanceof Error ? error.message : String(error) })
+    }
+  }
+
+  async resetPassword(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { token, password } = resetPasswordSchema.parse(request.body)
+      await authService.resetPassword(token, password, request.ip)
+      return reply.send({ message: 'Senha redefinida com sucesso.' })
+    } catch (error: unknown) {
+      authLogger.error(error, 'Reset password failed')
+      return reply.code(400).send({ error: 'Reset Failed', message: zodErrorMessage(error) })
+    }
+  }
+  async verifyEmail(_request: FastifyRequest, _reply: FastifyReply) { /* ... */ }
+  async getSessions(_request: FastifyRequest, _reply: FastifyReply) { /* ... */ }
+  async terminateSession(_request: FastifyRequest, _reply: FastifyReply) { /* ... */ }
+  async terminateAllSessions(_request: FastifyRequest, _reply: FastifyReply) { /* ... */ }
 }
 
 export const authController = new AuthController()

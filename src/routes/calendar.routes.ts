@@ -1,22 +1,16 @@
 import { FastifyInstance } from 'fastify'
 import { CalendarController } from '@/controllers/calendar.controller'
-import { requireModule } from '@/middleware/auth.middleware.js'
+import { authenticate, requireModule } from '@/middleware/auth.middleware.js'
 
 export async function calendarRoutes(app: FastifyInstance) {
     const controller = new CalendarController()
 
-    // Middleware de autenticação padrão (igual as outras rotas)
-    app.addHook('onRequest', async (request, reply) => {
-        try {
-            await request.jwtVerify()
-            const user = request.user as any
-            if (user && user.sub && !user.id) {
-                user.id = user.sub
-            }
-        } catch (err) {
-            reply.send(err)
-        }
-    })
+    // Middleware compartilhado em vez de hook próprio. O hook anterior:
+    //  1. devolvia o erro cru com reply.send(err), expondo stack trace (CodeQL);
+    //  2. omitia a normalização de organizationId, o mesmo defeito que causou o
+    //     vazamento entre organizações no módulo de Comunicação (Épico 1);
+    //  3. contornava o kill switch de organização suspensa (Épico 3).
+    app.addHook('preHandler', authenticate)
     app.addHook('preHandler', requireModule('calendar'))
 
     app.get('/', {

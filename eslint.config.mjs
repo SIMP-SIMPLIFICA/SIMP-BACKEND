@@ -48,6 +48,10 @@ export default [
         Blob: 'readonly',
         File: 'readonly',
 
+        // Namespace de tipos do Node (ex: NodeJS.ErrnoException) — existe só em
+        // tempo de tipagem, mas o no-undef do ESLint não sabe disso.
+        NodeJS: 'readonly',
+
         // Crypto globals
         crypto: 'readonly',
         Crypto: 'readonly',
@@ -74,7 +78,10 @@ export default [
       '@typescript-eslint/no-unnecessary-type-assertion': 'error',
       '@typescript-eslint/no-floating-promises': 'error',
       '@typescript-eslint/await-thenable': 'error',
-      '@typescript-eslint/require-await': 'error',
+      // 'warn' e não 'error': hooks e handlers do Fastify precisam ter assinatura
+      // async por contrato do framework, mesmo quando não há await no corpo.
+      // Como 'error', a regra brigaria com o framework em ~21 pontos legítimos.
+      '@typescript-eslint/require-await': 'warn',
       '@typescript-eslint/no-misused-promises': 'error',
       '@typescript-eslint/no-unsafe-member-access': 'off',
       '@typescript-eslint/no-unsafe-assignment': 'off',

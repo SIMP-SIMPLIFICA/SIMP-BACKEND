@@ -1,5 +1,5 @@
-import { FastifyRequest, FastifyReply } from 'fastify'
-import { saveFile, getFileUrl } from '../services/storage.service.js'
+import { FastifyReply, FastifyRequest } from 'fastify'
+import { getFileUrl, saveFile } from '../services/storage.service.js'
 
 export class UploadController {
   async upload(request: FastifyRequest, reply: FastifyReply) {

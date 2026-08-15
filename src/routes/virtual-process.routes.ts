@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { virtualProcessController } from '@/controllers/virtual-process.controller.js'
 import { virtualProcessCategoryController } from '@/controllers/virtual-process-category.controller.js'
-import { sourceController, companyController } from '@/controllers/virtual-process-config.controller.js'
+import { companyController, sourceController } from '@/controllers/virtual-process-config.controller.js'
 import { authMiddleware, requireAnyPermission, requireModule } from '@/middleware/auth.middleware.js'
 
 export async function virtualProcessRoutes(app: FastifyInstance) {

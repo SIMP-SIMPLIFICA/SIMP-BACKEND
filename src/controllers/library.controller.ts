@@ -4,7 +4,7 @@ import { z } from 'zod'
 import * as path from 'node:path'
 import * as fs from 'node:fs'
 import * as stream from 'node:stream'
-import { saveFile, getFileUrl, getFilePath, deleteFile } from '@/services/storage.service.js'
+import { deleteFile, getFilePath, getFileUrl, saveFile } from '@/services/storage.service.js'
 import { logger } from '@/utils/logger.js'
 import archiver from 'archiver'
 
@@ -34,7 +34,7 @@ export class LibraryController {
     let fileBuffer: Buffer | null = null
     let originalFileName = ''
     let mimeType = ''
-    let fields: Record<string, string> = {}
+    const fields: Record<string, string> = {}
 
     for await (const part of parts) {
       if (part.type === 'file') {
@@ -156,7 +156,7 @@ export class LibraryController {
   async list(request: FastifyRequest, reply: FastifyReply) {
     const userId = request.user.id
     const clearanceLevel = (request.user as any).clearanceLevel as number ?? 1
-    const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId! }
+    const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
 
     const { search, page, limit, categoryId, covenantId } = z.object({
       search:     z.string().optional(),
@@ -217,7 +217,7 @@ export class LibraryController {
     const { id } = z.object({ id: z.string() }).parse(request.params)
     const userId = request.user.id
     const clearanceLevel = (request.user as any).clearanceLevel as number ?? 1
-    const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId! }
+    const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
 
     const document = await prisma.libraryDocument.findFirst({
       where: { id, deletedAt: null, ...orgFilter }
@@ -257,7 +257,7 @@ export class LibraryController {
   async delete(request: FastifyRequest, reply: FastifyReply) {
     const { id } = z.object({ id: z.string() }).parse(request.params)
     const userId = request.user.id
-    const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId! }
+    const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
 
     const document = await prisma.libraryDocument.findFirst({
       where: { id, deletedAt: null, ...orgFilter }
@@ -294,7 +294,7 @@ export class LibraryController {
 
   // GET /api/v1/library/logs (apenas quem tem library:logs)
   async logs(request: FastifyRequest, reply: FastifyReply) {
-    const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId! }
+    const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
 
     const { page, limit } = z.object({
       page: z.coerce.number().int().min(1).default(1),
@@ -330,7 +330,7 @@ export class LibraryController {
 
     const userId = request.user.id
     const clearanceLevel = (request.user as any).clearanceLevel as number ?? 1
-    const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId! }
+    const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
 
     const documents = await prisma.libraryDocument.findMany({
       where: { id: { in: documentIds }, deletedAt: null, ...orgFilter },
@@ -396,7 +396,7 @@ export class LibraryController {
 
   // GET /api/v1/library/categories
   async listCategories(request: FastifyRequest, reply: FastifyReply) {
-    const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId! }
+    const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
     const categories = await prisma.documentCategory.findMany({
       where: orgFilter,
       orderBy: { name: 'asc' },
@@ -429,7 +429,7 @@ export class LibraryController {
   // DELETE /api/v1/library/categories/:id
   async deleteCategory(request: FastifyRequest, reply: FastifyReply) {
     const { id } = z.object({ id: z.string() }).parse(request.params)
-    const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId! }
+    const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
 
     const category = await prisma.documentCategory.findFirst({ where: { id, ...orgFilter } })
     if (!category) return reply.status(404).send({ message: 'Categoria não encontrada.' })

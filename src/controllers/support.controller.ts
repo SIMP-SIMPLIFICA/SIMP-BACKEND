@@ -1,7 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { prisma } from '@/lib/prisma.js'
 import { z } from 'zod'
-import { SupportStatus, SupportType, Prisma } from '@prisma/client'
+import { Prisma, SupportStatus, SupportType } from '@prisma/client'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -71,7 +71,7 @@ export const supportController = {
 
       const supportRequest = await prisma.$transaction(async (tx) => {
         const req = await tx.supportRequest.create({
-          data: { authorId, organizationId: organizationId!, type: body.type, subject: body.subject ?? null },
+          data: { authorId, organizationId: organizationId, type: body.type, subject: body.subject ?? null },
         })
         await tx.supportMessage.create({
           data: { requestId: req.id, senderId: authorId, content: body.message },
@@ -99,7 +99,7 @@ export const supportController = {
 
       const where: Prisma.SupportRequestWhereInput = isSuperAdmin
         ? {}
-        : { authorId: userId, organizationId: organizationId! }
+        : { authorId: userId, organizationId: organizationId }
 
       if (query.status) where.status = query.status
       if (query.type)   where.type   = query.type

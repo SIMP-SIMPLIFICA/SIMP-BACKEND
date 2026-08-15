@@ -1,12 +1,12 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { prisma } from '@/lib/prisma.js'
 import { z } from 'zod'
-import { MeetingStatus, AgendaItemStatus } from '@prisma/client'
+import { AgendaItemStatus, MeetingStatus } from '@prisma/client'
 import {
-  isMeetingFrozen,
-  getMeetingFreezeAt,
   MEETING_FROZEN_ERROR,
   MEETING_FROZEN_MESSAGE,
+  getMeetingFreezeAt,
+  isMeetingFrozen,
 } from '@/services/council-compliance.js'
 
 /**

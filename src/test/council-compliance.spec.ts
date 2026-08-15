@@ -1,9 +1,9 @@
-import { describe, expect, test, vi, afterEach } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 import {
-  isMeetingFrozen,
-  getMeetingFreezeAt,
-  checkMeetingEditable,
   MEETING_EDIT_WINDOW_HOURS,
+  checkMeetingEditable,
+  getMeetingFreezeAt,
+  isMeetingFrozen,
 } from '../services/council-compliance.js'
 
 const HOUR = 60 * 60 * 1000

@@ -1,13 +1,17 @@
 import { PrismaClient } from '@prisma/client';
+import { randomInt } from 'node:crypto';
 
 const prisma = new PrismaClient();
 
+// randomInt (CSPRNG) mesmo sendo dado de teste: mantém o código livre de
+// Math.random(), para que o alerta de randomness insegura fique reservado a
+// ocorrências que realmente importem.
 function rand(min: number, max: number) {
-    return Math.floor(Math.random() * (max - min + 1) + min);
+    return randomInt(min, max + 1);
 }
 
 function pick<T>(arr: T[]): T {
-    return arr[Math.floor(Math.random() * arr.length)];
+    return arr[randomInt(arr.length)];
 }
 
 // Data dentro de um mês específico (monthsAgo=0 = mês atual)
@@ -143,7 +147,7 @@ async function main() {
 
         for (const [catName, dist] of Object.entries(DISTRIBUICAO_MENSAL)) {
             const templates = TEMPLATES[catName as keyof typeof TEMPLATES];
-            const categoryId = catMap.get(catName)!;
+            const categoryId = catMap.get(catName);
 
             // Receitas
             for (let i = 0; i < dist.income; i++) {

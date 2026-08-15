@@ -1,7 +1,7 @@
 import { FastifyReply, FastifyRequest } from 'fastify'
 import { Prisma } from '@prisma/client'
 import { ZodError } from 'zod'
-import { logger, logSecurity } from './logger.js'
+import { logSecurity, logger } from './logger.js'
 
 type AppError = Error & { statusCode?: number; validation?: unknown }
 

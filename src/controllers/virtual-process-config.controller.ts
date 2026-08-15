@@ -2,10 +2,10 @@ import { FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import {
-  createVirtualProcessSourceSchema,
-  updateVirtualProcessSourceSchema,
   createVirtualProcessCompanySchema,
+  createVirtualProcessSourceSchema,
   updateVirtualProcessCompanySchema,
+  updateVirtualProcessSourceSchema,
 } from '../schemas/virtual-process.schemas.js'
 
 // ─── Sources (Origens do Recurso) ────────────────────────────────────────────
@@ -18,7 +18,7 @@ export const sourceController = {
       return reply.status(403).send({ message: 'Usuário sem organização' })
     }
     const source = await prisma.virtualProcessSource.create({
-      data: { organizationId: organizationId!, name: data.name },
+      data: { organizationId: organizationId, name: data.name },
     })
     return reply.status(201).send(source)
   },
@@ -66,7 +66,7 @@ export const companyController = {
       return reply.status(403).send({ message: 'Usuário sem organização' })
     }
     const company = await prisma.virtualProcessCompany.create({
-      data: { organizationId: organizationId!, name: data.name, cnpj: data.cnpj ?? null },
+      data: { organizationId: organizationId, name: data.name, cnpj: data.cnpj ?? null },
     })
     return reply.status(201).send(company)
   },

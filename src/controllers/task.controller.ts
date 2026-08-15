@@ -2,9 +2,9 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { prisma } from '../lib/prisma.js';
 import { createChecklistItemSchema, createTaskSchema, updateChecklistItemSchema, updateTaskSchema } from '../schemas/task.schemas.js';
 import { notificationService } from '../services/notification.service.js';
-import { userHasPermission, PERMISSION_MISSING_MESSAGE } from '../services/rbac.service.js';
+import { PERMISSION_MISSING_MESSAGE, userHasPermission } from '../services/rbac.service.js';
 import { z } from 'zod';
-import { saveFile, getFileUrl, deleteFile } from '../services/storage.service.js';
+import { deleteFile, getFileUrl, saveFile } from '../services/storage.service.js';
 
 // --- HELPERS ---
 
@@ -588,7 +588,7 @@ export class TaskController {
           where: { id: noteId },
           include: { task: { include: { workspace: true } } }
       });
-      if (!note || note.taskId !== taskId) return reply.status(404).send();
+      if (note?.taskId !== taskId) return reply.status(404).send();
 
       const isAuthor = note.authorId === userId;
       const canDelete = isAuthor || await checkPermission(note.task.workspaceId, userId, ['OWNER', 'ADMIN']);

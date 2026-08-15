@@ -1,11 +1,11 @@
 import { FastifyReply, FastifyRequest } from 'fastify'
-import { z, ZodError } from 'zod'
+import { ZodError, z } from 'zod'
 import { randomUUID } from 'node:crypto'
 import { prisma } from '../lib/prisma.js'
 import { authService } from '../services/auth.service.js'
 import { emailService } from '../services/email.service.js'
 import { authLogger } from '../utils/logger.js'
-import { DEFAULT_MODULES, ALL_MODULES, ModuleKey } from '../constants/modules.js'
+import { ALL_MODULES, DEFAULT_MODULES, ModuleKey } from '../constants/modules.js'
 import { invalidateModuleCache, invalidateOrgStatusCache } from '../middleware/auth.middleware.js'
 import { ensureAdminRole } from '../services/rbac.service.js'
 

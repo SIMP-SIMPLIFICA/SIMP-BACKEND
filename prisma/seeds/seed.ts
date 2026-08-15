@@ -120,8 +120,13 @@ async function seed() {
   console.log('  ┌─────────────────────────────────────────────┐')
   console.log('  │  Super Admin credentials                    │')
   console.log(`  │  Email:    ${SUPER_ADMIN_EMAIL.padEnd(33)}│`)
-  console.log(`  │  Password: ${SUPER_ADMIN_PASSWORD.padEnd(33)}│`)
+  // Nunca imprimir a senha: logs de CI/CD e de terminal são persistidos e
+  // frequentemente coletados por ferramentas de observabilidade (CodeQL:
+  // clear-text logging of sensitive information).
+  console.log(`  │  Password: ${'[REDACTED]'.padEnd(33)}│`)
   console.log('  └─────────────────────────────────────────────┘')
+  console.log('  Defina SEED_SUPER_ADMIN_PASSWORD no .env para escolher a senha;')
+  console.log('  sem essa variável, é usada a senha padrão do seed.')
   console.log('\n  ⚠️  Change the password immediately after first login.\n')
 }
 

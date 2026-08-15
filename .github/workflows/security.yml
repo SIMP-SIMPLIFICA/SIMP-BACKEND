@@ -107,6 +107,8 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      # Necessário para o OIDC token da claude-code-action
+      id-token: write
 
     steps:
       - uses: actions/checkout@v4

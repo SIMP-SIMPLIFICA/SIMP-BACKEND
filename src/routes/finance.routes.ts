@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { FinanceCategoryController } from '../controllers/finance-category.controller.js';
 import { FinanceEntryController } from '../controllers/finance-entry.controller.js';
 import { FinanceBankAccountController } from '../controllers/finance-bank-account.controller.js';
-import { authMiddleware, requirePermission, requireModule } from '../middleware/auth.middleware.js';
+import { authMiddleware, requireModule, requirePermission } from '../middleware/auth.middleware.js';
 
 const categoryController = new FinanceCategoryController();
 const entryController = new FinanceEntryController();

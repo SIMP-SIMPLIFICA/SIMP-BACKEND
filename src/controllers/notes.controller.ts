@@ -1,4 +1,4 @@
-import { FastifyRequest, FastifyReply } from "fastify";
+import { FastifyReply, FastifyRequest } from "fastify";
 import { prisma } from "../lib/prisma";
 import { createNoteSchema, updateNoteSchema } from "../schemas/notes.schemas";
 

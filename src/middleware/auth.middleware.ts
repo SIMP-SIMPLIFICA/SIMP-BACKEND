@@ -117,7 +117,7 @@ export async function checkPermission(
   requiredPermissions: string[]
 ) {
   const user = request.user as any
-  if (!user || !user.id) {
+  if (!user?.id) {
     return reply.code(401).send({
       error: 'Unauthorized',
       message: 'Sessão inválida ou expirada',
@@ -132,7 +132,7 @@ export async function checkPermission(
     include: { roles: { include: { role: true } } }
   })
 
-  if (!userWithRoles || !userWithRoles.isActive) {
+  if (!userWithRoles?.isActive) {
     return reply.code(401).send({
       error: 'Unauthorized',
       message: 'Usuário inexistente ou desativado',

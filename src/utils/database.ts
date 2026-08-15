@@ -1,7 +1,7 @@
 import { Prisma, PrismaClient } from '@prisma/client'
 import { config } from '@/config/config.js'
 import { dbLogger, logger } from './logger.js'
-import { prisma, connectDatabase, disconnectDatabase } from '@/lib/prisma.js'
+import { connectDatabase, disconnectDatabase, prisma } from '@/lib/prisma.js'
 
 export { prisma }
 

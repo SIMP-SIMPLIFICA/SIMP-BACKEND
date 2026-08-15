@@ -14,12 +14,13 @@ import { adminRoutes } from '@/routes/admin.routes.js'
 
 import { AppServer } from '@/types/server'
 import { db } from '@/utils/database.js'
+import { config } from '@/config/config.js'
 import { logger } from '@/utils/logger.js'
 import { virtualProcessRoutes } from '@/routes/virtual-process.routes.js'
 import { covenantRoutes } from '@/routes/covenant.routes.js'
 import { protocolRoutes } from '@/routes/protocol.routes.js'
 import { departmentRoutes } from '@/routes/department.routes.js'
-import { councilRoutes, councilPublicRoutes } from '@/routes/council.routes.js'
+import { councilPublicRoutes, councilRoutes } from '@/routes/council.routes.js'
 import { supportRoutes } from '@/routes/support.routes.js'
 import { errorHandler } from '@/utils/error-handler.js'
 
@@ -61,15 +62,33 @@ export async function registerRoutes(server: AppServer) {
         return reply.code(400).send({ error: 'Missing DSN' })
       }
 
-      const dsn = new URL(header.dsn)
-      const projectId = dsn.pathname.replace('/', '')
-
-      // Só aceita o host legítimo do Sentry — evita abuso do tunnel como proxy genérico
-      if (!dsn.hostname.endsWith('.sentry.io')) {
-        return reply.code(400).send({ error: 'Invalid DSN host' })
+      // SSRF: a URL de destino é derivada EXCLUSIVAMENTE do DSN configurado no
+      // servidor (variável de ambiente). O DSN que vem no corpo da requisição é
+      // usado apenas para CONFERIR se bate com o do servidor — nunca para montar
+      // o destino do fetch. Assim o tunnel não pode ser usado como proxy genérico,
+      // mesmo que host e projectId do cliente sejam manipulados.
+      const serverDsnRaw = config.observability.sentryDsn
+      if (!serverDsnRaw) {
+        return reply.code(503).send({ error: 'Sentry tunnel not configured' })
       }
 
-      const sentryUrl = `https://${dsn.hostname}/api/${projectId}/envelope/`
+      const serverDsn = new URL(serverDsnRaw)
+      const projectId = serverDsn.pathname.replace(/^\//, '')
+
+      // Defesa em profundidade: host do próprio DSN do servidor precisa ser Sentry
+      // e o projectId precisa ser numérico (formato do Sentry).
+      if (!serverDsn.hostname.endsWith('.sentry.io') || !/^\d+$/.test(projectId)) {
+        return reply.code(503).send({ error: 'Sentry tunnel misconfigured' })
+      }
+
+      // O envelope só é encaminhado se o cliente declarou o mesmo projeto do servidor.
+      const clientDsn = new URL(header.dsn)
+      if (clientDsn.hostname !== serverDsn.hostname
+        || clientDsn.pathname.replace(/^\//, '') !== projectId) {
+        return reply.code(400).send({ error: 'DSN mismatch' })
+      }
+
+      const sentryUrl = `https://${serverDsn.hostname}/api/${projectId}/envelope/`
 
       const response = await fetch(sentryUrl, {
         method: 'POST',

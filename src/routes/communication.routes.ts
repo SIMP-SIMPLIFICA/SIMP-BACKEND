@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { CommunicationController } from '@/controllers/communication.controller'
 import { authenticate, requireModule } from '@/middleware/auth.middleware.js'
-import { createMessageSchema, updateMessageSchema, messageIdSchema } from '@/schemas/communication.schemas'
+import { createMessageSchema, messageIdSchema, updateMessageSchema } from '@/schemas/communication.schemas'
 
 const listFiltersSchema = z.object({
   startDate: z.string().optional(),

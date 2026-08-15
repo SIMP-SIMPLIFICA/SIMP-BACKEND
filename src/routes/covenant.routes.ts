@@ -1,10 +1,10 @@
 import { FastifyInstance } from 'fastify'
 import {
-  covenantController,
-  covenantTypeController,
-  convenenteController,
   concedenteController,
+  convenenteController,
+  covenantController,
   covenantProcessController,
+  covenantTypeController,
 } from '@/controllers/covenant.controller.js'
 import { authMiddleware, requireAnyPermission, requireModule } from '@/middleware/auth.middleware.js'
 

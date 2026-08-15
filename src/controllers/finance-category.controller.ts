@@ -19,7 +19,7 @@ export class FinanceCategoryController {
         const data = createSchema.parse(request.body);
         const category = await prisma.financeCategory.create({
             data: {
-                organizationId: organizationId!,
+                organizationId: organizationId,
                 name: data.name,
                 description: data.description,
             }

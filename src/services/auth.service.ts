@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { randomInt, randomUUID } from 'node:crypto'
 import { hash, verify } from '@node-rs/argon2'
 import { SignJWT, jwtVerify } from 'jose'
 import { nanoid } from 'nanoid'
@@ -14,7 +14,11 @@ export class AuthService {
     const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
     const nums = '23456789'
     const special = '@$!%*?&'
-    const rand = (s: string) => s[Math.floor(Math.random() * s.length)]
+    // randomInt (CSPRNG) em vez de Math.random(): este valor é uma CREDENCIAL.
+    // Math.random() é um PRNG previsível — conhecendo saídas anteriores é possível
+    // inferir as próximas, o que tornaria senhas temporárias adivinháveis
+    // (CodeQL: insecure randomness).
+    const rand = (s: string) => s[randomInt(s.length)]
     const base = Array.from({ length: 6 }, () => rand(lower)).join('')
     return rand(upper) + base + rand(nums) + rand(special)
   }
@@ -28,7 +32,9 @@ export class AuthService {
       })
     } catch (error) {
       authLogger.error(error, 'Failed to hash password')
-      throw new Error('Password hashing failed')
+      // `cause` preserva a origem: sem isso, a causa real do erro se perde ao
+      // trocar a exceção por uma mensagem genérica.
+      throw new Error('Password hashing failed', { cause: error })
     }
   }
 

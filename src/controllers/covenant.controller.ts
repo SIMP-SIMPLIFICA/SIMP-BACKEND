@@ -1,4 +1,4 @@
-import { FastifyRequest, FastifyReply } from 'fastify'
+import { FastifyReply, FastifyRequest } from 'fastify'
 import { db } from '@/utils/database.js'
 import { prisma } from '@/lib/prisma.js'
 import { logger } from '@/utils/logger.js'

@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import { z, ZodError } from 'zod'
+import { ZodError, z } from 'zod'
 import { randomUUID } from 'node:crypto'
 import { prisma } from '@/lib/prisma.js'
 import { authService } from '@/services/auth.service.js'
@@ -108,7 +108,7 @@ export class OrganizationController {
           data: ALL_MODULES.map(module => ({
             organizationId: org.id,
             module,
-            isEnabled: DEFAULT_MODULES.includes(module as typeof DEFAULT_MODULES[number]),
+            isEnabled: DEFAULT_MODULES.includes(module),
           })),
         })
 

@@ -4,12 +4,12 @@ import { authService } from '@/services/auth.service.js'
 import { db } from '@/utils/database.js'
 import { authLogger } from '@/utils/logger.js'
 import {
+  forgotPasswordSchema,
   loginSchema,
   refreshTokenSchema,
   registerSchema,
-  updateProfileSchema,
-  forgotPasswordSchema,
-  resetPasswordSchema
+  resetPasswordSchema,
+  updateProfileSchema
 } from '@/schemas/auth.schemas.js'
 
 function zodErrorMessage(error: unknown): string {
@@ -163,7 +163,7 @@ export class AuthController {
       })
     }
   }
-  async changePassword(request: FastifyRequest, reply: FastifyReply) { /* ... */ }
+  async changePassword(_request: FastifyRequest, _reply: FastifyReply) { /* ... */ }
 
   async forgotPassword(request: FastifyRequest, reply: FastifyReply) {
     try {
@@ -187,10 +187,10 @@ export class AuthController {
       return reply.code(400).send({ error: 'Reset Failed', message: zodErrorMessage(error) })
     }
   }
-  async verifyEmail(request: FastifyRequest, reply: FastifyReply) { /* ... */ }
-  async getSessions(request: FastifyRequest, reply: FastifyReply) { /* ... */ }
-  async terminateSession(request: FastifyRequest, reply: FastifyReply) { /* ... */ }
-  async terminateAllSessions(request: FastifyRequest, reply: FastifyReply) { /* ... */ }
+  async verifyEmail(_request: FastifyRequest, _reply: FastifyReply) { /* ... */ }
+  async getSessions(_request: FastifyRequest, _reply: FastifyReply) { /* ... */ }
+  async terminateSession(_request: FastifyRequest, _reply: FastifyReply) { /* ... */ }
+  async terminateAllSessions(_request: FastifyRequest, _reply: FastifyReply) { /* ... */ }
 }
 
 export const authController = new AuthController()

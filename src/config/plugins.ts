@@ -10,7 +10,7 @@ import formbody from '@fastify/formbody'
 import multipart from '@fastify/multipart'
 import fastifyStatic from '@fastify/static'
 import jwt from '@fastify/jwt'
-import { jsonSchemaTransform, validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod'
+import { jsonSchemaTransform, serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod'
 
 import { config } from './config.js'
 import { Sentry } from './sentry.js'
@@ -156,7 +156,7 @@ export async function registerPlugins(server: AppServer) {
       transform: (params) => {
         try {
           return jsonSchemaTransform(params)
-        } catch (error) {
+        } catch (_error) {
           // Se falhar (ex: schema JSON puro que o Zod transform não entende), retorna o schema original
           // Isso corrige o erro "Cannot read properties of undefined (reading 'parent')"
           return { schema: params.schema, url: params.url }

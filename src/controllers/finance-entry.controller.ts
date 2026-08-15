@@ -2,7 +2,7 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { prisma } from '../lib/prisma.js';
 import { z } from 'zod';
 import { createEntrySchema, updateEntrySchema } from '../schemas/finance.schema.js';
-import { saveFile, getFileUrl, deleteFile } from '../services/storage.service.js';
+import { deleteFile, getFileUrl, saveFile } from '../services/storage.service.js';
 
 export class FinanceEntryController {
 
@@ -26,7 +26,7 @@ export class FinanceEntryController {
 
         const entry = await prisma.financeEntry.create({
             data: {
-                organizationId: organizationId!,
+                organizationId: organizationId,
                 occurredAt: new Date(data.occurredAt),
                 description: data.description,
                 amountCents: data.amountCents,
@@ -268,7 +268,7 @@ export class FinanceEntryController {
             include: { entry: true }
         });
 
-        if (!attachment || attachment.entryId !== entryId) {
+        if (attachment?.entryId !== entryId) {
             return reply.status(404).send({ message: 'Anexo não encontrado' });
         }
 

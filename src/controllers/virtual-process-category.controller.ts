@@ -14,7 +14,7 @@ export class VirtualProcessCategoryController {
       return reply.status(403).send({ message: 'Usuário sem organização' })
     }
     const category = await prisma.virtualProcessCategory.create({
-      data: { organizationId: organizationId!, name: data.name },
+      data: { organizationId: organizationId, name: data.name },
     })
     return reply.status(201).send(category)
   }

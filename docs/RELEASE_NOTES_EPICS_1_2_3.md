@@ -176,6 +176,38 @@ Também foi corrigido um teste **pré-existente quebrado** (`auth_db.spec.ts`), 
 
 ---
 
+## Correções de esteira e segurança (CI/CD + CodeQL)
+
+### Workflows do GitHub
+- Adicionado `id-token: write` aos **6 jobs** que usam `claude-code-action` (3 no backend, 3 no frontend), corrigindo a falha de token OIDC.
+- **Frontend**: `npm audit fix` resolveu **19 das 20** vulnerabilidades, incluindo **as 3 críticas**. Como o gate do CI é `--audit-level=critical` e ele agora sai com código 0, **não foi necessário `continue-on-error`** — o gate continua valendo. Resta apenas `xlsx` em severidade *high* sem correção disponível, abaixo do nível do gate. Type-check e build validados após a atualização de dependências.
+
+### ESLint do backend
+O job falhava com `Cannot find package '@eslint/js'` porque **nenhuma dependência de ESLint estava instalada** — o lint nunca havia rodado neste repositório.
+
+- Instalados `eslint`, `@eslint/js`, `@typescript-eslint/*` e `eslint-config-prettier`
+- `eslint.config.js` → **`eslint.config.mjs`**: o arquivo usa sintaxe ESM e o `package.json` não declara `"type": "module"`. Renomear é mais seguro que mudar o tipo do projeto inteiro.
+- Script corrigido de `eslint src --ext .ts` para `eslint src` (a flag `--ext` foi removida no flat config do ESLint 9+)
+- **De 110 erros para 0**: 67 auto-corrigidos, os demais tratados individualmente (imports não usados, args de stubs, optional chaining). `@typescript-eslint/require-await` foi rebaixado de `error` para `warn` com justificativa: hooks e handlers do Fastify exigem assinatura `async` por contrato do framework, e a regra brigava com isso em ~21 pontos legítimos.
+
+### Alertas do CodeQL
+
+| Alerta | Correção |
+|---|---|
+| **Clear-text logging** | `seed.ts` imprimia a senha do super admin no terminal. Agora exibe `[REDACTED]` e orienta usar `SEED_SUPER_ADMIN_PASSWORD`. |
+| **Insecure randomness** | `Math.random()` gerava **senhas temporárias** em `auth.service.ts` — PRNG previsível para uma credencial. Substituído por `randomInt` (CSPRNG) do `node:crypto`; o script de dados de teste também foi migrado. |
+| **SSRF** | O tunnel do Sentry montava a URL de destino a partir do DSN enviado **no corpo da requisição**. Agora a URL é derivada **exclusivamente** do DSN configurado no servidor; o DSN do cliente serve apenas para conferência, e o `projectId` é validado como numérico. |
+| **Stack trace exposure** | `calendar.routes.ts` e `notes.routes.ts` faziam `reply.send(err)`, devolvendo o erro cru. |
+
+**Achado adicional durante a correção do stack trace**: esses dois arquivos tinham **hooks de autenticação próprios** — exatamente o padrão que causou o vazamento entre organizações no módulo de Comunicação (Épico 1). Além de expor a stack, eles:
+
+1. omitiam a normalização de `organizationId` (mesmo risco de vazamento entre tenants);
+2. **contornavam o kill switch de organização suspensa** — Calendário e Notas continuariam acessíveis a uma organização suspensa.
+
+Ambos passaram a usar o `authenticate` compartilhado, o que fecha as três falhas de uma vez. Varredura confirmou que **não resta nenhuma outra rota com hook de autenticação próprio**.
+
+---
+
 ## Padrões estabelecidos
 
 Decisões que passaram a orientar o projeto:

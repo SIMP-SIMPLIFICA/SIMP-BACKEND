@@ -1,11 +1,10 @@
-import { FastifyRequest, FastifyReply } from 'fastify'
+import { FastifyReply, FastifyRequest } from 'fastify'
 import { db } from '@/utils/database.js'
 import { prisma } from '@/lib/prisma.js'
 import { logger } from '@/utils/logger.js'
 import { z } from 'zod'
-import { createVirtualProcessSchema, uploadDocumentSchema, updateCompanyInfoSchema, updateValiditySchema } from '@/schemas/virtual-process.schemas.js'
-import { randomUUID } from 'crypto'
-import { saveFile, getFileUrl, deleteFile } from '@/services/storage.service.js'
+import { createVirtualProcessSchema, updateCompanyInfoSchema, updateValiditySchema, uploadDocumentSchema } from '@/schemas/virtual-process.schemas.js'
+import { deleteFile, getFileUrl, saveFile } from '@/services/storage.service.js'
 
 export class VirtualProcessController {
   async listProcesses(request: FastifyRequest, reply: FastifyReply) {
@@ -413,7 +412,7 @@ export class VirtualProcessController {
 
       const parts = request.parts()
       let fileData: any = null
-      let fieldsData: any = {}
+      const fieldsData: any = {}
 
       for await (const part of parts) {
         if (part.type === 'file') {
@@ -478,7 +477,7 @@ export class VirtualProcessController {
       const userId = (request as any).user?.id as string
 
       const document = await prisma.virtualProcessDocument.findUnique({ where: { id: documentId } })
-      if (!document || document.virtualProcessId !== id) {
+      if (document?.virtualProcessId !== id) {
         return reply.code(404).send({ error: 'Not Found', message: 'Documento não encontrado' })
       }
 
@@ -514,7 +513,7 @@ export class VirtualProcessController {
       const userId = (request as any).user?.id as string
 
       const document = await prisma.virtualProcessDocument.findUnique({ where: { id: documentId } })
-      if (!document || document.virtualProcessId !== id) {
+      if (document?.virtualProcessId !== id) {
         return reply.code(404).send({ error: 'Not Found', message: 'Documento não encontrado' })
       }
 

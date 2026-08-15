@@ -2,7 +2,7 @@ import { FastifyReply, FastifyRequest } from 'fastify'
 import { prisma } from '@/lib/prisma'
 import { CreateMessageInput, UpdateMessageInput } from '@/schemas/communication.schemas'
 import { notificationService } from '@/services/notification.service'
-import { saveFile, getFileUrl } from '@/services/storage.service.js'
+import { getFileUrl, saveFile } from '@/services/storage.service.js'
 
 export class CommunicationController {
   private getUserId(request: FastifyRequest): string {

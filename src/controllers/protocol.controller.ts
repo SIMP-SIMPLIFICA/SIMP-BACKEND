@@ -2,7 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify'
 import { prisma } from '@/lib/prisma.js'
 import { z } from 'zod'
 import { randomBytes } from 'node:crypto'
-import { Prisma, OfficialDocumentCategory, OfficialDocumentNumberingType, OfficialDocumentStatus } from '@prisma/client'
+import { OfficialDocumentCategory, OfficialDocumentNumberingType, OfficialDocumentStatus, Prisma } from '@prisma/client'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -121,7 +121,7 @@ export const protocolController = {
 
       // Normativo: ano informado pelo usuário (o ato pode ser de exercício anterior).
       // Comunicação: ano corrente, definido pelo sistema.
-      const year = isNormativo ? body.year! : currentYear()
+      const year = isNormativo ? body.year : currentYear()
 
       // Normativos: sector = 'CENTRAL', departmentId = null, numeração MANUAL
       let effectiveSector: string
@@ -343,7 +343,7 @@ export const protocolController = {
       const updated = await prisma.officialDocument.update({
         where: { id },
         data: {
-          status:            body.status as OfficialDocumentStatus,
+          status:            body.status,
           cancelReason:      body.status === 'CANCELADO' ? (body.cancelReason ?? null) : null,
           libraryDocumentId: body.libraryDocumentId ?? undefined,
         },

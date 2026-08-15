@@ -21,7 +21,7 @@ export class FinanceBankAccountController {
         const data = createSchema.parse(request.body);
         const account = await prisma.bankAccount.create({
             data: {
-                organizationId: organizationId!,
+                organizationId: organizationId,
                 name: data.name,
                 agency: data.agency ?? null,
                 accountNumber: data.accountNumber ?? null,
@@ -47,7 +47,7 @@ export class FinanceBankAccountController {
         const account = await prisma.bankAccount.findUnique({ where: { id } });
         if (!account) return reply.status(404).send({ message: 'Conta não encontrada' });
 
-        const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
+        // O isolamento por organização é garantido pela checagem explícita abaixo.
         if (!request.user.isSuperAdmin && account.organizationId !== request.user.organizationId) {
             return reply.status(404).send({ message: 'Conta não encontrada' });
         }

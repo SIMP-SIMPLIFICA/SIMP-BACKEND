@@ -39,7 +39,7 @@ async function resolvePermissions(userId: string): Promise<Set<string> | null> {
     }
   })
 
-  if (!user || !user.isActive) return null
+  if (!user?.isActive) return null
 
   const perms = new Set<string>()
   for (const ur of user.roles) {

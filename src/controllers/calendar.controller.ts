@@ -1,6 +1,6 @@
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { prisma } from '../lib/prisma.js';
-import { createCalendarEventSchema, updateCalendarEventSchema, calendarEventIdSchema } from '../schemas/calendar.schemas.js';
+import { calendarEventIdSchema, createCalendarEventSchema, updateCalendarEventSchema } from '../schemas/calendar.schemas.js';
 import { notificationService } from '../services/notification.service.js';
 import { z } from 'zod';
 

@@ -61,7 +61,7 @@ class EmailService {
         subject: options.subject,
         html: options.html,
         text: options.text,
-        attachments: options.attachments as any
+        attachments: options.attachments
       })
 
       emailLogger.info(

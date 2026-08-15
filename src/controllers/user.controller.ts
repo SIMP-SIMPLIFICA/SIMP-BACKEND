@@ -6,7 +6,7 @@ import { authLogger } from '@/utils/logger.js'
 import { assignRoleSchema, createUserSchema, updateUserSchema, userQuerySchema } from '@/schemas/auth.schemas.js'
 import { certificateService } from '@/services/certificate.service.js'
 import path from 'node:path'
-import { saveFile, getFileUrl, deleteFile } from '@/services/storage.service.js'
+import { deleteFile, getFileUrl, saveFile } from '@/services/storage.service.js'
 
 export class UserController {
   async getUsers(request: FastifyRequest, reply: FastifyReply) {

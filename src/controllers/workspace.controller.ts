@@ -3,7 +3,7 @@ import { prisma } from '../lib/prisma.js';
 import { z } from 'zod';
 import { createWorkspaceSchema } from '../schemas/workspace.schemas.js';
 import { notificationService } from '../services/notification.service.js';
-import { userHasPermission, getUsersWithPermission, PERMISSION_MISSING_MESSAGE } from '../services/rbac.service.js';
+import { PERMISSION_MISSING_MESSAGE, getUsersWithPermission, userHasPermission } from '../services/rbac.service.js';
 
 export class WorkspaceController {
   

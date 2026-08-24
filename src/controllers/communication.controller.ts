@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { CreateMessageInput, UpdateMessageInput } from '@/schemas/communication.schemas'
 import { notificationService } from '@/services/notification.service'
 import { getFileUrl, saveFile } from '@/services/storage.service.js'
+import { UPLOAD_POLICIES, assertAllowedFile } from '@/services/file-validation.service.js'
 
 export class CommunicationController {
   private getUserId(request: FastifyRequest): string {
@@ -350,6 +351,13 @@ export class CommunicationController {
         return reply.code(400).send({ message: 'Arquivo muito grande. O limite é 10MB.' })
       }
 
+      // Assinatura binária real. A lista de mimetypes acima confia no cliente.
+      const detected = assertAllowedFile(buffer, {
+        policy: UPLOAD_POLICIES.GENERAL_ATTACHMENT,
+        declaredMime: data.mimetype,
+        fileName: data.filename,
+      })
+
       // fileUrl passa a guardar o fileKey completo (antes guardava só o nome, e a
       // chave era remontada no download) — evita duplicar a convenção de caminho.
       const fileKey = await saveFile(buffer, {
@@ -361,7 +369,7 @@ export class CommunicationController {
       return reply.code(201).send({
         fileName: data.filename,
         fileUrl: fileKey,
-        fileType: data.mimetype,
+        fileType: detected.mime,
         fileSize: buffer.length
       })
     } catch (error) {

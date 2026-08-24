@@ -2,6 +2,7 @@ import { FastifyReply, FastifyRequest } from 'fastify'
 import { Prisma } from '@prisma/client'
 import { ZodError } from 'zod'
 import { logSecurity, logger } from './logger.js'
+import { UnsupportedFileTypeError } from '@/services/file-validation.service.js'
 
 type AppError = Error & { statusCode?: number; validation?: unknown }
 
@@ -13,6 +14,18 @@ export const errorHandler = (
     const requestId = (request as any).id
     const statusCode = error.statusCode || 500
     const isProduction = process.env.NODE_ENV === 'production'
+
+    // 415 Unsupported Media Type — conteúdo real do upload divergiu da allowlist.
+    // Tratado aqui para que qualquer controller possa apenas deixar o erro subir.
+    if (error instanceof UnsupportedFileTypeError) {
+        return reply.code(415).send({
+            statusCode: 415,
+            error: 'Unsupported Media Type',
+            message: error.detail,
+            reason: error.reason,
+            requestId
+        })
+    }
 
     if (error instanceof ZodError) {
         return reply.code(400).send({

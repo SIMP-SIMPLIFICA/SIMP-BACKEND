@@ -5,6 +5,7 @@ import { notificationService } from '../services/notification.service.js';
 import { PERMISSION_MISSING_MESSAGE, userHasPermission } from '../services/rbac.service.js';
 import { z } from 'zod';
 import { deleteFile, getFileUrl, saveFile } from '../services/storage.service.js';
+import { UPLOAD_POLICIES, assertAllowedFile } from '@/services/file-validation.service.js'
 
 // --- HELPERS ---
 
@@ -347,6 +348,13 @@ export class TaskController {
     for await (const chunk of data.file) chunks.push(chunk);
     const fileBuffer = Buffer.concat(chunks);
 
+    // Anexo de tarefa não validava tipo algum antes desta mudança.
+    const detected = assertAllowedFile(fileBuffer, {
+        policy: UPLOAD_POLICIES.GENERAL_ATTACHMENT,
+        declaredMime: data.mimetype,
+        fileName: data.filename,
+    });
+
     const fileKey = await saveFile(fileBuffer, {
         organizationId: request.user.organizationId ?? null,
         scope: 'tasks',
@@ -358,7 +366,7 @@ export class TaskController {
             taskId: id,
             uploaderId: userId,
             fileName: data.filename,
-            fileType: data.mimetype,
+            fileType: detected.mime,
             fileSize: fileBuffer.length,
             fileUrl: fileKey
         }

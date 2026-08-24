@@ -3,6 +3,7 @@ import { prisma } from '../lib/prisma.js';
 import { z } from 'zod';
 import { createEntrySchema, updateEntrySchema } from '../schemas/finance.schema.js';
 import { deleteFile, getFileUrl, saveFile } from '../services/storage.service.js';
+import { UPLOAD_POLICIES, assertAllowedFile } from '@/services/file-validation.service.js'
 
 export class FinanceEntryController {
 
@@ -230,6 +231,14 @@ export class FinanceEntryController {
         if (!data) return reply.status(400).send({ message: 'Nenhum arquivo enviado' });
 
         const buffer = await data.toBuffer();
+
+        // Comprovante fiscal não validava tipo algum antes desta mudança.
+        const detected = assertAllowedFile(buffer, {
+            policy: UPLOAD_POLICIES.GENERAL_ATTACHMENT,
+            declaredMime: data.mimetype,
+            fileName: data.filename,
+        });
+
         const fileKey = await saveFile(buffer, {
             organizationId: entry.organizationId,
             scope: 'finance',
@@ -241,7 +250,7 @@ export class FinanceEntryController {
                 entryId,
                 uploaderId: userId,
                 fileName: data.filename,
-                fileType: data.mimetype,
+                fileType: detected.mime,
                 fileSize: buffer.length,
                 fileUrl: fileKey  // store full key
             }

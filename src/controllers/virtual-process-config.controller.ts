@@ -7,6 +7,7 @@ import {
   updateVirtualProcessCompanySchema,
   updateVirtualProcessSourceSchema,
 } from '../schemas/virtual-process.schemas.js'
+import { HARD_QUERY_CAP } from '@/constants/pagination.js'
 
 // ─── Sources (Origens do Recurso) ────────────────────────────────────────────
 
@@ -26,6 +27,8 @@ export const sourceController = {
   async list(request: FastifyRequest, reply: FastifyReply) {
     const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
     const sources = await prisma.virtualProcessSource.findMany({
+      // Teto de memoria: esta listagem nao expoe paginacao ao cliente.
+      take: HARD_QUERY_CAP,
       where: orgFilter,
       orderBy: { name: 'asc' },
     })
@@ -74,6 +77,8 @@ export const companyController = {
   async list(request: FastifyRequest, reply: FastifyReply) {
     const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
     const companies = await prisma.virtualProcessCompany.findMany({
+      // Teto de memoria: esta listagem nao expoe paginacao ao cliente.
+      take: HARD_QUERY_CAP,
       where: orgFilter,
       orderBy: { name: 'asc' },
     })

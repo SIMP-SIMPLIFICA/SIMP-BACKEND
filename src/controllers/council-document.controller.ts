@@ -11,6 +11,7 @@ import {
 import { z } from 'zod'
 import { CouncilDocumentType } from '@prisma/client'
 import { UPLOAD_POLICIES, assertAllowedFile } from '@/services/file-validation.service.js'
+import { HARD_QUERY_CAP } from '@/constants/pagination.js'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -78,6 +79,8 @@ export const documentController = {
       if (!meeting) return reply.code(404).send({ error: 'Not Found', message: 'Reunião não encontrada.' })
 
       const documents = await prisma.councilDocument.findMany({
+        // Teto de memoria: esta listagem nao expoe paginacao ao cliente.
+        take: HARD_QUERY_CAP,
         where: { meetingId, ...orgFilter },
         orderBy: { createdAt: 'desc' },
         include: {

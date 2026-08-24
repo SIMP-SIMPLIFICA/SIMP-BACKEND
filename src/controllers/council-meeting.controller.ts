@@ -8,6 +8,7 @@ import {
   getMeetingFreezeAt,
   isMeetingFrozen,
 } from '@/services/council-compliance.js'
+import { HARD_QUERY_CAP } from '@/constants/pagination.js'
 
 /**
  * Recusa padronizada quando o registro está congelado (>72h da reunião).
@@ -96,6 +97,8 @@ export const meetingController = {
       if (!council) return reply.code(404).send({ error: 'Not Found', message: 'Conselho não encontrado.' })
 
       const meetings = await prisma.councilMeeting.findMany({
+        // Teto de memoria: esta listagem nao expoe paginacao ao cliente.
+        take: HARD_QUERY_CAP,
         where: { councilId, ...orgFilter },
         orderBy: { scheduledAt: 'desc' },
         include: {

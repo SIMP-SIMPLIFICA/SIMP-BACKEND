@@ -1,6 +1,7 @@
 import { FastifyReply, FastifyRequest } from "fastify";
 import { prisma } from "../lib/prisma";
 import { createNoteSchema, updateNoteSchema } from "../schemas/notes.schemas";
+import { HARD_QUERY_CAP } from '@/constants/pagination.js'
 
 export class NotesController {
     async findMany(request: FastifyRequest, reply: FastifyReply) {
@@ -11,6 +12,8 @@ export class NotesController {
 
         const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId };
         const notes = await prisma.note.findMany({
+          // Teto de memoria: esta listagem nao expoe paginacao ao cliente.
+          take: HARD_QUERY_CAP,
             where: { userId, ...orgFilter },
             orderBy: { createdAt: "desc" },
         });

@@ -33,6 +33,26 @@ const configSchema = z.object({
   RATE_LIMIT_MAX: z.coerce.number().positive().default(100),
   RATE_LIMIT_WINDOW: z.string().default('1m'),
 
+  /**
+   * Quantos proxies reversos existem à frente da aplicação.
+   *
+   * CRÍTICO PARA O RATE LIMIT. Com `trustProxy: true` (o valor anterior), o Fastify
+   * aceita a cadeia X-Forwarded-For inteira e `request.ip` passa a ser o valor mais
+   * à ESQUERDA — que é escrito pelo cliente. Um atacante mandava um XFF diferente a
+   * cada requisição e recebia uma chave de rate limit nova toda vez, anulando por
+   * completo o limite de 5 logins/minuto.
+   *
+   * Com um número N, o Fastify confia apenas nos N saltos mais próximos e resolve
+   * `request.ip` para o endereço que o proxy confiável realmente observou.
+   *
+   * Render/Vercel/Cloudflare com um proxy à frente: 1. Sem proxy: 0.
+   */
+  TRUST_PROXY: z.coerce.number().int().min(0).max(10).default(1),
+
+  /** Limite estrito das rotas de autenticação (login, registro, reset de senha). */
+  RATE_LIMIT_AUTH_MAX: z.coerce.number().positive().default(5),
+  RATE_LIMIT_AUTH_WINDOW: z.string().default('1m'),
+
   // Email
   SMTP_HOST: z.string(),
   SMTP_PORT: z.coerce.number().min(1).max(65535),
@@ -129,8 +149,13 @@ export const config = {
   // Rate limiting
   rateLimit: {
     max: env.RATE_LIMIT_MAX,
-    timeWindow: env.RATE_LIMIT_WINDOW
+    timeWindow: env.RATE_LIMIT_WINDOW,
+    authMax: env.RATE_LIMIT_AUTH_MAX,
+    authWindow: env.RATE_LIMIT_AUTH_WINDOW
   },
+
+  /** Saltos de proxy confiáveis — ver comentário em TRUST_PROXY. */
+  trustProxy: env.TRUST_PROXY,
 
   // Email configuration
   email: {

@@ -1,6 +1,7 @@
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { prisma } from '../lib/prisma.js';
 import { z } from 'zod';
+import { HARD_QUERY_CAP } from '@/constants/pagination.js'
 
 const createSchema = z.object({
     name: z.string().min(1).max(100),
@@ -30,6 +31,8 @@ export class FinanceCategoryController {
     async list(request: FastifyRequest, reply: FastifyReply) {
         const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
         const categories = await prisma.financeCategory.findMany({
+          // Teto de memoria: esta listagem nao expoe paginacao ao cliente.
+          take: HARD_QUERY_CAP,
             where: orgFilter,
             orderBy: { name: 'asc' },
         });

@@ -23,7 +23,10 @@ import { uploadRoutes } from './routes/upload.routes.js'
 const server: AppServer = Fastify({
   loggerInstance: logger,
   pluginTimeout: 40000,
-  trustProxy: true,
+  // NÃO usar `true` aqui: isso confia na cadeia X-Forwarded-For inteira e deixa
+  // `request.ip` — a chave do rate limit — sob controle do cliente. Ver TRUST_PROXY
+  // em config.ts.
+  trustProxy: config.trustProxy,
   bodyLimit: config.server.maxBodySize,
   keepAliveTimeout: 30000,
   requestIdHeader: 'x-request-id',

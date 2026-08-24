@@ -6,6 +6,7 @@ import { PERMISSION_MISSING_MESSAGE, userHasPermission } from '../services/rbac.
 import { z } from 'zod';
 import { deleteFile, getFileUrl, saveFile } from '../services/storage.service.js';
 import { UPLOAD_POLICIES, assertAllowedFile } from '@/services/file-validation.service.js'
+import { HARD_QUERY_CAP } from '@/constants/pagination.js'
 
 // --- HELPERS ---
 
@@ -85,6 +86,8 @@ export class TaskController {
     if (!isMember) return reply.status(403).send();
 
     const tasks = await prisma.task.findMany({
+      // Teto de memoria: esta listagem nao expoe paginacao ao cliente.
+      take: HARD_QUERY_CAP,
       where: { workspaceId },
       include: {
         assignees: { include: { user: { select: { id: true, firstName: true, lastName: true, email: true, avatar: true } } } },

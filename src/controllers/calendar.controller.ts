@@ -3,6 +3,7 @@ import { prisma } from '../lib/prisma.js';
 import { calendarEventIdSchema, createCalendarEventSchema, updateCalendarEventSchema } from '../schemas/calendar.schemas.js';
 import { notificationService } from '../services/notification.service.js';
 import { z } from 'zod';
+import { HARD_QUERY_CAP } from '@/constants/pagination.js'
 
 export class CalendarController {
 
@@ -29,6 +30,8 @@ export class CalendarController {
         }
 
         const events = await prisma.calendarEvent.findMany({
+          // Teto de memoria: esta listagem nao expoe paginacao ao cliente.
+          take: HARD_QUERY_CAP,
             where: whereClause,
             include: { attachments: true },
             orderBy: { startAt: 'asc' }
@@ -140,6 +143,8 @@ export class CalendarController {
 
         const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId };
         const events = await prisma.calendarEvent.findMany({
+          // Teto de memoria: esta listagem nao expoe paginacao ao cliente.
+          take: HARD_QUERY_CAP,
             where: {
                 userId,
                 ...orgFilter,

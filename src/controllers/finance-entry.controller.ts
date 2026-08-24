@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { createEntrySchema, updateEntrySchema } from '../schemas/finance.schema.js';
 import { deleteFile, getFileUrl, saveFile } from '../services/storage.service.js';
 import { UPLOAD_POLICIES, assertAllowedFile } from '@/services/file-validation.service.js'
+import { HARD_QUERY_CAP, MAX_PAGE_SIZE } from '@/constants/pagination.js'
 
 export class FinanceEntryController {
 
@@ -65,7 +66,7 @@ export class FinanceEntryController {
             type: z.enum(['EXPENSE', 'INCOME']).optional(),
             categoryNames: z.string().optional(),
             page: z.coerce.number().min(1).optional(),
-            limit: z.coerce.number().min(1).max(500).optional(),
+            limit: z.coerce.number().min(1).max(MAX_PAGE_SIZE).optional(),
             search: z.string().optional(),
         }).parse(request.query || {});
 
@@ -102,6 +103,12 @@ export class FinanceEntryController {
         if (page && limit) {
             queryOptions.skip = (page - 1) * limit;
             queryOptions.take = limit;
+        } else {
+            // Sem page/limit a query era ILIMITADA: uma organização com anos de
+            // lançamentos carregava tudo em memória num único findMany. O formato
+            // da resposta (array puro) é mantido para não quebrar o frontend — só
+            // o número de linhas passa a ter teto.
+            queryOptions.take = HARD_QUERY_CAP;
         }
 
         const [entries, totalCount, aggregations] = await Promise.all([

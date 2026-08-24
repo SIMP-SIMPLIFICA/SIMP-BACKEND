@@ -23,6 +23,7 @@ import { departmentRoutes } from '@/routes/department.routes.js'
 import { councilPublicRoutes, councilRoutes } from '@/routes/council.routes.js'
 import { supportRoutes } from '@/routes/support.routes.js'
 import { errorHandler } from '@/utils/error-handler.js'
+import { safeFetch } from '@/utils/url-security.js'
 
 import { publicRoutes } from '@/routes/public.routes.js'
 
@@ -90,11 +91,14 @@ export async function registerRoutes(server: AppServer) {
 
       const sentryUrl = `https://${serverDsn.hostname}/api/${projectId}/envelope/`
 
-      const response = await fetch(sentryUrl, {
+      // safeFetch em vez de fetch cru: o destino já é derivado apenas do DSN do
+      // servidor, mas isto impede que um DSN mal configurado apontando para a rede
+      // interna transforme o tunnel num proxy — e bloqueia seguir 30x para host interno.
+      const response = await safeFetch(sentryUrl, {
         method: 'POST',
         body: envelope,
         headers: { 'Content-Type': 'application/x-sentry-envelope' }
-      })
+      }, { maxRedirects: 0, timeoutMs: 5000 })
 
       return reply.code(response.status).send()
     } catch (err) {

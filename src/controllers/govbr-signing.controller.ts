@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma.js'
 import { z } from 'zod'
 import { hexToBase64 } from '@/controllers/council-document.controller.js'
 import { config } from '@/config/config.js'
+import { buildTrustedRedirect } from '@/utils/url-security.js'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -25,6 +26,20 @@ const APP_URL            = () => config.urls.app
 const IS_MOCK_GOVBR      = () => config.govbr.useMock
 
 const STATE_TTL_MS = 10 * 60 * 1000 // 10 minutes
+
+/**
+ * Monta a URL de retorno da assinatura passando pelo sanitizador de redirect.
+ *
+ * O `callback` é uma rota PÚBLICA (sem authMiddleware) que termina em `reply.redirect`
+ * — exatamente a forma de um Open Redirect. Hoje `frontendBase` vem da config, não da
+ * requisição, mas interpolar template string deixava a rota a um refactor de distância
+ * de virar um redirecionador aberto (basta alguém passar a ler o destino da query).
+ * `buildTrustedRedirect` fecha isso na origem: qualquer destino fora da whitelist de
+ * origens do servidor vira `/`.
+ */
+function signReturnUrl(base: string, query: Record<string, string | undefined>): string {
+  return buildTrustedRedirect(base, 'councils/sign/return', query)
+}
 
 // ─── Validation ───────────────────────────────────────────────────────────────
 
@@ -144,7 +159,7 @@ export const signingController = {
     })
 
     if (!signatureRequest) {
-      return reply.redirect(`${frontendBase}/councils/sign/return?error=NO_REQUEST`)
+      return reply.redirect(signReturnUrl(frontendBase, { error: 'NO_REQUEST' }))
     }
 
     try {
@@ -159,7 +174,7 @@ export const signingController = {
             errorMsg:  null,
           },
         })
-        return reply.redirect(`${frontendBase}/councils/sign/return?requestId=${signatureRequest.id}`)
+        return reply.redirect(signReturnUrl(frontendBase, { requestId: signatureRequest.id }))
       }
 
       // Exchange authorization code for access_token
@@ -224,7 +239,7 @@ export const signingController = {
         },
       })
 
-      return reply.redirect(`${frontendBase}/councils/sign/return?requestId=${signatureRequest.id}`)
+      return reply.redirect(signReturnUrl(frontendBase, { requestId: signatureRequest.id }))
     } catch (err) {
       const errorMessage = (err as Error).message
 
@@ -236,7 +251,7 @@ export const signingController = {
       request.log.error({ err, requestId: signatureRequest.id }, 'Gov.br signing failed')
 
       return reply.redirect(
-        `${frontendBase}/councils/sign/return?requestId=${signatureRequest.id}&error=SIGNING_FAILED`,
+        signReturnUrl(frontendBase, { requestId: signatureRequest.id, error: 'SIGNING_FAILED' }),
       )
     }
   },

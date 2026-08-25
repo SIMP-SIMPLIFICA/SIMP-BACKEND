@@ -53,6 +53,22 @@ const configSchema = z.object({
   RATE_LIMIT_AUTH_MAX: z.coerce.number().positive().default(5),
   RATE_LIMIT_AUTH_WINDOW: z.string().default('1m'),
 
+  // Cloudflare Turnstile — proteção anti-bot invisível
+  /** Segredo do servidor. Sem ele a verificação NÃO roda (ver nota abaixo). */
+  TURNSTILE_SECRET_KEY: z.string().optional(),
+  /**
+   * Liga/desliga explicitamente. Deixar indefinido faz o valor ser derivado da
+   * presença do segredo.
+   *
+   * Em produção, `config.ts` recusa subir com o Turnstile ligado e sem segredo —
+   * um erro de digitação numa variável de ambiente não pode desligar silenciosamente
+   * uma proteção de segurança.
+   */
+  TURNSTILE_ENABLED: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform(v => (v === undefined ? undefined : v === 'true')),
+
   // Email
   SMTP_HOST: z.string(),
   SMTP_PORT: z.coerce.number().min(1).max(65535),
@@ -157,6 +173,12 @@ export const config = {
   /** Saltos de proxy confiáveis — ver comentário em TRUST_PROXY. */
   trustProxy: env.TRUST_PROXY,
 
+  turnstile: {
+    secretKey: env.TURNSTILE_SECRET_KEY,
+    // Sem TURNSTILE_ENABLED explícito, liga se houver segredo configurado.
+    enabled: env.TURNSTILE_ENABLED ?? Boolean(env.TURNSTILE_SECRET_KEY),
+  },
+
   // Email configuration
   email: {
     host: env.SMTP_HOST,
@@ -216,6 +238,20 @@ export const config = {
     useMock: env.USE_MOCK_GOVBR
   }
 } as const
+
+/**
+ * Fail-fast de produção para o Turnstile.
+ *
+ * Sem isto, esquecer TURNSTILE_SECRET_KEY no ambiente de produção deixaria a
+ * proteção anti-bot desligada em silêncio — o login continuaria funcionando e
+ * ninguém perceberia até o primeiro ataque. Preferimos não subir.
+ */
+if (config.isProduction && config.turnstile.enabled && !config.turnstile.secretKey) {
+  throw new Error(
+    'TURNSTILE_ENABLED=true mas TURNSTILE_SECRET_KEY não foi definida. ' +
+    'Configure o segredo ou defina TURNSTILE_ENABLED=false explicitamente.'
+  )
+}
 
 // Type export for use in other files
 export type Config = typeof config

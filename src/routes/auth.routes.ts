@@ -2,6 +2,7 @@ import { FastifyInstance, FastifyRequest } from 'fastify'
 import { authController } from '../controllers/auth.controller.js'
 import { authenticate } from '../middleware/auth.middleware.js'
 import { config } from '../config/config.js'
+import { turnstileMiddleware } from '../middleware/turnstile.middleware.js'
 
 /**
  * Limite por IP para uma rota sensível. Vai em `config.rateLimit`, consumido pelo
@@ -51,11 +52,17 @@ export function authRoutes(app: FastifyInstance) {
 
   // Registro: sem limite antes desta mudança. Um script podia criar contas em
   // massa, inflando o banco e disparando envio de e-mails de verificação.
-  app.post('/register', { config: ipLimit(authMax) }, authController.register)
+  app.post('/register', {
+    config: ipLimit(authMax),
+    preHandler: turnstileMiddleware,
+  }, authController.register)
 
+  // Turnstile roda DEPOIS do rate limit: verificar o token custa uma chamada de
+  // rede à Cloudflare, e não queremos pagar esse custo para tráfego que já seria
+  // recusado por excesso de requisições.
   app.post('/login', {
     config: ipLimit(authMax),
-    preHandler: [...accountLimit(app, authMax * 2)],
+    preHandler: [...accountLimit(app, authMax * 2), turnstileMiddleware],
   }, authController.login)
 
   // Refresh token: sem limite antes. É um oráculo de validade de token — permitia
@@ -69,10 +76,13 @@ export function authRoutes(app: FastifyInstance) {
     config: ipLimit(3),
     // Também por conta: senão um atacante inunda a caixa de entrada de uma vítima
     // específica alternando de IP.
-    preHandler: [...accountLimit(app, 3)],
+    preHandler: [...accountLimit(app, 3), turnstileMiddleware],
   }, authController.forgotPassword)
 
-  app.post('/reset-password', { config: ipLimit(3) }, authController.resetPassword)
+  app.post('/reset-password', {
+    config: ipLimit(3),
+    preHandler: turnstileMiddleware,
+  }, authController.resetPassword)
 
   // Verificação de e-mail: sem limite antes. O token é adivinhável por força bruta
   // se não houver freio nenhum.

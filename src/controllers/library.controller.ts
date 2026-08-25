@@ -7,6 +7,7 @@ import * as stream from 'node:stream'
 import { deleteFile, getFilePath, getFileUrl, saveFile } from '@/services/storage.service.js'
 import { logger } from '@/utils/logger.js'
 import archiver from 'archiver'
+import { UPLOAD_POLICIES, assertAllowedFile } from '@/services/file-validation.service.js'
 
 const uploadFieldsSchema = z.object({
   title:       z.string().min(1).max(500).optional(),
@@ -58,6 +59,14 @@ export class LibraryController {
     if (!fileBuffer || fileBuffer.length === 0) {
       return reply.status(400).send({ message: 'Nenhum arquivo enviado.' })
     }
+
+    // Assinatura binária real. O `part.mimetype` checado acima é só o Content-Type
+    // declarado pelo cliente — um .exe renomeado para .pdf passava por ele.
+    mimeType = assertAllowedFile(fileBuffer, {
+      policy: UPLOAD_POLICIES.PDF_ONLY,
+      declaredMime: mimeType,
+      fileName: originalFileName,
+    }).mime
 
     // Limite de 50 MB
     if (fileBuffer.length > 50 * 1024 * 1024) {

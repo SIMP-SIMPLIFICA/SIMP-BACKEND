@@ -1,6 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { prisma } from '@/lib/prisma.js'
 import { z } from 'zod'
+import { HARD_QUERY_CAP } from '@/constants/pagination.js'
 
 const updateSettingsSchema = z.object({
     MayorName: z.string().optional(),
@@ -12,6 +13,8 @@ export class SettingsController {
     async getPublicSettings(request: FastifyRequest, reply: FastifyReply) {
         try {
             const settings = await prisma.setting.findMany({
+              // Teto de memoria: esta listagem nao expoe paginacao ao cliente.
+              take: HARD_QUERY_CAP,
                 where: { isPublic: true }
             })
 

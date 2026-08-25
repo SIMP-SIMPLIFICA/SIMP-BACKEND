@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma.js'
 import { authService } from '@/services/auth.service.js'
 import { ensureAdminRole } from '@/services/rbac.service.js'
 import { ALL_MODULES, DEFAULT_MODULES } from '@/constants/modules.js'
+import { HARD_QUERY_CAP } from '@/constants/pagination.js'
 
 const createOrgSchema = z.object({
   orgName: z.string().min(3, 'Nome da organização deve ter ao menos 3 caracteres'),
@@ -39,6 +40,8 @@ export class OrganizationController {
     }
     try {
       const orgs = await prisma.organization.findMany({
+        // Teto de memoria: esta listagem nao expoe paginacao ao cliente.
+        take: HARD_QUERY_CAP,
         select: { id: true, name: true, slug: true },
         orderBy: { name: 'asc' }
       })

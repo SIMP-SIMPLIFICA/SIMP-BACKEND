@@ -1,6 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { prisma } from '@/lib/prisma.js'
 import { z } from 'zod'
+import { MAX_PAGE_SIZE } from '@/constants/pagination.js'
 
 // ─── Validation ───────────────────────────────────────────────────────────────
 
@@ -20,7 +21,7 @@ const updateSchema = z.object({
 
 const listSchema = z.object({
   page:   z.coerce.number().int().positive().default(1),
-  limit:  z.coerce.number().int().positive().max(200).default(20),
+  limit:  z.coerce.number().int().positive().max(MAX_PAGE_SIZE).default(20),
   search: z.string().optional(),
 })
 

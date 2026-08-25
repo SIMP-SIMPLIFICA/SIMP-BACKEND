@@ -5,8 +5,8 @@ import { prisma } from '@/lib/prisma.js'
 import { authLogger } from '@/utils/logger.js'
 import { assignRoleSchema, createUserSchema, updateUserSchema, userQuerySchema } from '@/schemas/auth.schemas.js'
 import { certificateService } from '@/services/certificate.service.js'
-import path from 'node:path'
 import { deleteFile, getFileUrl, saveFile } from '@/services/storage.service.js'
+import { UPLOAD_POLICIES, assertAllowedFile } from '@/services/file-validation.service.js'
 
 export class UserController {
   async getUsers(request: FastifyRequest, reply: FastifyReply) {
@@ -534,6 +534,15 @@ export class UserController {
         return reply.code(400).send({ message: 'Arquivo muito grande. O limite é 5MB.' })
       }
 
+      // Assinatura binária real. A checagem de mimetype acima confia no cliente;
+      // esta não. SVG fica de fora da política de propósito: é XML com script
+      // embutido, e /uploads/ é servido estaticamente sem autenticação.
+      const detectedLogo = assertAllowedFile(fileBuffer, {
+        policy: UPLOAD_POLICIES.IMAGES_ONLY,
+        declaredMime: data.mimetype,
+        fileName: data.filename,
+      })
+
       // Remove logo antiga do R2 se existir
       const existingUser = await prisma.user.findUnique({ where: { id: userId } })
       const existingMeta = (existingUser?.metadata as any) || {}
@@ -543,9 +552,10 @@ export class UserController {
         } catch (_e) { /* ignora */ }
       }
 
-      // Grava em disco local — a extensão vem do mimetype quando o nome não tem uma
-      const originalExt = path.extname(data.filename)
-      const ext = originalExt || `.${data.mimetype.split('/')[1]}`
+      // A extensão gravada vem do tipo DETECTADO, não do nome nem do mimetype
+      // declarado: assim o arquivo em disco nunca recebe uma extensão que mente
+      // sobre o próprio conteúdo.
+      const ext = `.${detectedLogo.extensions[0]}`
 
       const logoKey = await saveFile(fileBuffer, {
         organizationId: (request.user as any)?.organizationId ?? null,

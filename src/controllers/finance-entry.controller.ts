@@ -3,6 +3,8 @@ import { prisma } from '../lib/prisma.js';
 import { z } from 'zod';
 import { createEntrySchema, updateEntrySchema } from '../schemas/finance.schema.js';
 import { deleteFile, getFileUrl, saveFile } from '../services/storage.service.js';
+import { UPLOAD_POLICIES, assertAllowedFile } from '@/services/file-validation.service.js'
+import { HARD_QUERY_CAP, MAX_PAGE_SIZE } from '@/constants/pagination.js'
 
 export class FinanceEntryController {
 
@@ -64,7 +66,7 @@ export class FinanceEntryController {
             type: z.enum(['EXPENSE', 'INCOME']).optional(),
             categoryNames: z.string().optional(),
             page: z.coerce.number().min(1).optional(),
-            limit: z.coerce.number().min(1).max(500).optional(),
+            limit: z.coerce.number().min(1).max(MAX_PAGE_SIZE).optional(),
             search: z.string().optional(),
         }).parse(request.query || {});
 
@@ -101,6 +103,12 @@ export class FinanceEntryController {
         if (page && limit) {
             queryOptions.skip = (page - 1) * limit;
             queryOptions.take = limit;
+        } else {
+            // Sem page/limit a query era ILIMITADA: uma organização com anos de
+            // lançamentos carregava tudo em memória num único findMany. O formato
+            // da resposta (array puro) é mantido para não quebrar o frontend — só
+            // o número de linhas passa a ter teto.
+            queryOptions.take = HARD_QUERY_CAP;
         }
 
         const [entries, totalCount, aggregations] = await Promise.all([
@@ -230,6 +238,14 @@ export class FinanceEntryController {
         if (!data) return reply.status(400).send({ message: 'Nenhum arquivo enviado' });
 
         const buffer = await data.toBuffer();
+
+        // Comprovante fiscal não validava tipo algum antes desta mudança.
+        const detected = assertAllowedFile(buffer, {
+            policy: UPLOAD_POLICIES.GENERAL_ATTACHMENT,
+            declaredMime: data.mimetype,
+            fileName: data.filename,
+        });
+
         const fileKey = await saveFile(buffer, {
             organizationId: entry.organizationId,
             scope: 'finance',
@@ -241,7 +257,7 @@ export class FinanceEntryController {
                 entryId,
                 uploaderId: userId,
                 fileName: data.filename,
-                fileType: data.mimetype,
+                fileType: detected.mime,
                 fileSize: buffer.length,
                 fileUrl: fileKey  // store full key
             }

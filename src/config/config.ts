@@ -33,6 +33,66 @@ const configSchema = z.object({
   RATE_LIMIT_MAX: z.coerce.number().positive().default(100),
   RATE_LIMIT_WINDOW: z.string().default('1m'),
 
+  /**
+   * Quantos proxies reversos existem à frente da aplicação.
+   *
+   * CRÍTICO PARA O RATE LIMIT. Com `trustProxy: true` (o valor anterior), o Fastify
+   * aceita a cadeia X-Forwarded-For inteira e `request.ip` passa a ser o valor mais
+   * à ESQUERDA — que é escrito pelo cliente. Um atacante mandava um XFF diferente a
+   * cada requisição e recebia uma chave de rate limit nova toda vez, anulando por
+   * completo o limite de 5 logins/minuto.
+   *
+   * Com um número N, o Fastify confia apenas nos N saltos mais próximos e resolve
+   * `request.ip` para o endereço que o proxy confiável realmente observou.
+   *
+   * Render/Vercel/Cloudflare com um proxy à frente: 1. Sem proxy: 0.
+   */
+  TRUST_PROXY: z.coerce.number().int().min(0).max(10).default(1),
+
+  /** Limite estrito das rotas de autenticação (login, registro, reset de senha). */
+  RATE_LIMIT_AUTH_MAX: z.coerce.number().positive().default(5),
+  RATE_LIMIT_AUTH_WINDOW: z.string().default('1m'),
+
+  // Honeypot / banimento de IP
+  /** Duração do banimento, em segundos. Default 24h. */
+  HONEYPOT_BAN_TTL: z.coerce.number().int().positive().default(24 * 60 * 60),
+  /**
+   * Quantas vezes o campo-isca precisa vir preenchido antes de banir o IP.
+   *
+   * Acessar uma rota-isca (`/.env`) bane na hora — nenhum cliente legítimo pede
+   * aquilo. Já o campo-isca no formulário admite falso positivo: alguns
+   * gerenciadores de senha preenchem campos ocultos. Exigir reincidência evita
+   * derrubar um usuário real por 24h por causa do autofill do navegador dele.
+   */
+  HONEYPOT_FIELD_STRIKES: z.coerce.number().int().positive().default(3),
+  /**
+   * IPs que nunca podem ser banidos, separados por vírgula.
+   *
+   * Necessário por causa de NAT: uma prefeitura inteira costuma sair por um único
+   * IP público. Uma máquina infectada na rede não pode tirar o órgão inteiro do ar.
+   */
+  HONEYPOT_ALLOWLIST: z.string().default(''),
+  HONEYPOT_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform(v => v === 'true'),
+
+  // Cloudflare Turnstile — proteção anti-bot invisível
+  /** Segredo do servidor. Sem ele a verificação NÃO roda (ver nota abaixo). */
+  TURNSTILE_SECRET_KEY: z.string().optional(),
+  /**
+   * Liga/desliga explicitamente. Deixar indefinido faz o valor ser derivado da
+   * presença do segredo.
+   *
+   * Em produção, `config.ts` recusa subir com o Turnstile ligado e sem segredo —
+   * um erro de digitação numa variável de ambiente não pode desligar silenciosamente
+   * uma proteção de segurança.
+   */
+  TURNSTILE_ENABLED: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform(v => (v === undefined ? undefined : v === 'true')),
+
   // Email
   SMTP_HOST: z.string(),
   SMTP_PORT: z.coerce.number().min(1).max(65535),
@@ -129,7 +189,28 @@ export const config = {
   // Rate limiting
   rateLimit: {
     max: env.RATE_LIMIT_MAX,
-    timeWindow: env.RATE_LIMIT_WINDOW
+    timeWindow: env.RATE_LIMIT_WINDOW,
+    authMax: env.RATE_LIMIT_AUTH_MAX,
+    authWindow: env.RATE_LIMIT_AUTH_WINDOW
+  },
+
+  /** Saltos de proxy confiáveis — ver comentário em TRUST_PROXY. */
+  trustProxy: env.TRUST_PROXY,
+
+  honeypot: {
+    enabled: env.HONEYPOT_ENABLED,
+    banTtl: env.HONEYPOT_BAN_TTL,
+    fieldStrikes: env.HONEYPOT_FIELD_STRIKES,
+    allowlist: env.HONEYPOT_ALLOWLIST
+      .split(',')
+      .map(ip => ip.trim())
+      .filter(Boolean),
+  },
+
+  turnstile: {
+    secretKey: env.TURNSTILE_SECRET_KEY,
+    // Sem TURNSTILE_ENABLED explícito, liga se houver segredo configurado.
+    enabled: env.TURNSTILE_ENABLED ?? Boolean(env.TURNSTILE_SECRET_KEY),
   },
 
   // Email configuration
@@ -191,6 +272,20 @@ export const config = {
     useMock: env.USE_MOCK_GOVBR
   }
 } as const
+
+/**
+ * Fail-fast de produção para o Turnstile.
+ *
+ * Sem isto, esquecer TURNSTILE_SECRET_KEY no ambiente de produção deixaria a
+ * proteção anti-bot desligada em silêncio — o login continuaria funcionando e
+ * ninguém perceberia até o primeiro ataque. Preferimos não subir.
+ */
+if (config.isProduction && config.turnstile.enabled && !config.turnstile.secretKey) {
+  throw new Error(
+    'TURNSTILE_ENABLED=true mas TURNSTILE_SECRET_KEY não foi definida. ' +
+    'Configure o segredo ou defina TURNSTILE_ENABLED=false explicitamente.'
+  )
+}
 
 // Type export for use in other files
 export type Config = typeof config

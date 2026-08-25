@@ -76,11 +76,19 @@ export async function registerPlugins(server: AppServer) {
         'x-ratelimit-reset': true,
         'retry-after': true
       },
-      keyGenerator: request => {
-        return request.headers['x-real-ip'] as string ||
-          request.headers['x-forwarded-for'] as string ||
-          request.ip
-      },
+      // `request.ip` e NADA MAIS.
+      //
+      // A versão anterior lia `x-real-ip` / `x-forwarded-for` diretamente dos
+      // headers. Como headers são escritos pelo cliente, bastava variar o
+      // X-Forwarded-For a cada requisição para receber uma chave nova toda vez —
+      // o rate limit inteiro, inclusive os 5 logins/minuto, era contornável com
+      // uma linha de curl.
+      //
+      // `request.ip` é resolvido pelo Fastify a partir de `trustProxy`, que agora
+      // é um número de saltos confiáveis (config.trustProxy) em vez de `true`.
+      // Assim o valor vem do que o proxy confiável observou, não do que o cliente
+      // afirmou.
+      keyGenerator: request => request.ip,
       errorResponseBuilder: (request, context) => ({
         statusCode: 429,
         error: 'Too Many Requests',

@@ -19,11 +19,15 @@ import { libraryRoutes } from './routes/library.routes.js'
 
 // Import da rota de upload
 import { uploadRoutes } from './routes/upload.routes.js'
+import { connectRedis } from './utils/redis.js'
 
 const server: AppServer = Fastify({
   loggerInstance: logger,
   pluginTimeout: 40000,
-  trustProxy: true,
+  // NÃO usar `true` aqui: isso confia na cadeia X-Forwarded-For inteira e deixa
+  // `request.ip` — a chave do rate limit — sob controle do cliente. Ver TRUST_PROXY
+  // em config.ts.
+  trustProxy: config.trustProxy,
   bodyLimit: config.server.maxBodySize,
   keepAliveTimeout: 30000,
   requestIdHeader: 'x-request-id',
@@ -43,6 +47,16 @@ async function start() {
     logger.info('🗄️ Connecting to database...')
     await db.connect()
     logger.info('✅ Database connected successfully')
+
+    // Redis alimenta o banimento de IP do honeypot (ip-ban.service.ts).
+    // NÃO é fatal: sem Redis o ban vale só nesta instância, e é preferível o
+    // sistema no ar com proteção parcial a não subir por causa do cache.
+    try {
+      await connectRedis()
+      logger.info('✅ Redis connected — banimento de IP compartilhado ativo')
+    } catch (err) {
+      logger.warn({ err }, '⚠️ Redis indisponível — banimento de IP ficará restrito a esta instância')
+    }
 
     startExpireTasksJob()
     startClearNotificationsJob()

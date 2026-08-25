@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { createWorkspaceSchema } from '../schemas/workspace.schemas.js';
 import { notificationService } from '../services/notification.service.js';
 import { PERMISSION_MISSING_MESSAGE, getUsersWithPermission, userHasPermission } from '../services/rbac.service.js';
+import { HARD_QUERY_CAP } from '@/constants/pagination.js'
 
 export class WorkspaceController {
   
@@ -57,6 +58,8 @@ export class WorkspaceController {
     }
 
     const workspaces = await prisma.workspace.findMany({
+      // Teto de memoria: esta listagem nao expoe paginacao ao cliente.
+      take: HARD_QUERY_CAP,
       where: { OR: whereOr },
       include: { _count: { select: { members: true, tasks: true } } },
       orderBy: { createdAt: 'desc' },
@@ -200,6 +203,8 @@ export class WorkspaceController {
     const workspace = await prisma.workspace.findFirst({ where: { id: workspaceId, ...orgFilter } });
     if (!workspace) return reply.status(404).send({ message: 'Workspace não encontrado' });
     const members = await prisma.workspaceMember.findMany({
+      // Teto de memoria: esta listagem nao expoe paginacao ao cliente.
+      take: HARD_QUERY_CAP,
       where: { workspaceId },
       include: { user: { select: { id: true, firstName: true, lastName: true, email: true, avatar: true } } },
       orderBy: { user: { firstName: 'asc' } }

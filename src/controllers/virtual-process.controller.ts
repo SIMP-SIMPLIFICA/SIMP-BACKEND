@@ -5,6 +5,7 @@ import { logger } from '@/utils/logger.js'
 import { z } from 'zod'
 import { createVirtualProcessSchema, updateCompanyInfoSchema, updateValiditySchema, uploadDocumentSchema } from '@/schemas/virtual-process.schemas.js'
 import { deleteFile, getFileUrl, saveFile } from '@/services/storage.service.js'
+import { UPLOAD_POLICIES, assertAllowedFile } from '@/services/file-validation.service.js'
 
 export class VirtualProcessController {
   async listProcesses(request: FastifyRequest, reply: FastifyReply) {
@@ -421,6 +422,13 @@ export class VirtualProcessController {
             chunks.push(chunk as Buffer)
           }
           const buffer = Buffer.concat(chunks)
+
+          // Anexo de processo não validava tipo algum — nem o mimetype declarado.
+          assertAllowedFile(buffer, {
+            policy: UPLOAD_POLICIES.GENERAL_ATTACHMENT,
+            declaredMime: part.mimetype,
+            fileName: part.filename,
+          })
 
           const fileKey = await saveFile(buffer, {
             organizationId: processObj.organizationId,

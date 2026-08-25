@@ -5,6 +5,7 @@ import {
   createVirtualProcessCategorySchema,
   updateVirtualProcessCategorySchema,
 } from '../schemas/virtual-process.schemas.js'
+import { HARD_QUERY_CAP } from '@/constants/pagination.js'
 
 export class VirtualProcessCategoryController {
   async create(request: FastifyRequest, reply: FastifyReply) {
@@ -22,6 +23,8 @@ export class VirtualProcessCategoryController {
   async list(request: FastifyRequest, reply: FastifyReply) {
     const orgFilter = request.user.isSuperAdmin ? {} : { organizationId: request.user.organizationId }
     const categories = await prisma.virtualProcessCategory.findMany({
+      // Teto de memoria: esta listagem nao expoe paginacao ao cliente.
+      take: HARD_QUERY_CAP,
       where: orgFilter,
       orderBy: { name: 'asc' },
     })

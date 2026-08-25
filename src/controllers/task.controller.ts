@@ -5,6 +5,8 @@ import { notificationService } from '../services/notification.service.js';
 import { PERMISSION_MISSING_MESSAGE, userHasPermission } from '../services/rbac.service.js';
 import { z } from 'zod';
 import { deleteFile, getFileUrl, saveFile } from '../services/storage.service.js';
+import { UPLOAD_POLICIES, assertAllowedFile } from '@/services/file-validation.service.js'
+import { HARD_QUERY_CAP } from '@/constants/pagination.js'
 
 // --- HELPERS ---
 
@@ -84,6 +86,8 @@ export class TaskController {
     if (!isMember) return reply.status(403).send();
 
     const tasks = await prisma.task.findMany({
+      // Teto de memoria: esta listagem nao expoe paginacao ao cliente.
+      take: HARD_QUERY_CAP,
       where: { workspaceId },
       include: {
         assignees: { include: { user: { select: { id: true, firstName: true, lastName: true, email: true, avatar: true } } } },
@@ -347,6 +351,13 @@ export class TaskController {
     for await (const chunk of data.file) chunks.push(chunk);
     const fileBuffer = Buffer.concat(chunks);
 
+    // Anexo de tarefa não validava tipo algum antes desta mudança.
+    const detected = assertAllowedFile(fileBuffer, {
+        policy: UPLOAD_POLICIES.GENERAL_ATTACHMENT,
+        declaredMime: data.mimetype,
+        fileName: data.filename,
+    });
+
     const fileKey = await saveFile(fileBuffer, {
         organizationId: request.user.organizationId ?? null,
         scope: 'tasks',
@@ -358,7 +369,7 @@ export class TaskController {
             taskId: id,
             uploaderId: userId,
             fileName: data.filename,
-            fileType: data.mimetype,
+            fileType: detected.mime,
             fileSize: fileBuffer.length,
             fileUrl: fileKey
         }

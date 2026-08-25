@@ -10,6 +10,8 @@ import {
 } from '@/services/council-compliance.js'
 import { z } from 'zod'
 import { CouncilDocumentType } from '@prisma/client'
+import { UPLOAD_POLICIES, assertAllowedFile } from '@/services/file-validation.service.js'
+import { HARD_QUERY_CAP } from '@/constants/pagination.js'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -77,6 +79,8 @@ export const documentController = {
       if (!meeting) return reply.code(404).send({ error: 'Not Found', message: 'Reunião não encontrada.' })
 
       const documents = await prisma.councilDocument.findMany({
+        // Teto de memoria: esta listagem nao expoe paginacao ao cliente.
+        take: HARD_QUERY_CAP,
         where: { meetingId, ...orgFilter },
         orderBy: { createdAt: 'desc' },
         include: {
@@ -143,6 +147,15 @@ export const documentController = {
       }
 
       const { title, documentType } = parsed.data
+
+      // Assinatura binária real, antes de qualquer gravação. O `part.mimetype`
+      // checado acima é apenas o Content-Type declarado pelo cliente.
+      const detected = assertAllowedFile(fileBuffer, {
+        policy: UPLOAD_POLICIES.PDF_ONLY,
+        declaredMime: mimeType,
+        fileName: originalFileName,
+      })
+      mimeType = detected.mime
 
       // Compute SHA-256 server-side — client hash is never trusted
       const sha256Hash = computeSha256(fileBuffer)

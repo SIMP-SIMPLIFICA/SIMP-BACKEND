@@ -53,6 +53,30 @@ const configSchema = z.object({
   RATE_LIMIT_AUTH_MAX: z.coerce.number().positive().default(5),
   RATE_LIMIT_AUTH_WINDOW: z.string().default('1m'),
 
+  // Honeypot / banimento de IP
+  /** Duração do banimento, em segundos. Default 24h. */
+  HONEYPOT_BAN_TTL: z.coerce.number().int().positive().default(24 * 60 * 60),
+  /**
+   * Quantas vezes o campo-isca precisa vir preenchido antes de banir o IP.
+   *
+   * Acessar uma rota-isca (`/.env`) bane na hora — nenhum cliente legítimo pede
+   * aquilo. Já o campo-isca no formulário admite falso positivo: alguns
+   * gerenciadores de senha preenchem campos ocultos. Exigir reincidência evita
+   * derrubar um usuário real por 24h por causa do autofill do navegador dele.
+   */
+  HONEYPOT_FIELD_STRIKES: z.coerce.number().int().positive().default(3),
+  /**
+   * IPs que nunca podem ser banidos, separados por vírgula.
+   *
+   * Necessário por causa de NAT: uma prefeitura inteira costuma sair por um único
+   * IP público. Uma máquina infectada na rede não pode tirar o órgão inteiro do ar.
+   */
+  HONEYPOT_ALLOWLIST: z.string().default(''),
+  HONEYPOT_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform(v => v === 'true'),
+
   // Cloudflare Turnstile — proteção anti-bot invisível
   /** Segredo do servidor. Sem ele a verificação NÃO roda (ver nota abaixo). */
   TURNSTILE_SECRET_KEY: z.string().optional(),
@@ -172,6 +196,16 @@ export const config = {
 
   /** Saltos de proxy confiáveis — ver comentário em TRUST_PROXY. */
   trustProxy: env.TRUST_PROXY,
+
+  honeypot: {
+    enabled: env.HONEYPOT_ENABLED,
+    banTtl: env.HONEYPOT_BAN_TTL,
+    fieldStrikes: env.HONEYPOT_FIELD_STRIKES,
+    allowlist: env.HONEYPOT_ALLOWLIST
+      .split(',')
+      .map(ip => ip.trim())
+      .filter(Boolean),
+  },
 
   turnstile: {
     secretKey: env.TURNSTILE_SECRET_KEY,

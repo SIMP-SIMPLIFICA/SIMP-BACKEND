@@ -24,10 +24,19 @@ import { councilPublicRoutes, councilRoutes } from '@/routes/council.routes.js'
 import { supportRoutes } from '@/routes/support.routes.js'
 import { errorHandler } from '@/utils/error-handler.js'
 import { safeFetch } from '@/utils/url-security.js'
+import { honeypotGuard, registerHoneypotRoutes } from '@/middleware/honeypot.middleware.js'
 
 import { publicRoutes } from '@/routes/public.routes.js'
 
 export async function registerRoutes(server: AppServer) {
+  // --- HONEYPOT ---
+  // Hook global PRIMEIRO: um IP banido é cortado antes de qualquer rota, plugin
+  // de autenticação ou consulta ao banco.
+  server.addHook('onRequest', honeypotGuard)
+
+  // Rotas-isca antes do notFoundHandler, senão virariam 404 comum.
+  registerHoneypotRoutes(server)
+
   // --- ROTAS PÚBLICAS ---
   await server.register(publicRoutes, { prefix: '/public', logLevel: 'info' })
 

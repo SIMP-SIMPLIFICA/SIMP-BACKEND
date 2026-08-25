@@ -3,6 +3,7 @@ import { authController } from '../controllers/auth.controller.js'
 import { authenticate } from '../middleware/auth.middleware.js'
 import { config } from '../config/config.js'
 import { turnstileMiddleware } from '../middleware/turnstile.middleware.js'
+import { honeypotFieldGuard } from '../middleware/honeypot.middleware.js'
 
 /**
  * Limite por IP para uma rota sensível. Vai em `config.rateLimit`, consumido pelo
@@ -62,7 +63,7 @@ export function authRoutes(app: FastifyInstance) {
   // recusado por excesso de requisições.
   app.post('/login', {
     config: ipLimit(authMax),
-    preHandler: [...accountLimit(app, authMax * 2), turnstileMiddleware],
+    preHandler: [honeypotFieldGuard, ...accountLimit(app, authMax * 2), turnstileMiddleware],
   }, authController.login)
 
   // Refresh token: sem limite antes. É um oráculo de validade de token — permitia

@@ -7,6 +7,7 @@ import { db, prisma } from '@/utils/database.js'
 import { authLogger, logSecurity } from '@/utils/logger.js'
 import { emailService } from '@/services/email.service.js'
 import { calcularFingerprint } from '@/services/fingerprint.service.js'
+import { alertaSegurancaService } from '@/services/alerta-seguranca.service.js'
 
 export class AuthService {
   /** Gera uma senha temporária forte para contas criadas por um admin (nunca retornada na resposta da API — apenas por e-mail). */
@@ -321,6 +322,20 @@ export class AuthService {
         },
         'User logged in successfully'
       )
+
+      // Alertas de anomalia (Task 2.3) — FIRE-AND-FORGET de propósito.
+      // Sem await: a resposta do login não espera Redis nem webhook. O serviço
+      // já trata todas as exceções internamente; o .catch aqui é rede de
+      // segurança contra promessa rejeitada não tratada.
+      void alertaSegurancaService
+        .avaliarLogin({
+          usuarioId: user.id,
+          email: user.email,
+          ip: ipAddress,
+          agenteUsuario: userAgent ?? null,
+          organizacaoId: user.organizationId ?? null,
+        })
+        .catch(erro => authLogger.error(erro, 'Falha ao avaliar anomalias de login'))
 
       return {
         user: {

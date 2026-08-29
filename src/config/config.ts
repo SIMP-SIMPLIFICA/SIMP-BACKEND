@@ -140,6 +140,13 @@ const configSchema = z.object({
   AWS_ACCESS_KEY_ID: z.string().optional(),
   AWS_SECRET_ACCESS_KEY: z.string().optional(),
 
+  // ─── Alertas de anomalia comportamental (Task 2.3) ──────────────────────────
+  // Vazio desliga os alertas. Ver src/services/alerta-seguranca.service.ts
+  ALERTA_WEBHOOK_URL: z.string().url().optional().or(z.literal('')).transform(v => v || undefined),
+  ALERTA_HORA_INICIO_MADRUGADA: z.coerce.number().int().min(0).max(23).default(1),
+  ALERTA_HORA_FIM_MADRUGADA: z.coerce.number().int().min(0).max(23).default(5),
+  ALERTA_JANELA_VIAGEM_MINUTOS: z.coerce.number().int().positive().default(60),
+
   // Armazenamento de arquivos: local em disco (pasta `uploads/`), servido em
   // /uploads/ via @fastify/static. Zero credenciais de nuvem — ver
   // src/services/storage.service.ts e a Constituição (Princípio I).
@@ -229,6 +236,14 @@ export const config = {
       accessKeyId: env.AWS_ACCESS_KEY_ID,
       secretAccessKey: env.AWS_SECRET_ACCESS_KEY
     }
+  },
+
+  // Alertas de anomalia comportamental — ver src/services/alerta-seguranca.service.ts
+  alertas: {
+    webhookUrl: env.ALERTA_WEBHOOK_URL,
+    horaInicioMadrugada: env.ALERTA_HORA_INICIO_MADRUGADA,
+    horaFimMadrugada: env.ALERTA_HORA_FIM_MADRUGADA,
+    janelaViagemMinutos: env.ALERTA_JANELA_VIAGEM_MINUTOS
   },
 
   turnstile: {

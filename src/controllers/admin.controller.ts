@@ -7,6 +7,7 @@ import { emailService } from '../services/email.service.js'
 import { authLogger } from '../utils/logger.js'
 import { ALL_MODULES, DEFAULT_MODULES, ModuleKey } from '../constants/modules.js'
 import { invalidateModuleCache, invalidateOrgStatusCache } from '../middleware/auth.middleware.js'
+import { calcularFingerprintDaRequisicao } from '../services/fingerprint.service.js'
 import { ensureAdminRole } from '../services/rbac.service.js'
 
 // ---------------------------------------------------------------------------
@@ -334,7 +335,16 @@ export class AdminController {
       return reply.code(404).send({ error: 'Not Found', message: 'Nenhum admin ativo encontrado nesta organização.' })
     }
 
-    const accessToken = await authService.generateAccessToken(adminUser.id, ['system:admin'], orgId, false)
+    // Fingerprint da requisição do super admin: o token de impersonação é usado
+    // pelo MESMO navegador que o solicitou, então precisa carregar o mesmo
+    // fingerprint — sem isso o middleware o rejeitaria na primeira requisição.
+    const accessToken = await authService.generateAccessToken(
+      adminUser.id,
+      ['system:admin'],
+      orgId,
+      false,
+      calcularFingerprintDaRequisicao(request)
+    )
 
     return reply.send({
       message: `Impersonating admin of "${org.name}"`,

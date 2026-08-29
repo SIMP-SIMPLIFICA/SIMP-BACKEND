@@ -6,6 +6,7 @@ import { config } from '@/config/config.js'
 import { db, prisma } from '@/utils/database.js'
 import { authLogger, logSecurity } from '@/utils/logger.js'
 import { emailService } from '@/services/email.service.js'
+import { calcularFingerprint } from '@/services/fingerprint.service.js'
 
 export class AuthService {
   /** Gera uma senha temporária forte para contas criadas por um admin (nunca retornada na resposta da API — apenas por e-mail). */
@@ -51,7 +52,9 @@ export class AuthService {
     userId: string,
     permissions: string[],
     organizationId: string | null,
-    isSuperAdmin: boolean
+    isSuperAdmin: boolean,
+    /** Fingerprint da sessão — ver src/services/fingerprint.service.ts */
+    fingerprint?: string
   ): Promise<string> {
     const secret = new TextEncoder().encode(config.jwt.accessSecret)
     const jti = nanoid()
@@ -61,6 +64,9 @@ export class AuthService {
       permissions,
       organizationId,
       isSuperAdmin,
+      // Vincula o token ao dispositivo/faixa de rede de origem. O middleware
+      // recalcula e compara a cada requisição (Task 2.2).
+      fp: fingerprint,
       type: 'access'
     })
       .setProtectedHeader({ alg: 'HS256' })
@@ -100,7 +106,7 @@ export class AuthService {
     }
   }
 
-  async generateTokenPair(userId: string, rememberMe = false) {
+  async generateTokenPair(userId: string, rememberMe = false, fingerprint?: string) {
     const [permissions, user] = await Promise.all([
       db.getUserPermissions(userId),
       prisma.user.findUnique({
@@ -113,7 +119,8 @@ export class AuthService {
       userId,
       permissions,
       user?.organizationId ?? null,
-      user?.isSuperAdmin ?? false
+      user?.isSuperAdmin ?? false,
+      fingerprint
     )
 
     const refreshDays = rememberMe ? 30 : 7
@@ -294,7 +301,7 @@ export class AuthService {
         data: { lastLoginAt: new Date() }
       })
 
-      const tokens = await this.generateTokenPair(user.id, data.rememberMe === true)
+      const tokens = await this.generateTokenPair(user.id, data.rememberMe === true, calcularFingerprint(ipAddress, userAgent))
 
       await db.createAuditLog({
         userId: user.id,
@@ -328,7 +335,7 @@ export class AuthService {
     }
   }
 
-  async refreshTokens(refreshToken: string, ipAddress: string) {
+  async refreshTokens(refreshToken: string, ipAddress: string, fingerprint?: string) {
     try {
       await this.verifyRefreshToken(refreshToken)
 
@@ -341,7 +348,9 @@ export class AuthService {
         throw new Error('Account is deactivated')
       }
 
-      const newTokens = await this.generateTokenPair(session.userId)
+      // Fingerprint recalculado a partir da requisição ATUAL: o token novo passa
+      // a valer para a rede/dispositivo de agora, não para os do login original.
+      const newTokens = await this.generateTokenPair(session.userId, false, fingerprint)
 
       await prisma.userSession.update({
         where: { id: session.id },

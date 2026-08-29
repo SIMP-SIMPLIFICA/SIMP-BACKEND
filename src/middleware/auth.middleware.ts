@@ -1,5 +1,6 @@
 import { FastifyReply, FastifyRequest } from 'fastify'
 import { prisma } from '@/lib/prisma.js'
+import { calcularFingerprintDaRequisicao } from '@/services/fingerprint.service.js'
 
 // ---------------------------------------------------------------------------
 // Kill switch — suspensão de organização
@@ -86,6 +87,29 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
   //
   // A ORDEM ABAIXO É CRÍTICA e não pode ser reorganizada:
   const authUser = request.user as { organizationId?: string | null; isSuperAdmin?: boolean }
+
+  // --- Fingerprint de sessão (Task 2.2) ---
+  // Vem ANTES do retorno antecipado do Super Admin de propósito: um token de
+  // super admin roubado é o caso mais grave de todos, e a verificação de posse
+  // do dispositivo tem de valer para ele também.
+  const fingerprintDoToken = (request.user as { fp?: string }).fp
+  const fingerprintAtual = calcularFingerprintDaRequisicao(request)
+
+  if (fingerprintDoToken !== fingerprintAtual) {
+    // Tokens antigos (emitidos antes desta funcionalidade) não têm o claim `fp`
+    // e caem aqui. Isso é intencional e não causa logout: /auth/refresh-token
+    // não passa por este middleware, então o cliente renova e recebe um token
+    // já com fingerprint, de forma transparente.
+    request.log.warn(
+      { usuarioId: (request.user as { id?: string }).id, ip: request.ip },
+      'Sessão invalidada: fingerprint do token não confere com o da requisição'
+    )
+
+    return reply.code(401).send({
+      error: 'SESSAO_INVALIDADA',
+      message: 'Sessão invalidada por mudança brusca de dispositivo. Faça login novamente.'
+    })
+  }
 
   // 1º) Super Admin nativo retorna ANTES de qualquer consulta de organização.
   //     Se essa checagem viesse depois, suspender todas as organizações

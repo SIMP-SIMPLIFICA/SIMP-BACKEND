@@ -1,6 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { ZodError } from 'zod'
 import { authService } from '@/services/auth.service.js'
+import { calcularFingerprintDaRequisicao } from '@/services/fingerprint.service.js'
 import { db } from '@/utils/database.js'
 import { authLogger } from '@/utils/logger.js'
 import {
@@ -71,7 +72,11 @@ export class AuthController {
     try {
       const refreshToken = request.cookies.refreshToken || refreshTokenSchema.parse(request.body).refreshToken
       if (!refreshToken) return reply.code(400).send({ error: 'Missing Token', message: 'Refresh token is required' })
-      const tokens = await authService.refreshTokens(refreshToken, request.ip)
+      const tokens = await authService.refreshTokens(
+        refreshToken,
+        request.ip,
+        calcularFingerprintDaRequisicao(request)
+      )
       reply.setCookie('refreshToken', tokens.refreshToken, {
         httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict', maxAge: 7 * 24 * 60 * 60 * 1000
       })

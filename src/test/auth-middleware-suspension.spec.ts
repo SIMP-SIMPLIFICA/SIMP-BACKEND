@@ -18,14 +18,26 @@ vi.mock('@/lib/prisma.js', () => ({
 }))
 
 const { authenticate, invalidateOrgStatusCache } = await import('../middleware/auth.middleware.js')
+const { calculateFingerprint } = await import('../services/fingerprint.service.js')
 
-/** Request falso: o jwtVerify apenas injeta o payload já normalizado. */
-function makeRequest(user: Record<string, unknown>) {
+const TEST_IP = '203.0.113.10'
+const TEST_UA = 'Mozilla/5.0 (Teste)'
+
+/**
+ * Request falso. O payload recebe o claim `fp` correspondente ao IP/User-Agent
+ * da própria requisição — assim a checagem de fingerprint (Task 2.2) passa e os
+ * testes exercitam de fato o kill switch, que é o objeto desta suíte.
+ */
+function makeRequest(user: Record<string, unknown>, options?: { fp?: string; ip?: string }) {
+  const ip = options?.ip ?? TEST_IP
+  const fp = options?.fp ?? calculateFingerprint(ip, TEST_UA)
+
   return {
     method: 'GET',
     query: {},
-    headers: {},
-    user,
+    headers: { 'user-agent': TEST_UA },
+    ip,
+    user: { ...user, fp },
     log: { warn: vi.fn() },
     jwtVerify: vi.fn().mockResolvedValue(user),
   } as never
@@ -103,7 +115,7 @@ describe('Kill switch — organização suspensa em authenticate()', () => {
 
   test('requisições OPTIONS (preflight CORS) não são bloqueadas', async () => {
     const reply = makeReply()
-    const request = { ...makeRequest({}), method: 'OPTIONS' } as never
+    const request = { ...(makeRequest({}) as object), method: 'OPTIONS' } as never
 
     await authenticate(request, reply as never)
 
@@ -123,6 +135,25 @@ describe('Kill switch — organização suspensa em authenticate()', () => {
     const liberado = makeReply()
     await authenticate(makeRequest({ id: 'u1', organizationId: ORG_ID, isSuperAdmin: false }), liberado as never)
     expect(liberado.state.statusCode).toBeUndefined()
+  })
+
+  test('token usado de OUTRA faixa de rede é recusado antes do kill switch', async () => {
+    // Fingerprint gerado para uma rede e apresentado a partir de outra: é o
+    // cenário de token roubado. Deve cair em 401 antes mesmo de consultar a
+    // organização — inclusive para super admin.
+    findUniqueMock.mockResolvedValue({ isActive: true })
+    const reply = makeReply()
+
+    const request = makeRequest(
+      { id: 'u1', organizationId: ORG_ID, isSuperAdmin: false },
+      { fp: calculateFingerprint('189.40.12.7', TEST_UA) }
+    )
+
+    await authenticate(request, reply as never)
+
+    expect(reply.state.statusCode).toBe(401)
+    expect(reply.state.payload).toMatchObject({ error: 'SESSION_INVALIDATED' })
+    expect(findUniqueMock).not.toHaveBeenCalled()
   })
 
   test('o status é cacheado — consultas repetidas não vão ao banco toda vez', async () => {

@@ -72,6 +72,7 @@ const configSchema = z.object({
    * IP público. Uma máquina infectada na rede não pode tirar o órgão inteiro do ar.
    */
   HONEYPOT_ALLOWLIST: z.string().default(''),
+
   HONEYPOT_ENABLED: z
     .enum(['true', 'false'])
     .default('true')
@@ -127,6 +128,24 @@ const configSchema = z.object({
   // Observability (optional — features activate only when set)
   SENTRY_DSN: z.string().url().optional().or(z.literal('')).transform(v => v || undefined),
   BETTERSTACK_SOURCE_TOKEN: z.string().optional(),
+
+  // ─── Auditoria: driver do ledger imutável ───────────────────────────────────
+  // 'local' grava no Postgres; 'qldb' grava no Amazon QLDB. As chaves da AWS são
+  // opcionais de propósito: com LEDGER_DRIVER=local o boot não pode depender
+  // delas (Constituição, Princípio I — zero credenciais de nuvem em dev).
+  LEDGER_DRIVER: z.enum(['local', 'qldb']).default('local'),
+  AWS_QLDB_LEDGER_NAME: z.string().default('simp-audit'),
+  AWS_QLDB_TABLE_NAME: z.string().default('AuditRecord'),
+  AWS_REGION: z.string().default('sa-east-1'),
+  AWS_ACCESS_KEY_ID: z.string().optional(),
+  AWS_SECRET_ACCESS_KEY: z.string().optional(),
+
+  // ─── Alertas de anomalia comportamental (Task 2.3) ──────────────────────────
+  // Vazio desliga os alertas. Ver src/services/security-alert.service.ts
+  ALERT_WEBHOOK_URL: z.string().url().optional().or(z.literal('')).transform(v => v || undefined),
+  ALERT_EARLY_MORNING_START_HOUR: z.coerce.number().int().min(0).max(23).default(1),
+  ALERT_EARLY_MORNING_END_HOUR: z.coerce.number().int().min(0).max(23).default(5),
+  ALERT_TRAVEL_WINDOW_MINUTES: z.coerce.number().int().positive().default(60),
 
   // Armazenamento de arquivos: local em disco (pasta `uploads/`), servido em
   // /uploads/ via @fastify/static. Zero credenciais de nuvem — ver
@@ -205,6 +224,26 @@ export const config = {
       .split(',')
       .map(ip => ip.trim())
       .filter(Boolean),
+  },
+
+  // Auditoria (ledger imutável) — ver src/services/audit-ledger.service.ts
+  audit: {
+    driver: env.LEDGER_DRIVER,
+    qldb: {
+      ledgerName: env.AWS_QLDB_LEDGER_NAME,
+      tableName: env.AWS_QLDB_TABLE_NAME,
+      region: env.AWS_REGION,
+      accessKeyId: env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: env.AWS_SECRET_ACCESS_KEY
+    }
+  },
+
+  // Alertas de anomalia comportamental — ver src/services/security-alert.service.ts
+  alerts: {
+    webhookUrl: env.ALERT_WEBHOOK_URL,
+    earlyMorningStartHour: env.ALERT_EARLY_MORNING_START_HOUR,
+    earlyMorningEndHour: env.ALERT_EARLY_MORNING_END_HOUR,
+    travelWindowMinutes: env.ALERT_TRAVEL_WINDOW_MINUTES
   },
 
   turnstile: {

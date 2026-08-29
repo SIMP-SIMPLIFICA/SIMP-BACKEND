@@ -2,7 +2,7 @@ import { config } from '@/config/config.js'
 import { logger } from '@/utils/logger.js'
 import { redis } from '@/utils/redis.js'
 import { safeFetch } from '@/utils/url-security.js'
-import { auditoriaService } from '@/services/auditoria.service.js'
+import { auditLedgerService } from '@/services/audit-ledger.service.js'
 import type { Prisma } from '@prisma/client'
 
 /**
@@ -20,33 +20,33 @@ import type { Prisma } from '@prisma/client'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
-export type TipoAnomalia = 'LOGIN_MADRUGADA' | 'DESLOCAMENTO_IMPOSSIVEL'
+export type AnomalyType = 'EARLY_MORNING_LOGIN' | 'IMPOSSIBLE_TRAVEL'
 
-export interface ContextoLogin {
-  usuarioId: string
+export interface LoginContext {
+  userId: string
   email: string
   ip: string
-  agenteUsuario?: string | null
-  organizacaoId?: string | null
+  userAgent?: string | null
+  organizationId?: string | null
   /** Injetável para testes; default é o instante atual. */
-  quando?: Date
+  timestamp?: Date
 }
 
-export interface Anomalia {
-  tipo: TipoAnomalia
-  descricao: string
-  detalhes: Record<string, unknown>
+export interface Anomaly {
+  type: AnomalyType
+  description: string
+  details: Record<string, unknown>
 }
 
 /** Último acesso registrado por usuário, guardado no Redis. */
-interface UltimoAcesso {
+interface LastAccess {
   ip: string
-  quandoISO: string
+  timestampISO: string
 }
 
-const PREFIXO_ULTIMO_ACESSO = 'seguranca:ultimo-acesso:'
+const LAST_ACCESS_PREFIX = 'security:last-access:'
 /** 30 dias: tempo suficiente para comparar logins esparsos sem inchar o Redis. */
-const TTL_ULTIMO_ACESSO_SEG = 30 * 24 * 60 * 60
+const LAST_ACCESS_TTL_SECONDS = 30 * 24 * 60 * 60
 
 // ─── Regras de detecção ───────────────────────────────────────────────────────
 
@@ -57,22 +57,22 @@ const TTL_ULTIMO_ACESSO_SEG = 30 * 24 * 60 * 60
  * conceito do fuso de quem opera o sistema, não do UTC. Um servidor rodando em
  * UTC classificaria 22h de Brasília como 01h e alertaria em pleno expediente.
  */
-export function detectarLoginMadrugada(quando: Date): Anomalia | null {
-  const hora = quando.getHours()
-  const inicio = config.alertas.horaInicioMadrugada
-  const fim = config.alertas.horaFimMadrugada
+export function detectEarlyMorningLogin(timestamp: Date): Anomaly | null {
+  const hour = timestamp.getHours()
+  const start = config.alerts.earlyMorningStartHour
+  const end = config.alerts.earlyMorningEndHour
 
   // Suporta janelas que cruzam a meia-noite (ex.: 23h–05h).
-  const dentroDaJanela = inicio <= fim
-    ? hora >= inicio && hora <= fim
-    : hora >= inicio || hora <= fim
+  const isWithinWindow = start <= end
+    ? hour >= start && hour <= end
+    : hour >= start || hour <= end
 
-  if (!dentroDaJanela) return null
+  if (!isWithinWindow) return null
 
   return {
-    tipo: 'LOGIN_MADRUGADA',
-    descricao: `Login realizado as ${String(hora).padStart(2, '0')}h, dentro da janela de madrugada (${inicio}h-${fim}h).`,
-    detalhes: { hora, janelaInicio: inicio, janelaFim: fim },
+    type: 'EARLY_MORNING_LOGIN',
+    description: `Login realizado as ${String(hour).padStart(2, '0')}h, dentro da janela de madrugada (${start}h-${end}h).`,
+    details: { hour, windowStart: start, windowEnd: end },
   }
 }
 
@@ -86,26 +86,26 @@ export function detectarLoginMadrugada(quando: Date): Anomalia | null {
  * o resultado é ALERTA e nunca bloqueio. Com geolocalização disponível, esta
  * função é o único ponto a evoluir.
  */
-export function detectarDeslocamentoImpossivel(
-  ipAtual: string,
-  anterior: UltimoAcesso | null,
-  agora: Date,
-): Anomalia | null {
-  if (!anterior || anterior.ip === ipAtual) return null
+export function detectImpossibleTravel(
+  currentIp: string,
+  previous: LastAccess | null,
+  now: Date,
+): Anomaly | null {
+  if (!previous || previous.ip === currentIp) return null
 
-  const minutosDesdeUltimo = (agora.getTime() - new Date(anterior.quandoISO).getTime()) / 60000
-  if (minutosDesdeUltimo > config.alertas.janelaViagemMinutos) return null
+  const minutesSinceLast = (now.getTime() - new Date(previous.timestampISO).getTime()) / 60000
+  if (minutesSinceLast > config.alerts.travelWindowMinutes) return null
 
   return {
-    tipo: 'DESLOCAMENTO_IMPOSSIVEL',
-    descricao:
-      `Login de um IP diferente ${Math.round(minutosDesdeUltimo)} minuto(s) apos o acesso anterior - ` +
+    type: 'IMPOSSIBLE_TRAVEL',
+    description:
+      `Login de um IP diferente ${Math.round(minutesSinceLast)} minuto(s) apos o acesso anterior - ` +
       'intervalo curto demais para um deslocamento fisico real.',
-    detalhes: {
-      ipAnterior: anterior.ip,
-      ipAtual,
-      minutosDesdeUltimoAcesso: Math.round(minutosDesdeUltimo),
-      janelaConfiguradaMinutos: config.alertas.janelaViagemMinutos,
+    details: {
+      previousIp: previous.ip,
+      currentIp,
+      minutesSinceLastAccess: Math.round(minutesSinceLast),
+      configuredWindowMinutes: config.alerts.travelWindowMinutes,
     },
   }
 }
@@ -121,20 +121,20 @@ export function detectarDeslocamentoImpossivel(
  * apontando para a rede interna transformaria o alerta num scanner da rede da
  * prefeitura — e a resposta de cada tentativa revelaria o que existe lá dentro.
  */
-async function enviarWebhook(anomalias: Anomalia[], contexto: ContextoLogin): Promise<void> {
-  const url = config.alertas.webhookUrl
+async function sendWebhook(anomalies: Anomaly[], context: LoginContext): Promise<void> {
+  const url = config.alerts.webhookUrl
   if (!url) return // alertas desligados
 
-  const corpo = {
-    evento: 'ACESSO_SUSPEITO',
-    ocorridoEm: (contexto.quando ?? new Date()).toISOString(),
-    usuario: { id: contexto.usuarioId, email: contexto.email },
-    organizacaoId: contexto.organizacaoId ?? null,
-    origem: { ip: contexto.ip, agenteUsuario: contexto.agenteUsuario ?? null },
-    anomalias: anomalias.map(a => ({
-      tipo: a.tipo,
-      descricao: a.descricao,
-      detalhes: a.detalhes,
+  const body = {
+    event: 'SUSPICIOUS_ACCESS',
+    occurredAt: (context.timestamp ?? new Date()).toISOString(),
+    user: { id: context.userId, email: context.email },
+    organizationId: context.organizationId ?? null,
+    origin: { ip: context.ip, userAgent: context.userAgent ?? null },
+    anomalies: anomalies.map(a => ({
+      type: a.type,
+      description: a.description,
+      details: a.details,
     })),
   }
 
@@ -146,7 +146,7 @@ async function enviarWebhook(anomalias: Anomalia[], contexto: ContextoLogin): Pr
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(corpo),
+      body: JSON.stringify(body),
     },
     { timeoutMs: 3000, maxRedirects: 0 },
   )
@@ -154,83 +154,83 @@ async function enviarWebhook(anomalias: Anomalia[], contexto: ContextoLogin): Pr
 
 // ─── Serviço ──────────────────────────────────────────────────────────────────
 
-export const alertaSegurancaService = {
+export const securityAlertService = {
   /**
    * Avalia um login e dispara alerta se houver anomalia.
    *
    * NÃO deve ser aguardado pelo fluxo de login (fire-and-forget): nunca lança e
    * nunca bloqueia. Qualquer falha interna vira log em pt-BR.
    */
-  async avaliarLogin(contexto: ContextoLogin): Promise<void> {
+  async evaluateLogin(context: LoginContext): Promise<void> {
     try {
-      const agora = contexto.quando ?? new Date()
-      const chave = `${PREFIXO_ULTIMO_ACESSO}${contexto.usuarioId}`
+      const now = context.timestamp ?? new Date()
+      const key = `${LAST_ACCESS_PREFIX}${context.userId}`
 
       // Falha do Redis não pode impedir a regra de horário, que não depende dele.
-      let anterior: UltimoAcesso | null = null
+      let previous: LastAccess | null = null
       try {
-        anterior = await redis.getJSON<UltimoAcesso>(chave)
-      } catch (erro) {
-        logger.warn({ erro }, 'Nao foi possivel ler o ultimo acesso no Redis; seguindo sem a regra de deslocamento')
+        previous = await redis.getJSON<LastAccess>(key)
+      } catch (error) {
+        logger.warn({ error }, 'Nao foi possivel ler o ultimo acesso no Redis; seguindo sem a regra de deslocamento')
       }
 
-      const anomalias = [
-        detectarLoginMadrugada(agora),
-        detectarDeslocamentoImpossivel(contexto.ip, anterior, agora),
-      ].filter((a): a is Anomalia => a !== null)
+      const anomalies = [
+        detectEarlyMorningLogin(now),
+        detectImpossibleTravel(context.ip, previous, now),
+      ].filter((a): a is Anomaly => a !== null)
 
       // Registra o acesso atual mesmo sem anomalia — é a base de comparação do
       // próximo login.
       try {
         await redis.setJSON(
-          chave,
-          { ip: contexto.ip, quandoISO: agora.toISOString() } satisfies UltimoAcesso,
-          TTL_ULTIMO_ACESSO_SEG,
+          key,
+          { ip: context.ip, timestampISO: now.toISOString() } satisfies LastAccess,
+          LAST_ACCESS_TTL_SECONDS,
         )
-      } catch (erro) {
-        logger.warn({ erro }, 'Nao foi possivel registrar o ultimo acesso no Redis')
+      } catch (error) {
+        logger.warn({ error }, 'Nao foi possivel registrar o ultimo acesso no Redis')
       }
 
-      if (anomalias.length === 0) return
+      if (anomalies.length === 0) return
 
       logger.warn(
         {
-          usuarioId: contexto.usuarioId,
-          email: contexto.email,
-          ip: contexto.ip,
-          anomalias: anomalias.map(a => a.tipo),
+          userId: context.userId,
+          email: context.email,
+          ip: context.ip,
+          anomalies: anomalies.map(a => a.type),
         },
         'Acesso suspeito detectado',
       )
 
       // A trilha de auditoria guarda o alerta mesmo que o webhook falhe — o
       // registro imutável é a fonte de verdade, o webhook é só a notificação.
-      await auditoriaService.registrar({
-        usuarioId: contexto.usuarioId,
-        acao: 'ACESSO_SUSPEITO_DETECTADO',
-        recurso: 'SEGURANCA',
-        recursoId: contexto.usuarioId,
-        ip: contexto.ip,
-        organizacaoId: contexto.organizacaoId ?? null,
-        agenteUsuario: contexto.agenteUsuario ?? null,
+      await auditLedgerService.record({
+        userId: context.userId,
+        action: 'SUSPICIOUS_ACCESS_DETECTED',
+        resource: 'SECURITY',
+        resourceId: context.userId,
+        ip: context.ip,
+        organizationId: context.organizationId ?? null,
+        userAgent: context.userAgent ?? null,
         // JSON.parse(JSON.stringify(...)) normaliza para o InputJsonValue do
         // Prisma, que não aceita tipos estruturais diretamente.
-        detalhes: JSON.parse(JSON.stringify({ anomalias })) as Prisma.InputJsonValue,
+        details: JSON.parse(JSON.stringify({ anomalies })) as Prisma.InputJsonValue,
       })
 
       try {
-        await enviarWebhook(anomalias, contexto)
-      } catch (erro) {
+        await sendWebhook(anomalies, context)
+      } catch (error) {
         // Webhook fora do ar, lento ou apontando para rede interna (recusado
         // pelo safeFetch): nada disso pode afetar o login já concluído.
         logger.error(
-          { erro, usuarioId: contexto.usuarioId },
+          { error, userId: context.userId },
           'Falha ao enviar alerta de seguranca para o webhook',
         )
       }
-    } catch (erro) {
+    } catch (error) {
       // Rede de segurança final: nenhuma exceção escapa deste serviço.
-      logger.error({ erro }, 'Falha inesperada ao avaliar anomalias de login')
+      logger.error({ error }, 'Falha inesperada ao avaliar anomalias de login')
     }
   },
 }

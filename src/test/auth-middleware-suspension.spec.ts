@@ -18,24 +18,24 @@ vi.mock('@/lib/prisma.js', () => ({
 }))
 
 const { authenticate, invalidateOrgStatusCache } = await import('../middleware/auth.middleware.js')
-const { calcularFingerprint } = await import('../services/fingerprint.service.js')
+const { calculateFingerprint } = await import('../services/fingerprint.service.js')
 
-const IP_TESTE = '203.0.113.10'
-const UA_TESTE = 'Mozilla/5.0 (Teste)'
+const TEST_IP = '203.0.113.10'
+const TEST_UA = 'Mozilla/5.0 (Teste)'
 
 /**
  * Request falso. O payload recebe o claim `fp` correspondente ao IP/User-Agent
  * da própria requisição — assim a checagem de fingerprint (Task 2.2) passa e os
  * testes exercitam de fato o kill switch, que é o objeto desta suíte.
  */
-function makeRequest(user: Record<string, unknown>, opcoes?: { fp?: string; ip?: string }) {
-  const ip = opcoes?.ip ?? IP_TESTE
-  const fp = opcoes?.fp ?? calcularFingerprint(ip, UA_TESTE)
+function makeRequest(user: Record<string, unknown>, options?: { fp?: string; ip?: string }) {
+  const ip = options?.ip ?? TEST_IP
+  const fp = options?.fp ?? calculateFingerprint(ip, TEST_UA)
 
   return {
     method: 'GET',
     query: {},
-    headers: { 'user-agent': UA_TESTE },
+    headers: { 'user-agent': TEST_UA },
     ip,
     user: { ...user, fp },
     log: { warn: vi.fn() },
@@ -144,15 +144,15 @@ describe('Kill switch — organização suspensa em authenticate()', () => {
     findUniqueMock.mockResolvedValue({ isActive: true })
     const reply = makeReply()
 
-    const requisicao = makeRequest(
+    const request = makeRequest(
       { id: 'u1', organizationId: ORG_ID, isSuperAdmin: false },
-      { fp: calcularFingerprint('189.40.12.7', UA_TESTE) }
+      { fp: calculateFingerprint('189.40.12.7', TEST_UA) }
     )
 
-    await authenticate(requisicao, reply as never)
+    await authenticate(request, reply as never)
 
     expect(reply.state.statusCode).toBe(401)
-    expect(reply.state.payload).toMatchObject({ error: 'SESSAO_INVALIDADA' })
+    expect(reply.state.payload).toMatchObject({ error: 'SESSION_INVALIDATED' })
     expect(findUniqueMock).not.toHaveBeenCalled()
   })
 

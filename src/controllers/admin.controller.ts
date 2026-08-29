@@ -7,7 +7,7 @@ import { emailService } from '../services/email.service.js'
 import { authLogger } from '../utils/logger.js'
 import { ALL_MODULES, DEFAULT_MODULES, ModuleKey } from '../constants/modules.js'
 import { invalidateModuleCache, invalidateOrgStatusCache } from '../middleware/auth.middleware.js'
-import { calcularFingerprintDaRequisicao } from '../services/fingerprint.service.js'
+import { calculateRequestFingerprint } from '../services/fingerprint.service.js'
 import { ensureAdminRole } from '../services/rbac.service.js'
 
 // ---------------------------------------------------------------------------
@@ -343,7 +343,7 @@ export class AdminController {
       ['system:admin'],
       orgId,
       false,
-      calcularFingerprintDaRequisicao(request)
+      calculateRequestFingerprint(request)
     )
 
     return reply.send({

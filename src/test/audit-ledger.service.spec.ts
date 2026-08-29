@@ -25,7 +25,7 @@ vi.mock('@/utils/logger.js', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
 }))
 
-const { auditoriaService } = await import('../services/auditoria.service.js')
+const { auditLedgerService } = await import('../services/audit-ledger.service.js')
 
 describe('Serviço de Auditoria — adapter de ledger', () => {
   beforeEach(() => {
@@ -35,35 +35,35 @@ describe('Serviço de Auditoria — adapter de ledger', () => {
   })
 
   test('usa o driver local por padrão (ambiente offline)', () => {
-    expect(auditoriaService.driver).toBe('local')
+    expect(auditLedgerService.driver).toBe('local')
   })
 
   test('a interface pública não expõe alteração nem remoção', () => {
     // Primeira camada da imutabilidade: sem método, não há como um controller
     // apagar histórico sem editar o serviço. A segunda camada é o trigger no
-    // banco (prisma/sql/002-auditoria-imutavel.sql).
-    const metodos = Object.keys(auditoriaService)
-    expect(metodos).not.toContain('atualizar')
-    expect(metodos).not.toContain('remover')
-    expect(metodos).not.toContain('excluir')
+    // banco (prisma/sql/002-immutable-audit.sql).
+    const methods = Object.keys(auditLedgerService)
+    expect(methods).not.toContain('update')
+    expect(methods).not.toContain('remove')
+    expect(methods).not.toContain('delete')
   })
 
-  test('registra a ação mapeando os campos pt-BR para a tabela', async () => {
-    await auditoriaService.registrar({
-      usuarioId: 'u-1',
-      acao: 'SUSPENDEU_ORGANIZACAO',
-      recurso: 'ORGANIZATION',
-      recursoId: 'org-1',
+  test('registra a ação mapeando os campos do contrato para a tabela', async () => {
+    await auditLedgerService.record({
+      userId: 'u-1',
+      action: 'ORGANIZATION_SUSPENDED',
+      resource: 'ORGANIZATION',
+      resourceId: 'org-1',
       ip: '203.0.113.10',
-      organizacaoId: 'org-1',
-      detalhes: { motivo: 'inadimplencia' },
+      organizationId: 'org-1',
+      details: { reason: 'inadimplencia' },
     })
 
     expect(createMock).toHaveBeenCalledTimes(1)
     const { data } = createMock.mock.calls[0][0]
     expect(data).toMatchObject({
       userId: 'u-1',
-      action: 'SUSPENDEU_ORGANIZACAO',
+      action: 'ORGANIZATION_SUSPENDED',
       resource: 'ORGANIZATION',
       ipAddress: '203.0.113.10',
       organizationId: 'org-1',
@@ -71,9 +71,9 @@ describe('Serviço de Auditoria — adapter de ledger', () => {
     })
   })
 
-  test('sem IP, registra SISTEMA — a coluna é obrigatória no banco', async () => {
-    await auditoriaService.registrar({ acao: 'JOB_EXECUTADO', recurso: 'SISTEMA' })
-    expect(createMock.mock.calls[0][0].data.ipAddress).toBe('SISTEMA')
+  test('sem IP, registra SYSTEM — a coluna é obrigatória no banco', async () => {
+    await auditLedgerService.record({ action: 'JOB_EXECUTED', resource: 'SYSTEM' })
+    expect(createMock.mock.calls[0][0].data.ipAddress).toBe('SYSTEM')
   })
 
   test('falha ao registrar NÃO propaga para o chamador', async () => {
@@ -82,7 +82,7 @@ describe('Serviço de Auditoria — adapter de ledger', () => {
     createMock.mockRejectedValue(new Error('banco fora do ar'))
 
     await expect(
-      auditoriaService.registrar({ acao: 'QUALQUER', recurso: 'TESTE' })
+      auditLedgerService.record({ action: 'ANY', resource: 'TEST' })
     ).resolves.toBeUndefined()
   })
 
@@ -90,29 +90,29 @@ describe('Serviço de Auditoria — adapter de ledger', () => {
     findManyMock.mockResolvedValue([{ id: 'a' }, { id: 'b' }])
     countMock.mockResolvedValue(105)
 
-    const r = await auditoriaService.consultar({ pagina: 2, limite: 50 })
+    const r = await auditLedgerService.query({ page: 2, limit: 50 })
 
-    expect(r.dados).toHaveLength(2)
-    expect(r.meta).toEqual({ total: 105, pagina: 2, limite: 50, totalPaginas: 3 })
+    expect(r.data).toHaveLength(2)
+    expect(r.meta).toEqual({ total: 105, page: 2, limit: 50, totalPages: 3 })
   })
 
   test('consulta aplica o filtro de organização (isolamento multi-tenant)', async () => {
-    await auditoriaService.consultar({ pagina: 1, limite: 10, organizacaoId: 'org-9' })
+    await auditLedgerService.query({ page: 1, limit: 10, organizationId: 'org-9' })
 
     expect(findManyMock.mock.calls[0][0].where).toMatchObject({ organizationId: 'org-9' })
   })
 
   test('consulta ordena do mais recente para o mais antigo', async () => {
-    await auditoriaService.consultar({ pagina: 1, limite: 10 })
+    await auditLedgerService.query({ page: 1, limit: 10 })
     expect(findManyMock.mock.calls[0][0].orderBy).toEqual({ createdAt: 'desc' })
   })
 
   test('intervalo de datas vira filtro gte/lte', async () => {
-    const inicio = new Date('2026-01-01T00:00:00Z')
-    const fim = new Date('2026-01-31T23:59:59Z')
+    const startDate = new Date('2026-01-01T00:00:00Z')
+    const endDate = new Date('2026-01-31T23:59:59Z')
 
-    await auditoriaService.consultar({ pagina: 1, limite: 10, dataInicio: inicio, dataFim: fim })
+    await auditLedgerService.query({ page: 1, limit: 10, startDate, endDate })
 
-    expect(findManyMock.mock.calls[0][0].where.createdAt).toEqual({ gte: inicio, lte: fim })
+    expect(findManyMock.mock.calls[0][0].where.createdAt).toEqual({ gte: startDate, lte: endDate })
   })
 })

@@ -14,108 +14,112 @@ import type { Prisma } from '@prisma/client'
  * IMUTABILIDADE — a garantia acontece em duas camadas:
  *   1. Nesta interface não existe método de alteração ou remoção. Não há como
  *      um controller apagar histórico sem antes editar este arquivo.
- *   2. No banco, UPDATE e DELETE são revogados na tabela de auditoria
- *      (ver prisma/sql/002-auditoria-imutavel.sql). Sem essa segunda camada,
- *      "imutável" seria apenas uma convenção de código: qualquer acesso direto
- *      ao Postgres reescreveria o histórico.
+ *   2. No banco, UPDATE e DELETE são bloqueados por trigger na tabela de
+ *      auditoria (ver prisma/sql/002-immutable-audit.sql). Sem essa segunda
+ *      camada, "imutável" seria apenas uma convenção de código: qualquer acesso
+ *      direto ao Postgres reescreveria o histórico.
  *
  * NOTA DE ARQUITETURA: persiste na tabela `audit_logs`, que já existe e já é
  * alimentada por 44 pontos do sistema (suspensão de organização, alteração de
  * vigência, upload de atas, etc.). Criar uma tabela paralela racharia a trilha
  * em duas e o Painel do Super Admin mostraria um histórico incompleto — o
  * oposto do objetivo de compliance.
+ *
+ * NOME DO ARQUIVO: `audit-ledger` e não `audit` porque já existe um
+ * `audit.service.ts` legado (hoje sem nenhum chamador) que escreve na mesma
+ * tabela. Usar o mesmo nome sobrescreveria aquele arquivo.
  */
 
 // ─── Contratos ────────────────────────────────────────────────────────────────
 
 /** Dados de uma ação a ser registrada na trilha de auditoria. */
-export interface RegistroAuditoria {
+export interface AuditRecord {
   /** Autor da ação. Nulo para ações do próprio sistema (jobs, seeds). */
-  usuarioId?: string | null
-  /** Verbo da ação, em caixa alta: 'SUSPENDEU_ORGANIZACAO', 'ANEXOU_ATA'. */
-  acao: string
-  /** Endereço IP de origem. 'SISTEMA' quando não há requisição HTTP. */
+  userId?: string | null
+  /** Verbo da ação, em caixa alta: 'ORGANIZATION_SUSPENDED', 'MINUTES_ATTACHED'. */
+  action: string
+  /** Endereço IP de origem. 'SYSTEM' quando não há requisição HTTP. */
   ip?: string
   /** Recurso afetado: 'ORGANIZATION', 'VIRTUAL_PROCESS'… */
-  recurso: string
+  resource: string
   /** Identificador do recurso afetado. */
-  recursoId?: string | null
+  resourceId?: string | null
   /** Organização dona do registro — preserva o isolamento multi-tenant. */
-  organizacaoId?: string | null
+  organizationId?: string | null
   /** Navegador/cliente de origem. */
-  agenteUsuario?: string | null
+  userAgent?: string | null
   /** Contexto livre da ação (valores antigos/novos, motivo, etc.). */
-  detalhes?: Prisma.InputJsonValue
+  details?: Prisma.InputJsonValue
   /** A ação foi concluída com sucesso? Falhas também são auditáveis. */
-  sucesso?: boolean
+  success?: boolean
   /** Mensagem de erro, quando a ação falhou. */
-  mensagemErro?: string | null
+  errorMessage?: string | null
 }
 
-export interface FiltroConsultaAuditoria {
-  pagina: number
-  limite: number
-  usuarioId?: string
-  organizacaoId?: string
-  acao?: string
-  recurso?: string
-  dataInicio?: Date
-  dataFim?: Date
+export interface AuditQueryFilter {
+  page: number
+  limit: number
+  userId?: string
+  organizationId?: string
+  action?: string
+  resource?: string
+  startDate?: Date
+  endDate?: Date
 }
 
 /**
  * Contrato do ledger. Note que existem apenas escrita e leitura:
- * a ausência de `atualizar`/`remover` é intencional e é a primeira
+ * a ausência de `update`/`delete` é intencional e é a primeira
  * camada da garantia de imutabilidade.
  */
-interface AdaptadorLedger {
-  readonly nome: 'local' | 'qldb'
-  registrar(dados: RegistroAuditoria): Promise<void>
-  consultar(filtro: FiltroConsultaAuditoria): Promise<{ registros: unknown[]; total: number }>
+interface LedgerAdapter {
+  readonly name: 'local' | 'qldb'
+  record(data: AuditRecord): Promise<void>
+  query(filter: AuditQueryFilter): Promise<{ records: unknown[]; total: number }>
 }
 
 // ─── Adaptador local (PostgreSQL) ─────────────────────────────────────────────
 
-const adaptadorLocal: AdaptadorLedger = {
-  nome: 'local',
+const localAdapter: LedgerAdapter = {
+  name: 'local',
 
-  async registrar(dados) {
+  async record(data) {
     await prisma.auditLog.create({
       data: {
-        userId: dados.usuarioId ?? null,
-        action: dados.acao,
-        resource: dados.recurso,
-        resourceId: dados.recursoId ?? null,
-        ipAddress: dados.ip ?? 'SISTEMA',
-        userAgent: dados.agenteUsuario ?? null,
-        organizationId: dados.organizacaoId ?? null,
-        metadata: dados.detalhes,
-        success: dados.sucesso ?? true,
-        errorMessage: dados.mensagemErro ?? null,
+        userId: data.userId ?? null,
+        action: data.action,
+        resource: data.resource,
+        resourceId: data.resourceId ?? null,
+        ipAddress: data.ip ?? 'SYSTEM',
+        userAgent: data.userAgent ?? null,
+        organizationId: data.organizationId ?? null,
+        metadata: data.details,
+        success: data.success ?? true,
+        errorMessage: data.errorMessage ?? null,
       },
     })
   },
 
-  async consultar(filtro) {
+  async query(filter) {
     const where: Prisma.AuditLogWhereInput = {}
 
-    if (filtro.usuarioId) where.userId = filtro.usuarioId
-    if (filtro.organizacaoId) where.organizationId = filtro.organizacaoId
-    if (filtro.acao) where.action = { contains: filtro.acao, mode: 'insensitive' }
-    if (filtro.recurso) where.resource = filtro.recurso
+    if (filter.userId) where.userId = filter.userId
+    if (filter.organizationId) where.organizationId = filter.organizationId
+    if (filter.action) where.action = { contains: filter.action, mode: 'insensitive' }
+    if (filter.resource) where.resource = filter.resource
 
-    if (filtro.dataInicio || filtro.dataFim) {
+    if (filter.startDate || filter.endDate) {
       where.createdAt = {}
-      if (filtro.dataInicio) where.createdAt.gte = filtro.dataInicio
-      if (filtro.dataFim) where.createdAt.lte = filtro.dataFim
+      if (filter.startDate) where.createdAt.gte = filter.startDate
+      if (filter.endDate) where.createdAt.lte = filter.endDate
     }
 
-    const [registros, total] = await Promise.all([
+    const [records, total] = await Promise.all([
       prisma.auditLog.findMany({
         where,
         orderBy: { createdAt: 'desc' },
-        skip: (filtro.pagina - 1) * filtro.limite,
-        take: filtro.limite,
+        skip: (filter.page - 1) * filter.limit,
+        take: filter.limit,
         include: {
           user: { select: { id: true, firstName: true, lastName: true, email: true } },
           organization: { select: { id: true, name: true } },
@@ -124,7 +128,7 @@ const adaptadorLocal: AdaptadorLedger = {
       prisma.auditLog.count({ where }),
     ])
 
-    return { registros, total }
+    return { records, total }
   },
 }
 
@@ -143,17 +147,17 @@ const adaptadorLocal: AdaptadorLedger = {
  * em vez de descartar registros em silêncio: perder trilha de auditoria sem
  * ninguém perceber é pior que uma falha visível.
  */
-const adaptadorQldb: AdaptadorLedger = {
-  nome: 'qldb',
+const qldbAdapter: LedgerAdapter = {
+  name: 'qldb',
 
-  async registrar(dados) {
+  async record(data) {
     throw new Error(
-      `Adaptador QLDB ainda não implementado (ledger "${config.auditoria.qldb.nomeLedger}"). ` +
-      `Ação "${dados.acao}" NÃO foi registrada. Use LEDGER_DRIVER=local até a migração para a AWS.`
+      `Adaptador QLDB ainda não implementado (ledger "${config.audit.qldb.ledgerName}"). ` +
+      `Ação "${data.action}" NÃO foi registrada. Use LEDGER_DRIVER=local até a migração para a AWS.`
     )
   },
 
-  async consultar() {
+  async query() {
     throw new Error(
       'Consulta ao QLDB ainda não implementada. Use LEDGER_DRIVER=local até a migração para a AWS.'
     )
@@ -162,17 +166,17 @@ const adaptadorQldb: AdaptadorLedger = {
 
 // ─── Seleção do adaptador ─────────────────────────────────────────────────────
 
-const adaptadores: Record<'local' | 'qldb', AdaptadorLedger> = {
-  local: adaptadorLocal,
-  qldb: adaptadorQldb,
+const adapters: Record<'local' | 'qldb', LedgerAdapter> = {
+  local: localAdapter,
+  qldb: qldbAdapter,
 }
 
-const adaptadorAtivo = adaptadores[config.auditoria.driver]
+const activeAdapter = adapters[config.audit.driver]
 
-export const auditoriaService = {
+export const auditLedgerService = {
   /** Driver em uso — exposto para diagnóstico e para os testes. */
   get driver() {
-    return adaptadorAtivo.nome
+    return activeAdapter.name
   },
 
   /**
@@ -182,28 +186,28 @@ export const auditoriaService = {
    * registrar não pode derrubar a operação de negócio que o usuário pediu. A
    * falha é logada em nível de erro para ser capturada pela observabilidade.
    */
-  async registrar(dados: RegistroAuditoria): Promise<void> {
+  async record(data: AuditRecord): Promise<void> {
     try {
-      await adaptadorAtivo.registrar(dados)
-    } catch (erro) {
+      await activeAdapter.record(data)
+    } catch (error) {
       logger.error(
-        { erro, acao: dados.acao, recurso: dados.recurso, driver: adaptadorAtivo.nome },
+        { error, action: data.action, resource: data.resource, driver: activeAdapter.name },
         'Falha ao registrar auditoria'
       )
     }
   },
 
   /** Consulta paginada da trilha — usada pelo Painel do Super Admin. */
-  async consultar(filtro: FiltroConsultaAuditoria) {
-    const { registros, total } = await adaptadorAtivo.consultar(filtro)
+  async query(filter: AuditQueryFilter) {
+    const { records, total } = await activeAdapter.query(filter)
 
     return {
-      dados: registros,
+      data: records,
       meta: {
         total,
-        pagina: filtro.pagina,
-        limite: filtro.limite,
-        totalPaginas: Math.ceil(total / filtro.limite),
+        page: filter.page,
+        limit: filter.limit,
+        totalPages: Math.ceil(total / filter.limit),
       },
     }
   },

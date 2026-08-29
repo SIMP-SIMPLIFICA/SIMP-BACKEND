@@ -22,27 +22,30 @@ import { createHash } from 'node:crypto'
  *   (expiração curta, rotação de refresh token, trilha de auditoria).
  */
 
+/** Valor usado quando IP ou User-Agent não estão disponíveis. */
+const UNKNOWN = 'unknown'
+
 /**
  * Reduz o IP à sua faixa de rede.
  *   IPv4  → 3 primeiros octetos (/24):  201.17.45.98        → "201.17.45"
  *   IPv6  → 4 primeiros grupos (/64):   2001:db8:85a3:1:... → "2001:db8:85a3:1"
  */
-export function extrairFaixaRede(ip: string): string {
-  if (!ip) return 'desconhecida'
+export function extractNetworkRange(ip: string): string {
+  if (!ip) return UNKNOWN
 
   // IPv4 mapeado em IPv6 (formato que o Node entrega atrás de alguns proxies)
-  const semPrefixo = ip.startsWith('::ffff:') ? ip.slice(7) : ip
+  const withoutPrefix = ip.startsWith('::ffff:') ? ip.slice(7) : ip
 
-  if (semPrefixo.includes('.')) {
-    const octetos = semPrefixo.split('.')
-    return octetos.length === 4 ? octetos.slice(0, 3).join('.') : semPrefixo
+  if (withoutPrefix.includes('.')) {
+    const octets = withoutPrefix.split('.')
+    return octets.length === 4 ? octets.slice(0, 3).join('.') : withoutPrefix
   }
 
-  if (semPrefixo.includes(':')) {
-    return semPrefixo.split(':').slice(0, 4).join(':')
+  if (withoutPrefix.includes(':')) {
+    return withoutPrefix.split(':').slice(0, 4).join(':')
   }
 
-  return semPrefixo
+  return withoutPrefix
 }
 
 /**
@@ -52,21 +55,21 @@ export function extrairFaixaRede(ip: string): string {
  * completo só aumentaria o tamanho sem ganho prático — 128 bits já tornam
  * colisão inviável para este uso.
  */
-export function calcularFingerprint(ip: string, userAgent?: string | null): string {
-  const faixa = extrairFaixaRede(ip)
-  const agente = (userAgent ?? 'desconhecido').trim()
+export function calculateFingerprint(ip: string, userAgent?: string | null): string {
+  const range = extractNetworkRange(ip)
+  const agent = (userAgent ?? UNKNOWN).trim()
 
   return createHash('sha256')
-    .update(`${faixa}|${agente}`)
+    .update(`${range}|${agent}`)
     .digest('hex')
     .slice(0, 32)
 }
 
 /** Extrai IP e User-Agent de uma requisição Fastify e devolve o fingerprint. */
-export function calcularFingerprintDaRequisicao(request: {
+export function calculateRequestFingerprint(request: {
   ip: string
   headers: Record<string, unknown>
 }): string {
   const userAgent = request.headers['user-agent']
-  return calcularFingerprint(request.ip, typeof userAgent === 'string' ? userAgent : null)
+  return calculateFingerprint(request.ip, typeof userAgent === 'string' ? userAgent : null)
 }

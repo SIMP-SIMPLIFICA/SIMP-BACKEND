@@ -12,12 +12,19 @@
 --   aplicação deixar de conectar como superusuário (recomendado para produção).
 --
 -- COMO REVERTER (exige acesso administrativo deliberado ao banco, que é o ponto):
---   DROP TRIGGER trg_auditoria_imutavel ON audit_logs;
+--   DROP TRIGGER trg_audit_immutable ON audit_logs;
 --
 -- Aplicação:
---   docker exec -i fastify-postgres psql -U postgres -d fastify_auth < prisma/sql/002-auditoria-imutavel.sql
+--   docker exec -i fastify-postgres psql -U postgres -d fastify_auth < prisma/sql/002-immutable-audit.sql
 
-CREATE OR REPLACE FUNCTION fn_auditoria_imutavel()
+-- Limpeza da nomenclatura anterior (pt-BR). Roda ANTES de criar a nova: sem
+-- isso, um banco que já aplicou a versão antiga ficaria com DOIS triggers
+-- ativos sobre a mesma tabela — a proteção continuaria valendo, mas a mensagem
+-- de erro viria duplicada e a origem ficaria confusa no diagnóstico.
+DROP TRIGGER IF EXISTS trg_auditoria_imutavel ON audit_logs;
+DROP FUNCTION IF EXISTS fn_auditoria_imutavel();
+
+CREATE OR REPLACE FUNCTION fn_audit_immutable()
 RETURNS TRIGGER AS $$
 BEGIN
   RAISE EXCEPTION
@@ -28,12 +35,12 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS trg_auditoria_imutavel ON audit_logs;
+DROP TRIGGER IF EXISTS trg_audit_immutable ON audit_logs;
 
-CREATE TRIGGER trg_auditoria_imutavel
+CREATE TRIGGER trg_audit_immutable
   BEFORE UPDATE OR DELETE ON audit_logs
   FOR EACH ROW
-  EXECUTE FUNCTION fn_auditoria_imutavel();
+  EXECUTE FUNCTION fn_audit_immutable();
 
 -- Defesa em profundidade: sem efeito enquanto a app conectar como superusuário,
 -- mas já deixa a permissão correta para um papel de aplicação restrito.

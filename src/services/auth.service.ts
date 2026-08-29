@@ -6,8 +6,8 @@ import { config } from '@/config/config.js'
 import { db, prisma } from '@/utils/database.js'
 import { authLogger, logSecurity } from '@/utils/logger.js'
 import { emailService } from '@/services/email.service.js'
-import { calcularFingerprint } from '@/services/fingerprint.service.js'
-import { alertaSegurancaService } from '@/services/alerta-seguranca.service.js'
+import { calculateFingerprint } from '@/services/fingerprint.service.js'
+import { securityAlertService } from '@/services/security-alert.service.js'
 
 export class AuthService {
   /** Gera uma senha temporária forte para contas criadas por um admin (nunca retornada na resposta da API — apenas por e-mail). */
@@ -302,7 +302,7 @@ export class AuthService {
         data: { lastLoginAt: new Date() }
       })
 
-      const tokens = await this.generateTokenPair(user.id, data.rememberMe === true, calcularFingerprint(ipAddress, userAgent))
+      const tokens = await this.generateTokenPair(user.id, data.rememberMe === true, calculateFingerprint(ipAddress, userAgent))
 
       await db.createAuditLog({
         userId: user.id,
@@ -327,15 +327,15 @@ export class AuthService {
       // Sem await: a resposta do login não espera Redis nem webhook. O serviço
       // já trata todas as exceções internamente; o .catch aqui é rede de
       // segurança contra promessa rejeitada não tratada.
-      void alertaSegurancaService
-        .avaliarLogin({
-          usuarioId: user.id,
+      void securityAlertService
+        .evaluateLogin({
+          userId: user.id,
           email: user.email,
           ip: ipAddress,
-          agenteUsuario: userAgent ?? null,
-          organizacaoId: user.organizationId ?? null,
+          userAgent: userAgent ?? null,
+          organizationId: user.organizationId ?? null,
         })
-        .catch(erro => authLogger.error(erro, 'Falha ao avaliar anomalias de login'))
+        .catch(error => authLogger.error(error, 'Falha ao avaliar anomalias de login'))
 
       return {
         user: {

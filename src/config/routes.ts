@@ -6,6 +6,7 @@ import { taskRoutes } from '@/routes/task.routes.js'
 import { notificationRoutes } from '@/routes/notification.routes.js'
 import { communicationRoutes } from '@/routes/communication.routes.js'
 import { settingsRoutes } from '@/routes/settings.routes.js'
+import { auditoriaRoutes } from '@/routes/auditoria.routes.js'
 import { financeRoutes } from '@/routes/finance.routes.js'
 import { calendarRoutes } from '@/routes/calendar.routes.js'
 import { notesRoutes } from '@/routes/notes.routes.js'
@@ -144,6 +145,9 @@ export async function registerRoutes(server: AppServer) {
 
       // Módulo de Configurações
       await server.register(settingsRoutes, { prefix: '/settings', logLevel: 'info' })
+
+      // Painel de Auditoria (trilha imutável — somente leitura)
+      await server.register(auditoriaRoutes, { prefix: '/auditoria', logLevel: 'info' })
 
       // Módulo de Utilidades
       await server.register(calendarRoutes, { prefix: '/utilities/calendar', logLevel: 'info' })

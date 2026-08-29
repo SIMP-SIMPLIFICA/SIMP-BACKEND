@@ -72,6 +72,7 @@ const configSchema = z.object({
    * IP público. Uma máquina infectada na rede não pode tirar o órgão inteiro do ar.
    */
   HONEYPOT_ALLOWLIST: z.string().default(''),
+
   HONEYPOT_ENABLED: z
     .enum(['true', 'false'])
     .default('true')
@@ -127,6 +128,17 @@ const configSchema = z.object({
   // Observability (optional — features activate only when set)
   SENTRY_DSN: z.string().url().optional().or(z.literal('')).transform(v => v || undefined),
   BETTERSTACK_SOURCE_TOKEN: z.string().optional(),
+
+  // ─── Auditoria: driver do ledger imutável ───────────────────────────────────
+  // 'local' grava no Postgres; 'qldb' grava no Amazon QLDB. As chaves da AWS são
+  // opcionais de propósito: com LEDGER_DRIVER=local o boot não pode depender
+  // delas (Constituição, Princípio I — zero credenciais de nuvem em dev).
+  LEDGER_DRIVER: z.enum(['local', 'qldb']).default('local'),
+  AWS_QLDB_LEDGER_NAME: z.string().default('simp-auditoria'),
+  AWS_QLDB_TABLE_NAME: z.string().default('RegistroAuditoria'),
+  AWS_REGION: z.string().default('sa-east-1'),
+  AWS_ACCESS_KEY_ID: z.string().optional(),
+  AWS_SECRET_ACCESS_KEY: z.string().optional(),
 
   // Armazenamento de arquivos: local em disco (pasta `uploads/`), servido em
   // /uploads/ via @fastify/static. Zero credenciais de nuvem — ver
@@ -205,6 +217,18 @@ export const config = {
       .split(',')
       .map(ip => ip.trim())
       .filter(Boolean),
+  },
+
+  // Auditoria (ledger imutável) — ver src/services/auditoria.service.ts
+  auditoria: {
+    driver: env.LEDGER_DRIVER,
+    qldb: {
+      nomeLedger: env.AWS_QLDB_LEDGER_NAME,
+      nomeTabela: env.AWS_QLDB_TABLE_NAME,
+      regiao: env.AWS_REGION,
+      accessKeyId: env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: env.AWS_SECRET_ACCESS_KEY
+    }
   },
 
   turnstile: {

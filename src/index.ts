@@ -1,48 +1,30 @@
 import { initSentry } from '@/config/sentry.js'
 initSentry()
 
-import Fastify from 'fastify'
 import { config } from '@/config/config.js'
 import { logger } from '@/utils/logger.js'
 import { gracefulShutdown } from '@/utils/graceful-shutdown.js'
 import { db } from '@/utils/database.js'
 import { AppServer } from '@/types/server'
-import * as crypto from 'node:crypto'
-import { registerRoutes } from './config/routes.js'
-import { registerPlugins } from './config/plugins.js'
+import { buildApp } from './app.js'
 import { startExpireTasksJob } from './jobs/expire-tasks.job.js'
 import { startClearNotificationsJob } from './jobs/clear-notifications.job.js'
 import { startCleanupGovBrStatesJob } from './jobs/cleanup-govbr-states.job.js'
 import { createEmailNotificationWorker } from './lib/email-queue.js'
 import { createDocumentOcrWorker } from './lib/document-queue.js'
-import { libraryRoutes } from './routes/library.routes.js'
-
-// Import da rota de upload
-import { uploadRoutes } from './routes/upload.routes.js'
 import { connectRedis } from './utils/redis.js'
 
-const server: AppServer = Fastify({
-  loggerInstance: logger,
-  pluginTimeout: 40000,
-  // NÃO usar `true` aqui: isso confia na cadeia X-Forwarded-For inteira e deixa
-  // `request.ip` — a chave do rate limit — sob controle do cliente. Ver TRUST_PROXY
-  // em config.ts.
-  trustProxy: config.trustProxy,
-  bodyLimit: config.server.maxBodySize,
-  keepAliveTimeout: 30000,
-  requestIdHeader: 'x-request-id',
-  requestIdLogLabel: 'reqId',
-  genReqId: () => crypto.randomUUID()
-})
+let server: AppServer
 
 async function start() {
   try {
     logger.info('🚀 Starting server...')
 
-    logger.info('📦 Registering plugins...')
-    // O registerPlugins já carrega o multipart e o static (com base no erro que vimos)
-    await registerPlugins(server)
-    logger.info('✅ Plugins registered successfully')
+    // Monta plugins e rotas. A mesma função é usada pelos testes de integração,
+    // então teste e produção servem exatamente a mesma árvore de rotas.
+    logger.info('📦 Building application (plugins + routes)...')
+    server = await buildApp()
+    logger.info('✅ Application built successfully')
 
     logger.info('🗄️ Connecting to database...')
     await db.connect()
@@ -67,16 +49,6 @@ async function start() {
 
     const ocrWorker = createDocumentOcrWorker()
     logger.info('📄 Document OCR worker started')
-
-    logger.info('🛣️ Registering routes...')
-    await registerRoutes(server)
-
-    // Registramos APENAS a rota de upload aqui
-    // (O prefixo /api/v1 garante que fique padronizado com o resto)
-    await server.register(uploadRoutes, { prefix: '/api/v1' })
-    await server.register(libraryRoutes, { prefix: '/api/v1/library' })
-
-    logger.info('✅ Routes registered successfully')
 
     await server.listen({
       port: config.server.port,

@@ -16,6 +16,7 @@
     "db:seed:finance": "tsx src/scripts/seed-finance.ts",
     "db:reset": "prisma migrate reset",
     "test": "vitest",
+    "test:e2e": "vitest run -c vitest.config.e2e.ts",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage",
     "lint": "eslint src",

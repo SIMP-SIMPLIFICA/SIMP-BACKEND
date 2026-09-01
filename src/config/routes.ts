@@ -7,6 +7,7 @@ import { notificationRoutes } from '@/routes/notification.routes.js'
 import { communicationRoutes } from '@/routes/communication.routes.js'
 import { settingsRoutes } from '@/routes/settings.routes.js'
 import { dailyAllowanceRoutes } from '@/routes/daily-allowance.routes.js'
+import { fleetFuelingRoutes } from '@/routes/fleet-fueling.routes.js'
 import { auditRoutes } from '@/routes/audit.routes.js'
 import { financeRoutes } from '@/routes/finance.routes.js'
 import { calendarRoutes } from '@/routes/calendar.routes.js'
@@ -151,6 +152,9 @@ export async function registerRoutes(server: AppServer) {
       await server.register(auditRoutes, { prefix: '/audit', logLevel: 'info' })
       // Diárias de Servidor (Épico 3)
       await server.register(dailyAllowanceRoutes, { prefix: '/daily-allowances', logLevel: 'info' })
+
+      // Abastecimento de Frota (Épico 3)
+      await server.register(fleetFuelingRoutes, { prefix: '/fleet-fuelings', logLevel: 'info' })
 
       // Módulo de Utilidades
       await server.register(calendarRoutes, { prefix: '/utilities/calendar', logLevel: 'info' })

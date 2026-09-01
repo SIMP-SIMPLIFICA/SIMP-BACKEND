@@ -60,6 +60,7 @@ model Organization {
   signatureRequests        SignatureRequest[]
   supportRequests          SupportRequest[]
   dailyAllowances          DailyAllowance[]
+  fleetFuelings            FleetFueling[]
 
   @@map("organizations")
 }
@@ -154,6 +155,7 @@ model User {
   supportMessages        SupportMessage[]    @relation("SupportMessageSender")
   dailyAllowances        DailyAllowance[]    @relation("DailyAllowanceBeneficiary")
   issuedDailyAllowances  DailyAllowance[]    @relation("DailyAllowanceIssuer")
+  fleetFuelings          FleetFueling[]      @relation("FleetFuelingCreator")
 
   @@map("profiles")
 }
@@ -1262,17 +1264,17 @@ model DailyAllowance {
   dayCount    Decimal @map("day_count") @db.Decimal(5, 2)
   totalAmount Decimal @map("total_amount") @db.Decimal(15, 2)
 
-  // Preenchidos na emissão do PDF. `documentHash` é o SHA-256 dos bytes do PDF
+  // Preenchidos na emissão do PDF. `sha256Hash` é o SHA-256 dos bytes do PDF
   // e é o que o Portal de Validação confere. Enquanto for nulo, o registro é
   // rascunho e pode ser editado; depois de preenchido, torna-se imutável — do
   // contrário o hash publicado deixaria de corresponder ao documento.
-  documentHash String?   @map("document_hash")
-  issuedAt     DateTime? @map("issued_at")
+  sha256Hash String?   @map("sha256_hash")
+  issuedAt   DateTime? @map("issued_at")
   // Chave do PDF emitido no StorageService. O arquivo é gerado UMA vez e
   // guardado: rege-lo a cada download produziria bytes diferentes (metadados de
   // data do pdf-lib) e o hash publicado deixaria de bater, fazendo o Portal de
   // Validação acusar adulteração num documento legítimo.
-  pdfFileKey   String?   @map("pdf_file_key")
+  pdfFileKey String?   @map("pdf_file_key")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -1284,4 +1286,53 @@ model DailyAllowance {
   @@index([organizationId, departureDate])
   @@index([organizationId, userId])
   @@map("daily_allowances")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Controle de abastecimento de frota (Épico 3, Task 3.2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model FleetFueling {
+  id             String @id @default(uuid())
+  organizationId String @map("organization_id")
+
+  // Quem registrou o abastecimento — a prestação de contas precisa do responsável.
+  createdById String @map("created_by_id") @db.Uuid
+
+  // Identificador público da URL de validação, separado da chave primária pelo
+  // mesmo motivo de DailyAllowance: o PK nunca é exposto na internet.
+  publicId String @unique @default(uuid()) @map("public_id")
+
+  // Placa normalizada (maiúsculas, sem hífen). Sem normalização, "abc-1234" e
+  // "ABC1234" virariam dois veículos distintos e o relatório por placa nasceria
+  // furado.
+  licensePlate String @map("license_plate")
+
+  // Odômetro em quilômetros inteiros — o painel do veículo não marca fração.
+  odometer Int
+
+  // Litros com 3 casas: é a precisão que a bomba de combustível imprime.
+  liters Decimal @db.Decimal(10, 3)
+
+  // Decimal, nunca Float: é dinheiro público em prestação de contas.
+  totalValue Decimal @map("total_value") @db.Decimal(15, 2)
+
+  date DateTime
+
+  // Mesma semântica da Task 3.1: enquanto o hash é nulo o registro é rascunho e
+  // pode ser editado; emitido, torna-se imutável, senão o hash publicado
+  // deixaria de corresponder ao documento entregue.
+  sha256Hash String?   @map("sha256_hash")
+  issuedAt   DateTime? @map("issued_at")
+  pdfFileKey String?   @map("pdf_file_key")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation("FleetFuelingCreator", fields: [createdById], references: [id])
+
+  @@index([organizationId, date])
+  @@index([organizationId, licensePlate])
+  @@map("fleet_fuelings")
 }

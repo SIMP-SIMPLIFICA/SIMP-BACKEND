@@ -103,8 +103,8 @@ describe('Documentos oficiais em PDF (Task 3.1)', () => {
       const result = await createOfficialPdf(BASE_INPUT)
 
       expect(Buffer.from(result.bytes.subarray(0, 5)).toString()).toBe('%PDF-')
-      expect(result.documentHash).toBe(calculateDocumentHash(result.bytes))
-      expect(result.documentHash).toMatch(/^[0-9a-f]{64}$/)
+      expect(result.sha256Hash).toBe(calculateDocumentHash(result.bytes))
+      expect(result.sha256Hash).toMatch(/^[0-9a-f]{64}$/)
     })
 
     test('devolve a URL de validação que foi para o QR Code', async () => {
@@ -121,7 +121,7 @@ describe('Documentos oficiais em PDF (Task 3.1)', () => {
         ...BASE_INPUT,
         sections: [{ fields: [{ label: 'Motivo', value: 'Reunião 🎉 no ministério' }] }],
       })
-      expect(result.documentHash).toMatch(/^[0-9a-f]{64}$/)
+      expect(result.sha256Hash).toMatch(/^[0-9a-f]{64}$/)
     })
 
     test('motivo longo não quebra a geração (quebra de linha)', async () => {
@@ -145,7 +145,7 @@ describe('Documentos oficiais em PDF (Task 3.1)', () => {
     test('dois documentos com publicId diferente geram hashes diferentes', async () => {
       const a = await createOfficialPdf(BASE_INPUT)
       const b = await createOfficialPdf({ ...BASE_INPUT, publicId: 'outro-id' })
-      expect(a.documentHash).not.toBe(b.documentHash)
+      expect(a.sha256Hash).not.toBe(b.sha256Hash)
     })
   })
 })

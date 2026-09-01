@@ -58,7 +58,7 @@ export interface OfficialPdfInput {
 export interface OfficialPdfResult {
   bytes: Uint8Array
   /** SHA-256 dos bytes do PDF — é o que o Portal de Validação confere. */
-  documentHash: string
+  sha256Hash: string
   validationUrl: string
 }
 
@@ -277,7 +277,7 @@ export async function createOfficialPdf(input: OfficialPdfInput): Promise<Offici
 
   return {
     bytes,
-    documentHash: calculateDocumentHash(bytes),
+    sha256Hash: calculateDocumentHash(bytes),
     validationUrl,
   }
 }

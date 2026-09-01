@@ -52,7 +52,7 @@ const { dailyAllowanceService, calculateTotalAmount, DailyAllowanceError } = awa
 
 const SCOPE = { organizationId: 'org-1', userId: 'issuer-1' }
 
-/** Rascunho: sem documentHash, ainda editável. */
+/** Rascunho: sem sha256Hash, ainda editável. */
 const DRAFT = {
   id: 'da-1',
   publicId: 'pub-1',
@@ -65,14 +65,14 @@ const DRAFT = {
   dailyRate: 350,
   dayCount: 2.5,
   totalAmount: 875,
-  documentHash: null,
+  sha256Hash: null,
   pdfFileKey: null,
   user: { id: 'servant-1', firstName: 'João', lastName: 'Silva', email: 'joao@pref.gov.br' },
   createdBy: { id: 'issuer-1', firstName: 'Maria', lastName: 'Souza' },
 }
 
 /** Emitido: hash publicado, portanto congelado. */
-const ISSUED = { ...DRAFT, documentHash: 'a'.repeat(64), pdfFileKey: 'org-1/da/x.pdf' }
+const ISSUED = { ...DRAFT, sha256Hash: 'a'.repeat(64), pdfFileKey: 'org-1/da/x.pdf' }
 
 describe('Diárias de servidor (Task 3.1)', () => {
   beforeEach(() => {
@@ -89,7 +89,7 @@ describe('Diárias de servidor (Task 3.1)', () => {
     saveFileMock.mockResolvedValue('org-1/daily-allowances/x.pdf')
     createPdfMock.mockResolvedValue({
       bytes: new Uint8Array([1, 2, 3]),
-      documentHash: 'b'.repeat(64),
+      sha256Hash: 'b'.repeat(64),
       validationUrl: 'https://exemplo/validar-documento/pub-1',
     })
     auditRecordMock.mockResolvedValue(undefined)
@@ -225,7 +225,7 @@ describe('Diárias de servidor (Task 3.1)', () => {
 
       expect(saveFileMock).toHaveBeenCalledTimes(1)
       const { data } = updateMock.mock.calls[0][0]
-      expect(data.documentHash).toBe('b'.repeat(64))
+      expect(data.sha256Hash).toBe('b'.repeat(64))
       expect(data.pdfFileKey).toBe('org-1/daily-allowances/x.pdf')
       expect(data.issuedAt).toBeInstanceOf(Date)
     })

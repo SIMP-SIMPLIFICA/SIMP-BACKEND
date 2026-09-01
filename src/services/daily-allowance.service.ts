@@ -9,7 +9,7 @@ import fs from 'node:fs/promises'
  * Diárias de servidor (Épico 3, Task 3.1).
  *
  * REGRA CENTRAL — EMITIDO É IMUTÁVEL:
- *   Enquanto `documentHash` é nulo o registro é rascunho e pode ser editado ou
+ *   Enquanto `sha256Hash` é nulo o registro é rascunho e pode ser editado ou
  *   excluído. Assim que o PDF é emitido, o hash publicado passa a valer como
  *   prova pública: qualquer alteração posterior faria o Portal de Validação
  *   acusar adulteração num documento legítimo. Por isso update e delete são
@@ -113,8 +113,8 @@ export const dailyAllowanceService = {
     const where: Prisma.DailyAllowanceWhereInput = { organizationId: scope.organizationId }
 
     if (filter.userId) where.userId = filter.userId
-    if (filter.issued === true) where.documentHash = { not: null }
-    if (filter.issued === false) where.documentHash = null
+    if (filter.issued === true) where.sha256Hash = { not: null }
+    if (filter.issued === false) where.sha256Hash = null
 
     if (filter.startDate || filter.endDate) {
       where.departureDate = {}
@@ -159,7 +159,7 @@ export const dailyAllowanceService = {
   async update(id: string, input: UpdateDailyAllowanceInput, scope: RequestScope) {
     const current = await this.getById(id, scope)
 
-    if (current.documentHash) {
+    if (current.sha256Hash) {
       throw new DailyAllowanceError(
         'ALREADY_ISSUED',
         'Esta diária já foi emitida e não pode mais ser alterada. Emita uma nova diária.'
@@ -192,7 +192,7 @@ export const dailyAllowanceService = {
   async remove(id: string, scope: RequestScope) {
     const current = await this.getById(id, scope)
 
-    if (current.documentHash) {
+    if (current.sha256Hash) {
       throw new DailyAllowanceError(
         'ALREADY_ISSUED',
         'Esta diária já foi emitida e não pode ser excluída. O documento faz parte da prestação de contas.'
@@ -212,7 +212,7 @@ export const dailyAllowanceService = {
   async issue(id: string, scope: RequestScope) {
     const record = await this.getById(id, scope)
 
-    if (record.documentHash) {
+    if (record.sha256Hash) {
       throw new DailyAllowanceError(
         'ALREADY_ISSUED',
         'Esta diária já foi emitida. Baixe o documento existente.'
@@ -227,7 +227,7 @@ export const dailyAllowanceService = {
     const beneficiary = [record.user?.firstName, record.user?.lastName].filter(Boolean).join(' ')
     const issuer = [record.createdBy?.firstName, record.createdBy?.lastName].filter(Boolean).join(' ')
 
-    const { bytes, documentHash } = await createOfficialPdf({
+    const { bytes, sha256Hash } = await createOfficialPdf({
       title: 'RECIBO DE DIÁRIA',
       organizationName: organization?.name ?? 'Organização',
       publicId: record.publicId,
@@ -271,7 +271,7 @@ export const dailyAllowanceService = {
 
     const issued = await prisma.dailyAllowance.update({
       where: { id },
-      data: { documentHash, pdfFileKey, issuedAt: new Date() },
+      data: { sha256Hash, pdfFileKey, issuedAt: new Date() },
       include: LIST_INCLUDE,
     })
 
@@ -283,7 +283,7 @@ export const dailyAllowanceService = {
       resource: 'DAILY_ALLOWANCE',
       resourceId: record.id,
       organizationId: scope.organizationId,
-      details: { publicId: record.publicId, documentHash },
+      details: { publicId: record.publicId, sha256Hash },
     })
 
     return issued

@@ -27,38 +27,39 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users                  User[]
-  roles                  Role[]
-  departments            Department[]
-  workspaces             Workspace[]
-  communicationDocuments CommunicationDocument[]
-  notes                  Note[]
-  calendarEvents         CalendarEvent[]
-  auditLogs              AuditLog[]
-  settings               Setting[]
-  notifications          Notification[]
-  bankAccounts           BankAccount[]
-  financeCategories      FinanceCategory[]
-  financeEntries         FinanceEntry[]
-  virtualProcesses       VirtualProcess[]
+  users                    User[]
+  roles                    Role[]
+  departments              Department[]
+  workspaces               Workspace[]
+  communicationDocuments   CommunicationDocument[]
+  notes                    Note[]
+  calendarEvents           CalendarEvent[]
+  auditLogs                AuditLog[]
+  settings                 Setting[]
+  notifications            Notification[]
+  bankAccounts             BankAccount[]
+  financeCategories        FinanceCategory[]
+  financeEntries           FinanceEntry[]
+  virtualProcesses         VirtualProcess[]
   virtualProcessCategories VirtualProcessCategory[]
-  virtualProcessSources  VirtualProcessSource[]
-  virtualProcessCompanies VirtualProcessCompany[]
-  modules                OrganizationModule[]
-  libraryDocuments       LibraryDocument[]
-  documentCategories     DocumentCategory[]
-  covenants              Covenant[]
-  covenantTypes          CovenantType[]
-  convenentes            Convenente[]
-  concedentes            Concedente[]
-  officialDocuments      OfficialDocument[]
-  sequenceControls       SequenceControl[]
-  councils               Council[]
-  councilMemberships     CouncilMembership[]
-  councilMeetings        CouncilMeeting[]
-  councilDocuments       CouncilDocument[]
-  signatureRequests      SignatureRequest[]
-  supportRequests        SupportRequest[]
+  virtualProcessSources    VirtualProcessSource[]
+  virtualProcessCompanies  VirtualProcessCompany[]
+  modules                  OrganizationModule[]
+  libraryDocuments         LibraryDocument[]
+  documentCategories       DocumentCategory[]
+  covenants                Covenant[]
+  covenantTypes            CovenantType[]
+  convenentes              Convenente[]
+  concedentes              Concedente[]
+  officialDocuments        OfficialDocument[]
+  sequenceControls         SequenceControl[]
+  councils                 Council[]
+  councilMemberships       CouncilMembership[]
+  councilMeetings          CouncilMeeting[]
+  councilDocuments         CouncilDocument[]
+  signatureRequests        SignatureRequest[]
+  supportRequests          SupportRequest[]
+  dailyAllowances          DailyAllowance[]
 
   @@map("organizations")
 }
@@ -80,13 +81,13 @@ model OrganizationModule {
 }
 
 model User {
-  id                 String    @id @db.Uuid
-  email              String    @unique
-  username           String?   @unique
-  firstName          String?   @map("first_name")
-  lastName           String?   @map("last_name")
-  fullName           String?   @map("full_name")
-  avatar             String?
+  id        String  @id @db.Uuid
+  email     String  @unique
+  username  String? @unique
+  firstName String? @map("first_name")
+  lastName  String? @map("last_name")
+  fullName  String? @map("full_name")
+  avatar    String?
 
   // Autenticação local (argon2 + jose) — Supabase Auth foi removido, ver ADR em docs/ProjectGoals.md §4
   password             String
@@ -100,17 +101,17 @@ model User {
   jobTitle           String?   @map("job_title")
   municipalityName   String?   @map("municipality_name")
   role               AppRole   @default(standard_user) @map("role")
-  isActive           Boolean   @default(true)  @map("is_active")
-  isVerified         Boolean   @default(true)  @map("is_verified")
+  isActive           Boolean   @default(true) @map("is_active")
+  isVerified         Boolean   @default(true) @map("is_verified")
   lastLoginAt        DateTime? @map("last_login_at")
   metadata           Json?
   preferences        Json?
   isSuperAdmin       Boolean   @default(false) @map("is_super_admin")
-  emailNotifications Boolean   @default(true)  @map("email_notifications")
-  autoClearDays      Int       @default(30)     @map("auto_clear_days")
-  clearanceLevel     Int       @default(1)      @map("clearance_level")
-  createdAt          DateTime  @default(now())  @map("created_at")
-  updatedAt          DateTime  @updatedAt       @map("updated_at")
+  emailNotifications Boolean   @default(true) @map("email_notifications")
+  autoClearDays      Int       @default(30) @map("auto_clear_days")
+  clearanceLevel     Int       @default(1) @map("clearance_level")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
 
   organizationId String?       @map("organization_id")
   organization   Organization? @relation(fields: [organizationId], references: [id])
@@ -149,8 +150,10 @@ model User {
   councilMeetingsCreated CouncilMeeting[]    @relation("CouncilMeetingCreator")
   uploadedCouncilDocs    CouncilDocument[]   @relation("CouncilDocumentUploader")
   signatureRequests      SignatureRequest[]  @relation("SignatureRequester")
-  supportRequests        SupportRequest[]   @relation("SupportAuthor")
-  supportMessages        SupportMessage[]   @relation("SupportMessageSender")
+  supportRequests        SupportRequest[]    @relation("SupportAuthor")
+  supportMessages        SupportMessage[]    @relation("SupportMessageSender")
+  dailyAllowances        DailyAllowance[]    @relation("DailyAllowanceBeneficiary")
+  issuedDailyAllowances  DailyAllowance[]    @relation("DailyAllowanceIssuer")
 
   @@map("profiles")
 }
@@ -361,7 +364,7 @@ model Task {
   dueDate     DateTime?
 
   workspaceId String
-  creatorId   String   @db.Uuid
+  creatorId   String @db.Uuid
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -499,7 +502,6 @@ model DocumentRecipient {
   @@map("document_recipients")
 }
 
-
 model CommunicationAttachment {
   id         String @id @default(nanoid())
   documentId String @map("document_id")
@@ -514,7 +516,6 @@ model CommunicationAttachment {
 
   @@map("communication_attachments")
 }
-
 
 enum FinanceEntryType {
   EXPENSE
@@ -623,18 +624,18 @@ model VirtualProcess {
   // vencimento na listagem. Distinta de endDate (quando o processo é arquivado).
   validityDate   DateTime? @map("validity_date")
   // Mesma convenção monetária de Covenant.transferValue.
-  totalValue     Decimal?  @db.Decimal(15, 2) @map("total_value")
+  totalValue     Decimal?  @map("total_value") @db.Decimal(15, 2)
   subject        String    @db.Text
   status         String    @default("Tramitando")
   category       String    @default("Outros")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-  createdById String   @map("created_by_id") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  createdById    String    @map("created_by_id") @db.Uuid
 
-  organization Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  creator      User                     @relation("ProcessCreator", fields: [createdById], references: [id])
-  documents    VirtualProcessDocument[]
-  covenants    Covenant[]
+  organization     Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  creator          User                     @relation("ProcessCreator", fields: [createdById], references: [id])
+  documents        VirtualProcessDocument[]
+  covenants        Covenant[]
   // Documentos anexados via Convênio e atribuídos a este processo.
   libraryDocuments LibraryDocument[]
 
@@ -722,12 +723,12 @@ model CalendarEvent {
 }
 
 model CalendarAttachment {
-  id         String @id @default(nanoid())
-  eventId    String @map("event_id")
-  fileName   String @map("file_name")
-  fileUrl    String @map("file_url")
-  fileType   String @map("file_type")
-  fileSize   Int    @map("file_size")
+  id       String @id @default(nanoid())
+  eventId  String @map("event_id")
+  fileName String @map("file_name")
+  fileUrl  String @map("file_url")
+  fileType String @map("file_type")
+  fileSize Int    @map("file_size")
 
   uploadedAt DateTime @default(now()) @map("uploaded_at")
 
@@ -757,30 +758,30 @@ model Note {
 // ─── Biblioteca Digital (GED) ────────────────────────────────────────────────
 
 model LibraryDocument {
-  id           String    @id @default(nanoid())
-  title        String    @db.VarChar(500)
-  fileName     String    @map("file_name")
-  fileKey      String    @map("file_key")          // chave no R2: organizations/{orgId}/library/{name}
-  fileSize     Int       @map("file_size")          // bytes
-  mimeType     String    @default("application/pdf") @map("mime_type")
-  accessLevel  Int       @default(1)                @map("access_level") // 1 | 2 | 3
-  textContent  String?   @db.Text                   @map("text_content") // OCR para busca profunda
+  id          String  @id @default(nanoid())
+  title       String  @db.VarChar(500)
+  fileName    String  @map("file_name")
+  fileKey     String  @map("file_key") // chave no R2: organizations/{orgId}/library/{name}
+  fileSize    Int     @map("file_size") // bytes
+  mimeType    String  @default("application/pdf") @map("mime_type")
+  accessLevel Int     @default(1) @map("access_level") // 1 | 2 | 3
+  textContent String? @map("text_content") @db.Text // OCR para busca profunda
 
-  uploaderId     String   @map("uploader_id") @db.Uuid
-  organizationId String   @map("organization_id")
-  categoryId     String?  @map("category_id")
-  covenantId     String?  @map("covenant_id")
+  uploaderId       String  @map("uploader_id") @db.Uuid
+  organizationId   String  @map("organization_id")
+  categoryId       String? @map("category_id")
+  covenantId       String? @map("covenant_id")
   // Documento anexado via Convênio que pertence a um Processo Virtual específico.
   // Opcional: sem ele, o documento é "geral" do convênio.
   virtualProcessId String? @map("virtual_process_id")
 
   createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt      @map("updated_at")
-  deletedAt DateTime?                 @map("deleted_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
 
-  uploader     User              @relation("LibraryDocumentUploader", fields: [uploaderId], references: [id])
-  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  category     DocumentCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  uploader         User              @relation("LibraryDocumentUploader", fields: [uploaderId], references: [id])
+  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  category         DocumentCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   covenant         Covenant?         @relation(fields: [covenantId], references: [id], onDelete: SetNull)
   // SetNull (nunca Cascade): excluir um processo NÃO pode apagar documento do
   // acervo do convênio — o arquivo apenas volta a ser "geral".
@@ -801,9 +802,9 @@ model DocumentCategory {
   name           String
   organizationId String   @map("organization_id")
   createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt      @map("updated_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
 
-  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   documents    LibraryDocument[]
 
   @@unique([organizationId, name])
@@ -863,34 +864,34 @@ enum CovenantStatus {
 }
 
 model Covenant {
-  id             String  @id @default(uuid())
-  organizationId String  @map("organization_id")
+  id             String @id @default(uuid())
+  organizationId String @map("organization_id")
   number         String
 
-  typeId         String?  @map("type_id")
-  proponentId    String?  @map("proponent_id")
-  convenenteId   String?  @map("convenente_id")
-  concedenteId   String?  @map("concedente_id")
+  typeId       String? @map("type_id")
+  proponentId  String? @map("proponent_id")
+  convenenteId String? @map("convenente_id")
+  concedenteId String? @map("concedente_id")
 
-  processObject   String  @db.Text @map("process_object")
+  processObject   String  @map("process_object") @db.Text
   budgetaryAction String? @map("budgetary_action")
 
-  executionStartDate DateTime?  @map("execution_start_date")
-  validityStartDate  DateTime?  @map("validity_start_date")
-  validityEndDate    DateTime?  @map("validity_end_date")
-  termDays           Int?       @map("term_days")
+  executionStartDate DateTime? @map("execution_start_date")
+  validityStartDate  DateTime? @map("validity_start_date")
+  validityEndDate    DateTime? @map("validity_end_date")
+  termDays           Int?      @map("term_days")
 
-  transferValue    Decimal?  @db.Decimal(15, 2) @map("transfer_value")
-  counterpartValue Decimal?  @db.Decimal(15, 2) @map("counterpart_value")
+  transferValue    Decimal? @map("transfer_value") @db.Decimal(15, 2)
+  counterpartValue Decimal? @map("counterpart_value") @db.Decimal(15, 2)
 
-  status       CovenantStatus @default(EM_ANALISE)
+  status CovenantStatus @default(EM_ANALISE)
 
-  bankName     String?  @map("bank_name")
-  bankAgency   String?  @map("bank_agency")
-  bankAccount  String?  @map("bank_account")
+  bankName    String? @map("bank_name")
+  bankAgency  String? @map("bank_agency")
+  bankAccount String? @map("bank_account")
 
   createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt      @map("updated_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   organization     Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   covenantType     CovenantType?          @relation(fields: [typeId], references: [id], onDelete: SetNull)
@@ -928,14 +929,14 @@ enum OfficialDocumentStatus {
 }
 
 model SequenceControl {
-  id               String   @id @default(uuid())
-  organizationId   String   @map("organization_id")
+  id               String                   @id @default(uuid())
+  organizationId   String                   @map("organization_id")
   documentCategory OfficialDocumentCategory @map("document_category")
-  documentType     String   @map("document_type")
+  documentType     String                   @map("document_type")
   sector           String
-  departmentId     String?  @map("department_id")
+  departmentId     String?                  @map("department_id")
   year             Int
-  currentNumber    Int      @default(0) @map("current_number")
+  currentNumber    Int                      @default(0) @map("current_number")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
@@ -944,35 +945,35 @@ model SequenceControl {
 }
 
 model OfficialDocument {
-  id               String   @id @default(uuid())
-  organizationId   String   @map("organization_id")
-  creatorId        String   @map("creator_id") @db.Uuid
+  id             String @id @default(uuid())
+  organizationId String @map("organization_id")
+  creatorId      String @map("creator_id") @db.Uuid
 
-  documentCategory    OfficialDocumentCategory    @map("document_category")
-  documentType        String                       @map("document_type")
-  numberingType       OfficialDocumentNumberingType @map("numbering_type")
+  documentCategory OfficialDocumentCategory      @map("document_category")
+  documentType     String                        @map("document_type")
+  numberingType    OfficialDocumentNumberingType @map("numbering_type")
 
-  sequenceNumber      Int?     @map("sequence_number")
-  year                Int
-  formattedNumber     String   @map("formatted_number")
+  sequenceNumber  Int?   @map("sequence_number")
+  year            Int
+  formattedNumber String @map("formatted_number")
 
-  subject             String   @db.Text
-  recipient           String?
+  subject   String  @db.Text
+  recipient String?
 
-  sector              String
-  departmentId        String?  @map("department_id")
+  sector       String
+  departmentId String? @map("department_id")
 
-  status              OfficialDocumentStatus @default(RESERVADO)
-  cancelReason        String?  @db.Text @map("cancel_reason")
+  status       OfficialDocumentStatus @default(RESERVADO)
+  cancelReason String?                @map("cancel_reason") @db.Text
 
-  libraryDocumentId   String?  @unique @map("library_document_id")
+  libraryDocumentId String? @unique @map("library_document_id")
 
   createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt      @map("updated_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  creator         User            @relation(fields: [creatorId], references: [id])
-  department      Department?     @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  creator         User             @relation(fields: [creatorId], references: [id])
+  department      Department?      @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   libraryDocument LibraryDocument? @relation(fields: [libraryDocumentId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, documentCategory, year])
@@ -1052,9 +1053,9 @@ model CouncilMembership {
   isActive       Boolean           @default(true) @map("is_active")
   createdAt      DateTime          @default(now()) @map("created_at")
 
-  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  council      Council            @relation(fields: [councilId], references: [id], onDelete: Cascade)
-  user         User               @relation("CouncilMemberships", fields: [userId], references: [id])
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  council      Council             @relation(fields: [councilId], references: [id], onDelete: Cascade)
+  user         User                @relation("CouncilMemberships", fields: [userId], references: [id])
   attendance   MeetingAttendance[]
 
   @@unique([councilId, userId, role])
@@ -1091,13 +1092,13 @@ model CouncilMeeting {
 }
 
 model MeetingAgendaItem {
-  id             String           @id @default(nanoid())
-  meetingId      String           @map("meeting_id")
-  order          Int
-  title          String
-  description    String?          @db.Text
-  status         AgendaItemStatus @default(PENDENTE)
-  votingRemarks  String?          @db.Text @map("voting_remarks")
+  id            String           @id @default(nanoid())
+  meetingId     String           @map("meeting_id")
+  order         Int
+  title         String
+  description   String?          @db.Text
+  status        AgendaItemStatus @default(PENDENTE)
+  votingRemarks String?          @map("voting_remarks") @db.Text
 
   meeting CouncilMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
 
@@ -1106,10 +1107,10 @@ model MeetingAgendaItem {
 }
 
 model MeetingAttendance {
-  id               String  @id @default(nanoid())
-  meetingId        String  @map("meeting_id")
-  membershipId     String  @map("membership_id")
-  isPresent        Boolean @default(false) @map("is_present")
+  id               String   @id @default(nanoid())
+  meetingId        String   @map("meeting_id")
+  membershipId     String   @map("membership_id")
+  isPresent        Boolean  @default(false) @map("is_present")
   justifiedAbsence Boolean? @map("justified_absence")
 
   meeting    CouncilMeeting    @relation(fields: [meetingId], references: [id], onDelete: Cascade)
@@ -1135,9 +1136,9 @@ model CouncilDocument {
   createdAt      DateTime            @default(now()) @map("created_at")
   updatedAt      DateTime            @updatedAt @map("updated_at")
 
-  organization      Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  meeting           CouncilMeeting    @relation(fields: [meetingId], references: [id], onDelete: Cascade)
-  uploadedBy        User              @relation("CouncilDocumentUploader", fields: [uploadedById], references: [id])
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  meeting           CouncilMeeting     @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  uploadedBy        User               @relation("CouncilDocumentUploader", fields: [uploadedById], references: [id])
   signatureRequests SignatureRequest[]
 
   @@index([organizationId])
@@ -1151,7 +1152,7 @@ model SignatureRequest {
   documentId     String          @map("document_id")
   requestedById  String          @map("requested_by_id") @db.Uuid
   status         SignatureStatus @default(PENDENTE)
-  pkcs7Data      String?         @db.Text @map("pkcs7_data")
+  pkcs7Data      String?         @map("pkcs7_data") @db.Text
   signedAt       DateTime?       @map("signed_at")
   errorMsg       String?         @map("error_msg")
   createdAt      DateTime        @default(now()) @map("created_at")
@@ -1205,8 +1206,8 @@ model SupportRequest {
   createdAt      DateTime      @default(now()) @map("created_at")
   updatedAt      DateTime      @updatedAt @map("updated_at")
 
-  author       User         @relation("SupportAuthor", fields: [authorId], references: [id])
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  author       User             @relation("SupportAuthor", fields: [authorId], references: [id])
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   messages     SupportMessage[]
 
   @@index([organizationId, status])
@@ -1228,4 +1229,59 @@ model SupportMessage {
   @@index([requestId, createdAt])
   @@index([requestId, isRead])
   @@map("support_messages")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Diárias de servidor (Épico 3, Task 3.1)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model DailyAllowance {
+  id             String @id @default(uuid())
+  organizationId String @map("organization_id")
+
+  // Servidor beneficiário da diária.
+  userId      String @map("user_id") @db.Uuid
+  // Quem emitiu o documento — separado do beneficiário porque quase nunca são a
+  // mesma pessoa, e a prestação de contas precisa saber quem autorizou.
+  createdById String @map("created_by_id") @db.Uuid
+
+  // Identificador público, usado na URL de validação. Deliberadamente separado
+  // da chave primária: o PK nunca vai para a internet, então podemos revogar ou
+  // rotacionar um link público sem tocar em nenhuma chave estrangeira.
+  publicId String @unique @default(uuid()) @map("public_id")
+
+  destination String
+  purpose     String @db.Text
+
+  departureDate DateTime @map("departure_date")
+  returnDate    DateTime @map("return_date")
+
+  // Decimal, nunca Float: valor público não admite erro de ponto flutuante.
+  // dayCount é decimal porque meia diária (0.5) é praxe quando não há pernoite.
+  dailyRate   Decimal @map("daily_rate") @db.Decimal(15, 2)
+  dayCount    Decimal @map("day_count") @db.Decimal(5, 2)
+  totalAmount Decimal @map("total_amount") @db.Decimal(15, 2)
+
+  // Preenchidos na emissão do PDF. `documentHash` é o SHA-256 dos bytes do PDF
+  // e é o que o Portal de Validação confere. Enquanto for nulo, o registro é
+  // rascunho e pode ser editado; depois de preenchido, torna-se imutável — do
+  // contrário o hash publicado deixaria de corresponder ao documento.
+  documentHash String?   @map("document_hash")
+  issuedAt     DateTime? @map("issued_at")
+  // Chave do PDF emitido no StorageService. O arquivo é gerado UMA vez e
+  // guardado: rege-lo a cada download produziria bytes diferentes (metadados de
+  // data do pdf-lib) e o hash publicado deixaria de bater, fazendo o Portal de
+  // Validação acusar adulteração num documento legítimo.
+  pdfFileKey   String?   @map("pdf_file_key")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation("DailyAllowanceBeneficiary", fields: [userId], references: [id])
+  createdBy    User         @relation("DailyAllowanceIssuer", fields: [createdById], references: [id])
+
+  @@index([organizationId, departureDate])
+  @@index([organizationId, userId])
+  @@map("daily_allowances")
 }

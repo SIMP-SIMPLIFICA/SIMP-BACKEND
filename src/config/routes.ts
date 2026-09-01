@@ -6,6 +6,7 @@ import { taskRoutes } from '@/routes/task.routes.js'
 import { notificationRoutes } from '@/routes/notification.routes.js'
 import { communicationRoutes } from '@/routes/communication.routes.js'
 import { settingsRoutes } from '@/routes/settings.routes.js'
+import { dailyAllowanceRoutes } from '@/routes/daily-allowance.routes.js'
 import { auditRoutes } from '@/routes/audit.routes.js'
 import { financeRoutes } from '@/routes/finance.routes.js'
 import { calendarRoutes } from '@/routes/calendar.routes.js'
@@ -148,6 +149,8 @@ export async function registerRoutes(server: AppServer) {
 
       // Painel de Auditoria (trilha imutável — somente leitura)
       await server.register(auditRoutes, { prefix: '/audit', logLevel: 'info' })
+      // Diárias de Servidor (Épico 3)
+      await server.register(dailyAllowanceRoutes, { prefix: '/daily-allowances', logLevel: 'info' })
 
       // Módulo de Utilidades
       await server.register(calendarRoutes, { prefix: '/utilities/calendar', logLevel: 'info' })

@@ -129,6 +129,15 @@ export const AVAILABLE_PERMISSIONS = {
       { key: 'notifications:write',  description: 'Marcar notificações como lidas e ajustar preferências', level: 'write' },
       { key: 'notifications:manage', description: 'Excluir notificações',                            level: 'admin' },
     ]
+  },
+  dailyAllowances: {
+    displayName: 'Diárias de Servidor',
+    permissions: [
+      { key: 'dailyAllowances:read',   description: 'Visualizar diárias e baixar recibos',                  level: 'read' },
+      { key: 'dailyAllowances:write',  description: 'Criar e editar diárias em rascunho',                   level: 'write' },
+      { key: 'dailyAllowances:issue',  description: 'Emitir o recibo oficial da diária (gera o documento)',  level: 'admin' },
+      { key: 'dailyAllowances:delete', description: 'Excluir diárias ainda não emitidas',                   level: 'delete' },
+    ]
   }
 }
 

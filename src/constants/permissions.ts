@@ -129,6 +129,24 @@ export const AVAILABLE_PERMISSIONS = {
       { key: 'notifications:write',  description: 'Marcar notificações como lidas e ajustar preferências', level: 'write' },
       { key: 'notifications:manage', description: 'Excluir notificações',                            level: 'admin' },
     ]
+  },
+  dailyAllowances: {
+    displayName: 'Diárias de Servidor',
+    permissions: [
+      { key: 'dailyAllowances:read',   description: 'Visualizar diárias e baixar recibos',                  level: 'read' },
+      { key: 'dailyAllowances:write',  description: 'Criar e editar diárias em rascunho',                   level: 'write' },
+      { key: 'dailyAllowances:issue',  description: 'Emitir o recibo oficial da diária (gera o documento)',  level: 'admin' },
+      { key: 'dailyAllowances:delete', description: 'Excluir diárias ainda não emitidas',                   level: 'delete' },
+    ]
+  },
+  fleetFuelings: {
+    displayName: 'Abastecimento de Frota',
+    permissions: [
+      { key: 'fleetFuelings:read',   description: 'Visualizar abastecimentos e baixar relatórios',           level: 'read' },
+      { key: 'fleetFuelings:write',  description: 'Registrar e editar abastecimentos em rascunho',           level: 'write' },
+      { key: 'fleetFuelings:issue',  description: 'Emitir o relatório oficial do abastecimento',             level: 'admin' },
+      { key: 'fleetFuelings:delete', description: 'Excluir abastecimentos ainda não emitidos',               level: 'delete' },
+    ]
   }
 }
 

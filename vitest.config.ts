@@ -6,6 +6,10 @@ export default defineConfig({
         globals: true,
         environment: 'node',
         include: ['src/**/*.{test,spec}.ts'],
+        // Os testes de integração têm configuração própria (vitest.config.e2e.ts)
+        // porque exigem Postgres no ar. Sem esta exclusão, `npm test` tentaria
+        // rodá-los e falharia em qualquer máquina sem banco.
+        exclude: ['**/node_modules/**', '**/dist/**', 'src/**/*.e2e.spec.ts'],
         // forks: processo isolado por suite → evita estado compartilhado de DB
         pool: 'forks',
         isolate: true,

@@ -79,6 +79,35 @@ export function getFilePath(fileKey: string): string {
   return resolveSafePath(fileKey)
 }
 
+/**
+ * Lê o conteúdo do arquivo pelo fileKey.
+ *
+ * Existe para que os chamadores (geração de PDF, download de documento) não
+ * façam `fs.readFile` por conta própria: quando o adaptador S3 entrar, a troca
+ * acontece AQUI e nenhum serviço de negócio precisa saber que o destino mudou.
+ * É a mesma razão de `saveFile` e `deleteFile` existirem.
+ */
+export async function readFile(fileKey: string): Promise<Buffer> {
+  return fs.readFile(resolveSafePath(fileKey))
+}
+
+/**
+ * Lê o arquivo devolvendo `null` quando ele não existe.
+ *
+ * Para conteúdo OPCIONAL — a logo do tenant é o caso: se o arquivo sumiu do
+ * disco, o documento oficial precisa sair mesmo assim, sem logo. Transformar
+ * isso em exceção deixaria a prefeitura sem conseguir emitir diária por causa
+ * de uma imagem faltando.
+ */
+export async function readFileIfExists(fileKey: string): Promise<Buffer | null> {
+  try {
+    return await readFile(fileKey)
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw err
+  }
+}
+
 /** Remove o arquivo do disco. Ausente = sucesso (idempotente). */
 export async function deleteFile(fileKey: string): Promise<void> {
   try {

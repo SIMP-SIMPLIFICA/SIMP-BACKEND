@@ -23,6 +23,13 @@ model Organization {
   slug      String   @unique
   cnpj      String?  @unique
   plan      String   @default("basic")
+  // Logo do tenant para o cabeçalho dos documentos oficiais (Épico 3, Task 3.4).
+  // Guarda o fileKey do StorageService, e não uma URL absoluta: uma URL gravada
+  // no banco apodrece quando APP_URL muda (dev -> produção) e não serve para ler
+  // os bytes na hora de montar o PDF. A URL pública é derivada na leitura por
+  // getFileUrl(). O nome do campo segue a convenção já usada em
+  // CommunicationDocument.fileUrl, que também guarda fileKey.
+  logoUrl   String?  @map("logo_url")
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

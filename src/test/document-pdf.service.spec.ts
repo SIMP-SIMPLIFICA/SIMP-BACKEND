@@ -132,6 +132,19 @@ describe('Documentos oficiais em PDF (Task 3.1)', () => {
       expect(Buffer.from(result.bytes.subarray(0, 5)).toString()).toBe('%PDF-')
     })
 
+    test('logo PNG válida é realmente embutida no documento', async () => {
+      // Usa um PNG de verdade (o próprio gerador de QR Code produz um) e compara
+      // o tamanho: se a imagem não tivesse entrado, o PDF sairia do mesmo
+      // tamanho e o white-label seria só decoração de contrato.
+      const realPng = await renderQrCodePng('https://exemplo.gov.br/logo-de-teste')
+
+      const semLogo = await createOfficialPdf(BASE_INPUT)
+      const comLogo = await createOfficialPdf({ ...BASE_INPUT, logoPng: realPng })
+
+      expect(comLogo.bytes.length).toBeGreaterThan(semLogo.bytes.length)
+      expect(comLogo.sha256Hash).not.toBe(semLogo.sha256Hash)
+    })
+
     test('logo inválida não impede a emissão', async () => {
       // Documento oficial não pode deixar de sair por causa de um arquivo de
       // marca corrompido — a Task 3.4 depende desta tolerância.

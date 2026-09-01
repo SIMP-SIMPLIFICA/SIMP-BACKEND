@@ -49,8 +49,10 @@ export interface OfficialPdfInput {
   /** Observação livre impressa acima do rodapé. */
   footNote?: string
   /**
-   * Logo do tenant em PNG. Preparado para a Task 3.4; quando ausente, o
-   * cabeçalho cai num marcador neutro em vez de quebrar.
+   * Logo do tenant (Task 3.4). Aceita PNG e JPEG — os dois formatos que o
+   * pdf-lib sabe embutir, e os dois em que uma prefeitura costuma ter a marca.
+   * O nome do campo ficou como `logoPng` por já estar no contrato acordado.
+   * Quando ausente, o cabeçalho cai num marcador neutro em vez de quebrar.
    */
   logoPng?: Uint8Array | null
 }
@@ -98,6 +100,11 @@ export async function renderQrCodePng(url: string): Promise<Buffer> {
     margin: 1,
     width: 240,
   })
+}
+
+/** Assinatura JPEG (FF D8 FF). PNG começa com 89 50 4E 47. */
+function isJpeg(bytes: Uint8Array): boolean {
+  return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
 }
 
 // ─── Desenho ──────────────────────────────────────────────────────────────────
@@ -169,7 +176,11 @@ export async function createOfficialPdf(input: OfficialPdfInput): Promise<Offici
   // ── Cabeçalho ──
   if (input.logoPng) {
     try {
-      const logo = await pdf.embedPng(input.logoPng)
+      // O formato vem dos BYTES, não do que alguém declarou no upload: chamar
+      // embedPng num JPEG lança, e a logo sumiria do documento em silêncio.
+      const logo = isJpeg(input.logoPng)
+        ? await pdf.embedJpg(input.logoPng)
+        : await pdf.embedPng(input.logoPng)
       const scaled = logo.scaleToFit(120, 48)
       page.drawImage(logo, {
         x: MARGIN,

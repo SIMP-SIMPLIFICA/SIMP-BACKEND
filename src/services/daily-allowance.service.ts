@@ -1,9 +1,9 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma.js'
-import { getFilePath, saveFile } from '@/services/storage.service.js'
+import { readFile, saveFile } from '@/services/storage.service.js'
 import { createOfficialPdf } from '@/services/document-pdf.service.js'
+import { organizationBrandingService } from '@/services/organization-branding.service.js'
 import { auditLedgerService } from '@/services/audit-ledger.service.js'
-import fs from 'node:fs/promises'
 
 /**
  * Diárias de servidor (Épico 3, Task 3.1).
@@ -227,8 +227,14 @@ export const dailyAllowanceService = {
     const beneficiary = [record.user?.firstName, record.user?.lastName].filter(Boolean).join(' ')
     const issuer = [record.createdBy?.firstName, record.createdBy?.lastName].filter(Boolean).join(' ')
 
+    // White-label (Task 3.4): a logo do tenant entra no cabeçalho. O serviço
+    // nunca lança — sem logo, o documento sai com cabeçalho neutro, porque uma
+    // imagem faltando não pode impedir a emissão de um documento oficial.
+    const logoPng = await organizationBrandingService.getLogoBytes(scope.organizationId)
+
     const { bytes, sha256Hash } = await createOfficialPdf({
       title: 'RECIBO DE DIÁRIA',
+      logoPng,
       organizationName: organization?.name ?? 'Organização',
       publicId: record.publicId,
       sections: [
@@ -300,7 +306,7 @@ export const dailyAllowanceService = {
       )
     }
 
-    const bytes = await fs.readFile(getFilePath(record.pdfFileKey))
+    const bytes = await readFile(record.pdfFileKey)
     return { bytes, publicId: record.publicId }
   },
 }

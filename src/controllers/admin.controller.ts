@@ -177,6 +177,8 @@ export class AdminController {
       select: {
         id: true, name: true, slug: true, cnpj: true, plan: true,
         isActive: true, createdAt: true, updatedAt: true,
+        // White-label (Epico 3, Task 3.4): o painel precisa exibir a logo atual.
+        logoUrl: true,
         _count: { select: { users: true, workspaces: true } },
         modules: {
           select: { module: true, isEnabled: true, notes: true, updatedAt: true },

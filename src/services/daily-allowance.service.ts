@@ -4,6 +4,7 @@ import { readFile, saveFile } from '@/services/storage.service.js'
 import { createOfficialPdf } from '@/services/document-pdf.service.js'
 import { organizationBrandingService } from '@/services/organization-branding.service.js'
 import { auditLedgerService } from '@/services/audit-ledger.service.js'
+import { normalizeBeneficiaryName } from '@/services/beneficiary.service.js'
 
 /**
  * Diárias de servidor (Épico 3, Task 3.1).
@@ -38,7 +39,8 @@ export interface RequestScope {
 }
 
 export interface CreateDailyAllowanceInput {
-  userId: string
+  /** Nome de quem viajou. Texto, não FK — ver o comentário no schema. */
+  beneficiaryName: string
   destination: string
   purpose: string
   departureDate: Date
@@ -52,14 +54,13 @@ export type UpdateDailyAllowanceInput = Partial<CreateDailyAllowanceInput>
 export interface ListDailyAllowanceFilter {
   page: number
   limit: number
-  userId?: string
+  beneficiaryName?: string
   issued?: boolean
   startDate?: Date
   endDate?: Date
 }
 
 const LIST_INCLUDE = {
-  user: { select: { id: true, firstName: true, lastName: true, email: true } },
   createdBy: { select: { id: true, firstName: true, lastName: true } },
 } satisfies Prisma.DailyAllowanceInclude
 
@@ -93,7 +94,7 @@ export const dailyAllowanceService = {
     return prisma.dailyAllowance.create({
       data: {
         organizationId: scope.organizationId,
-        userId: input.userId,
+        beneficiaryName: normalizeBeneficiaryName(input.beneficiaryName),
         createdById: scope.userId,
         destination: input.destination,
         purpose: input.purpose,
@@ -112,7 +113,9 @@ export const dailyAllowanceService = {
     // jamais pode alcançar outra organização.
     const where: Prisma.DailyAllowanceWhereInput = { organizationId: scope.organizationId }
 
-    if (filter.userId) where.userId = filter.userId
+    if (filter.beneficiaryName) {
+      where.beneficiaryName = { contains: filter.beneficiaryName, mode: 'insensitive' }
+    }
     if (filter.issued === true) where.sha256Hash = { not: null }
     if (filter.issued === false) where.sha256Hash = null
 
@@ -176,7 +179,9 @@ export const dailyAllowanceService = {
     return prisma.dailyAllowance.update({
       where: { id },
       data: {
-        userId: input.userId ?? current.userId,
+        beneficiaryName: input.beneficiaryName
+          ? normalizeBeneficiaryName(input.beneficiaryName)
+          : current.beneficiaryName,
         destination: input.destination ?? current.destination,
         purpose: input.purpose ?? current.purpose,
         departureDate,
@@ -224,7 +229,6 @@ export const dailyAllowanceService = {
       select: { name: true },
     })
 
-    const beneficiary = [record.user?.firstName, record.user?.lastName].filter(Boolean).join(' ')
     const issuer = [record.createdBy?.firstName, record.createdBy?.lastName].filter(Boolean).join(' ')
 
     // White-label (Task 3.4): a logo do tenant entra no cabeçalho. O serviço
@@ -240,10 +244,7 @@ export const dailyAllowanceService = {
       sections: [
         {
           heading: 'Servidor',
-          fields: [
-            { label: 'Nome', value: beneficiary || record.user?.email || '-' },
-            { label: 'E-mail', value: record.user?.email ?? '-' },
-          ],
+          fields: [{ label: 'Nome', value: record.beneficiaryName }],
         },
         {
           heading: 'Deslocamento',

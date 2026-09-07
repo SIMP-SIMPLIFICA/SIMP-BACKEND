@@ -28,9 +28,9 @@ async function setupScenario(permissions: string[]) {
   return { organization, session }
 }
 
-function draftPayload(userId: string) {
+function draftPayload() {
   return {
-    userId,
+    beneficiaryName: 'joão da silva',
     destination: 'Brasília/DF',
     purpose: 'Reunião no ministério para tratar do convênio',
     departureDate: '2026-09-10',
@@ -49,7 +49,7 @@ describe('Daily allowances (integração)', () => {
         method: 'POST',
         url: BASE_URL,
         headers: session.headers,
-        payload: draftPayload(session.user.id),
+        payload: draftPayload(),
       })
 
       expect(response.statusCode).toBe(201)
@@ -73,7 +73,7 @@ describe('Daily allowances (integração)', () => {
         method: 'POST',
         url: BASE_URL,
         headers: session.headers,
-        payload: draftPayload(session.user.id),
+        payload: draftPayload(),
       })
       const draft = created.json()
 
@@ -112,7 +112,7 @@ describe('Daily allowances (integração)', () => {
         method: 'POST',
         url: BASE_URL,
         headers: session.headers,
-        payload: draftPayload(session.user.id),
+        payload: draftPayload(),
       })
       const draft = created.json()
 
@@ -147,7 +147,7 @@ describe('Daily allowances (integração)', () => {
         method: 'POST',
         url: BASE_URL,
         headers: session.headers,
-        payload: draftPayload(session.user.id),
+        payload: draftPayload(),
       })
       const draft = created.json()
 
@@ -197,7 +197,7 @@ describe('Daily allowances (integração)', () => {
           ...session.headers,
           'X-Forwarded-For': '203.0.113.99',
         },
-        payload: draftPayload(session.user.id),
+        payload: draftPayload(),
       })
 
       expect(response.statusCode).toBe(401)
@@ -211,7 +211,7 @@ describe('Daily allowances (integração)', () => {
         method: 'POST',
         url: BASE_URL,
         headers: session.headers,
-        payload: draftPayload(session.user.id),
+        payload: draftPayload(),
       })
 
       expect(response.statusCode).toBe(403)
@@ -226,7 +226,7 @@ describe('Daily allowances (integração)', () => {
         method: 'POST',
         url: BASE_URL,
         headers: session.headers,
-        payload: draftPayload(session.user.id),
+        payload: draftPayload(),
       })
 
       const issued = await getApp().inject({
@@ -249,7 +249,7 @@ describe('Daily allowances (integração)', () => {
         method: 'POST',
         url: BASE_URL,
         headers: session.headers,
-        payload: draftPayload(session.user.id),
+        payload: draftPayload(),
       })
 
       expect(response.statusCode).toBe(403)
@@ -266,7 +266,7 @@ describe('Daily allowances (integração)', () => {
         method: 'POST',
         url: BASE_URL,
         headers: first.session.headers,
-        payload: draftPayload(first.session.user.id),
+        payload: draftPayload(),
       })
       const draft = created.json()
 

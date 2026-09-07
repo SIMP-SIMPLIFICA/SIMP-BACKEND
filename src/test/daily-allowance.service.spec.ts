@@ -57,7 +57,7 @@ const DRAFT = {
   id: 'da-1',
   publicId: 'pub-1',
   organizationId: 'org-1',
-  userId: 'servant-1',
+  beneficiaryName: 'JOÃO DA SILVA',
   destination: 'Brasília/DF',
   purpose: 'Reunião no ministério',
   departureDate: new Date('2026-09-10T00:00:00Z'),
@@ -67,7 +67,6 @@ const DRAFT = {
   totalAmount: 875,
   sha256Hash: null,
   pdfFileKey: null,
-  user: { id: 'servant-1', firstName: 'João', lastName: 'Silva', email: 'joao@pref.gov.br' },
   createdBy: { id: 'issuer-1', firstName: 'Maria', lastName: 'Souza' },
 }
 
@@ -115,7 +114,7 @@ describe('Diárias de servidor (Task 3.1)', () => {
     test('o total é calculado no servidor, não aceito do cliente', async () => {
       await dailyAllowanceService.create(
         {
-          userId: 'servant-1',
+          beneficiaryName: 'joão da silva',
           destination: 'Brasília/DF',
           purpose: 'Reunião',
           departureDate: new Date('2026-09-10'),
@@ -128,6 +127,8 @@ describe('Diárias de servidor (Task 3.1)', () => {
 
       const { data } = createMock.mock.calls[0][0]
       expect(Number(data.totalAmount)).toBe(700)
+      // O nome é gravado SEMPRE em caixa alta, qualquer que seja a digitação.
+      expect(data.beneficiaryName).toBe('JOÃO DA SILVA')
       // organizationId e emissor vêm do escopo do token.
       expect(data.organizationId).toBe('org-1')
       expect(data.createdById).toBe('issuer-1')
@@ -137,7 +138,7 @@ describe('Diárias de servidor (Task 3.1)', () => {
       await expect(
         dailyAllowanceService.create(
           {
-            userId: 'servant-1',
+            beneficiaryName: 'Fulano',
             destination: 'X',
             purpose: 'Y',
             departureDate: new Date('2026-09-12'),

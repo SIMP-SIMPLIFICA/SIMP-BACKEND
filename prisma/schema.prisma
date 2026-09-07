@@ -68,6 +68,7 @@ model Organization {
   supportRequests          SupportRequest[]
   dailyAllowances          DailyAllowance[]
   fleetFuelings            FleetFueling[]
+  beneficiaries            Beneficiary[]
 
   @@map("organizations")
 }
@@ -160,7 +161,6 @@ model User {
   signatureRequests      SignatureRequest[]  @relation("SignatureRequester")
   supportRequests        SupportRequest[]    @relation("SupportAuthor")
   supportMessages        SupportMessage[]    @relation("SupportMessageSender")
-  dailyAllowances        DailyAllowance[]    @relation("DailyAllowanceBeneficiary")
   issuedDailyAllowances  DailyAllowance[]    @relation("DailyAllowanceIssuer")
   fleetFuelings          FleetFueling[]      @relation("FleetFuelingCreator")
 
@@ -1248,11 +1248,16 @@ model DailyAllowance {
   id             String @id @default(uuid())
   organizationId String @map("organization_id")
 
-  // Servidor beneficiário da diária.
-  userId      String @map("user_id") @db.Uuid
+  // Nome de quem viajou, GRAVADO COMO TEXTO e não como chave estrangeira.
+  // Um documento oficial precisa preservar o nome que foi impresso nele: se o
+  // beneficiário for renomeado ou excluído do cadastro depois, o recibo já
+  // entregue ao Tribunal de Contas não pode mudar junto. É a mesma lógica da
+  // imutabilidade do hash. O cadastro de Beneficiary serve para AUTOCOMPLETAR,
+  // não para ser a fonte de verdade do documento emitido.
+  beneficiaryName String @map("beneficiary_name")
   // Quem emitiu o documento — separado do beneficiário porque quase nunca são a
   // mesma pessoa, e a prestação de contas precisa saber quem autorizou.
-  createdById String @map("created_by_id") @db.Uuid
+  createdById     String @map("created_by_id") @db.Uuid
 
   // Identificador público, usado na URL de validação. Deliberadamente separado
   // da chave primária: o PK nunca vai para a internet, então podemos revogar ou
@@ -1287,11 +1292,10 @@ model DailyAllowance {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  user         User         @relation("DailyAllowanceBeneficiary", fields: [userId], references: [id])
   createdBy    User         @relation("DailyAllowanceIssuer", fields: [createdById], references: [id])
 
   @@index([organizationId, departureDate])
-  @@index([organizationId, userId])
+  @@index([organizationId, beneficiaryName])
   @@map("daily_allowances")
 }
 
@@ -1342,4 +1346,28 @@ model FleetFueling {
   @@index([organizationId, date])
   @@index([organizationId, licensePlate])
   @@map("fleet_fuelings")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cadastro de beneficiários de diárias (correção de regra de negócio)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Beneficiary {
+  id             String @id @default(uuid())
+  organizationId String @map("organization_id")
+
+  // Sempre em CAIXA ALTA, normalizado pelo serviço antes de gravar. Sem isso
+  // "joão silva" e "João Silva" criariam duas entradas para a mesma pessoa e a
+  // restrição de unicidade abaixo não teria efeito prático.
+  name String
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Unicidade POR ORGANIZAÇÃO: duas prefeituras podem ter servidores homônimos,
+  // e uma restrição global impediria a segunda de cadastrar o seu.
+  @@unique([name, organizationId])
+  @@index([organizationId])
+  @@map("beneficiaries")
 }

@@ -19,6 +19,9 @@ import { getApp, prisma } from './setup-e2e.js'
 
 const VALIDATE_URL = '/api/v1/public/documents/validate'
 
+/** Nome de quem viajou. Dado pessoal — NÃO pode aparecer na resposta pública. */
+const BENEFICIARY_NAME = 'JOÃO DA SILVA'
+
 /** Cria organização, servidor e uma diária EMITIDA (com hash). */
 async function seedIssuedDailyAllowance() {
   const organization = await prisma.organization.create({
@@ -41,7 +44,7 @@ async function seedIssuedDailyAllowance() {
   const allowance = await prisma.dailyAllowance.create({
     data: {
       organizationId: organization.id,
-      userId: user.id,
+      beneficiaryName: BENEFICIARY_NAME,
       createdById: user.id,
       destination: 'Brasília/DF',
       purpose: 'Reunião no ministério para tratar do convênio',
@@ -96,6 +99,8 @@ describe('GET /api/v1/public/documents/validate/:uuid (integração)', () => {
       const raw = response.body
 
       expect(raw).not.toContain(user.email)
+      // O nome de quem viajou é o dado pessoal central do documento.
+      expect(raw).not.toContain(BENEFICIARY_NAME)
       expect(raw).not.toContain('João')
       expect(raw).not.toContain('da Silva')
       expect(raw).not.toContain('Brasília/DF')

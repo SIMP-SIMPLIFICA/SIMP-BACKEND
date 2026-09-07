@@ -18,7 +18,7 @@ import {
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
 const createSchema = z.object({
-  userId: z.string().uuid('Informe um servidor válido.'),
+  beneficiaryName: z.string().trim().min(1, 'Informe o nome do beneficiário.').max(200),
   destination: z.string().min(1, 'Informe o destino.').max(255),
   purpose: z.string().min(1, 'Informe o motivo do deslocamento.'),
   departureDate: z.coerce.date(),
@@ -34,7 +34,7 @@ const updateSchema = createSchema.partial()
 const listSchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
-  userId: z.string().uuid().optional(),
+  beneficiaryName: z.string().min(1).optional(),
   issued: z
     .enum(['true', 'false'])
     .optional()
@@ -118,7 +118,7 @@ export const dailyAllowanceController = {
         {
           page: filter.page ?? 1,
           limit: filter.limit ?? 20,
-          userId: filter.userId,
+          beneficiaryName: filter.beneficiaryName,
           issued: filter.issued,
           startDate: filter.startDate,
           endDate: filter.endDate,

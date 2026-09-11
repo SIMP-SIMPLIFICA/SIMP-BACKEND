@@ -14,6 +14,7 @@
     "db:studio": "prisma studio",
     "db:seed": "tsx prisma/seeds/seed.ts",
     "db:seed:finance": "tsx src/scripts/seed-finance.ts",
+    "db:seed:epic3": "tsx prisma/seeds/seed-epic3-modules.ts",
     "db:reset": "prisma migrate reset",
     "test": "vitest",
     "test:e2e": "vitest run -c vitest.config.e2e.ts",

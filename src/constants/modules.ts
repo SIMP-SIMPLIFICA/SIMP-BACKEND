@@ -11,6 +11,8 @@ export const MODULES = {
   PROTOCOLS: 'protocols',
   COUNCILS: 'councils',
   SUPPORT: 'support',
+  DAILY_ALLOWANCES: 'dailyAllowances',
+  FLEET_FUELINGS: 'fleetFuelings',
 } as const
 
 export type ModuleKey = typeof MODULES[keyof typeof MODULES]
@@ -29,4 +31,6 @@ export const DEFAULT_MODULES: ModuleKey[] = [
   MODULES.DEPARTMENTS,
   MODULES.LIBRARY,
   MODULES.COVENANTS,
+  MODULES.DAILY_ALLOWANCES,
+  MODULES.FLEET_FUELINGS,
 ]

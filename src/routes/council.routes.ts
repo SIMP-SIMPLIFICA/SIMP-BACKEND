@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify'
 import { councilController } from '@/controllers/council.controller.js'
+import { councilCalendarController } from '@/controllers/council-calendar.controller.js'
 import { meetingController } from '@/controllers/council-meeting.controller.js'
 import { documentController } from '@/controllers/council-document.controller.js'
 import { signingController } from '@/controllers/govbr-signing.controller.js'
@@ -23,6 +24,13 @@ export async function councilRoutes(app: FastifyInstance) {
   app.post('/',
     { preHandler: [requireAnyPermission(WRITE)] },
     councilController.create,
+  )
+
+  // Calendário anual em PDF, com rodapé universal de validação.
+  // Declarado ANTES de '/:id' por disciplina de ordenação de rotas.
+  app.get('/:councilId/calendar/:year/pdf',
+    { preHandler: [requireAnyPermission(READ)] },
+    councilCalendarController.exportPdf,
   )
 
   app.get('/:id',

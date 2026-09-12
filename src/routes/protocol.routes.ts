@@ -34,6 +34,13 @@ export async function protocolRoutes(app: FastifyInstance) {
     protocolController.delete,
   )
 
+  // Relatório em PDF — mesma permissão de leitura, pois não altera nada.
+  app.get(
+    '/report',
+    { preHandler: [requireAnyPermission(['protocols:read', 'protocols:write', 'protocols:admin', 'protocols:normativo', 'protocols:comunicacao'])] },
+    protocolController.report,
+  )
+
   // Ver contadores de sequência por ano
   app.get(
     '/sequences',

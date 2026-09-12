@@ -9,11 +9,13 @@ import { beforeEach, describe, expect, test, vi } from 'vitest'
 
 const dailyFindFirstMock = vi.fn()
 const fleetFindFirstMock = vi.fn()
+const exportedFindFirstMock = vi.fn()
 
 vi.mock('@/lib/prisma.js', () => ({
   prisma: {
     dailyAllowance: { findFirst: (...a: unknown[]) => dailyFindFirstMock(...a) },
     fleetFueling: { findFirst: (...a: unknown[]) => fleetFindFirstMock(...a) },
+    exportedDocument: { findFirst: (...a: unknown[]) => exportedFindFirstMock(...a) },
   },
 }))
 
@@ -39,6 +41,7 @@ describe('Validação pública de documentos (Task 3.3)', () => {
   beforeEach(() => {
     dailyFindFirstMock.mockReset().mockResolvedValue(null)
     fleetFindFirstMock.mockReset().mockResolvedValue(null)
+    exportedFindFirstMock.mockReset().mockResolvedValue(null)
   })
 
   describe('registro de tipos', () => {
@@ -46,6 +49,7 @@ describe('Validação pública de documentos (Task 3.3)', () => {
       expect(documentValidationService.supportedTypes).toEqual([
         'DAILY_ALLOWANCE',
         'FLEET_FUELING',
+        'EXPORTED_DOCUMENT',
       ])
     })
   })
@@ -80,6 +84,7 @@ describe('Validação pública de documentos (Task 3.3)', () => {
 
       expect(dailyFindFirstMock).toHaveBeenCalledTimes(1)
       expect(fleetFindFirstMock).toHaveBeenCalledTimes(1)
+      expect(exportedFindFirstMock).toHaveBeenCalledTimes(1)
     })
 
     test('devolve nulo quando nenhuma fonte tem o identificador', async () => {
@@ -106,6 +111,60 @@ describe('Validação pública de documentos (Task 3.3)', () => {
       // Mesmo que a query deixasse passar, o serviço recusa.
       dailyFindFirstMock.mockResolvedValue({ ...ISSUED_DAILY, sha256Hash: null })
 
+      expect(await documentValidationService.validate(PUBLIC_ID)).toBeNull()
+    })
+  })
+
+  describe('validação universal (documentos exportados)', () => {
+    const EXPORTED = {
+      publicId: PUBLIC_ID,
+      sha256Hash: 'c'.repeat(64),
+      documentType: 'REPORT_PROTOCOLS',
+      exporterName: 'Carlos M. A. S***',
+      createdAt: new Date('2026-09-05T10:00:00Z'),
+      organization: { name: 'Prefeitura Municipal de Exemplo' },
+    }
+
+    test('encontra um relatório exportado e traduz o tipo', async () => {
+      exportedFindFirstMock.mockResolvedValue(EXPORTED)
+
+      const result = await documentValidationService.validate(PUBLIC_ID)
+
+      expect(result).toMatchObject({
+        type: 'EXPORTED_DOCUMENT',
+        typeLabel: 'Relatório de Protocolos',
+        sha256Hash: 'c'.repeat(64),
+      })
+    })
+
+    test('tipo não catalogado cai em rótulo genérico, sem invalidar', async () => {
+      // Um PDF exportado por versão mais nova que o catálogo continua sendo
+      // documento legítimo — deixar de atestá-lo por falta de rótulo seria pior.
+      exportedFindFirstMock.mockResolvedValue({ ...EXPORTED, documentType: 'ALGO_NOVO' })
+
+      const result = await documentValidationService.validate(PUBLIC_ID)
+      expect(result?.typeLabel).toBe('Documento Oficial')
+    })
+
+    test('expõe o emissor JÁ ofuscado', async () => {
+      // Seguro porque o banco nunca guardou o nome completo: a ofuscação
+      // acontece antes da gravação.
+      exportedFindFirstMock.mockResolvedValue(EXPORTED)
+
+      const result = await documentValidationService.validate(PUBLIC_ID)
+      expect(result?.exporterName).toBe('Carlos M. A. S***')
+      expect(result?.exporterName).not.toMatch(/Almeida|Soares/)
+    })
+
+    test('a data de criação é usada como data de emissão', async () => {
+      exportedFindFirstMock.mockResolvedValue(EXPORTED)
+
+      const result = await documentValidationService.validate(PUBLIC_ID)
+      expect(result?.issuedAt).toEqual(new Date('2026-09-05T10:00:00Z'))
+    })
+
+    test('registro sem hash não é documento', async () => {
+      exportedFindFirstMock.mockResolvedValue({ ...EXPORTED, sha256Hash: null })
       expect(await documentValidationService.validate(PUBLIC_ID)).toBeNull()
     })
   })

@@ -69,6 +69,7 @@ model Organization {
   dailyAllowances          DailyAllowance[]
   fleetFuelings            FleetFueling[]
   beneficiaries            Beneficiary[]
+  exportedDocuments        ExportedDocument[]
 
   @@map("organizations")
 }
@@ -1370,4 +1371,41 @@ model Beneficiary {
   @@unique([name, organizationId])
   @@index([organizationId])
   @@map("beneficiaries")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Registro de documentos exportados — validação universal
+// ─────────────────────────────────────────────────────────────────────────────
+
+model ExportedDocument {
+  id             String @id @default(uuid())
+  organizationId String @map("organization_id")
+
+  // Identificador público impresso no QR Code. Separado da chave primária pelo
+  // mesmo motivo dos demais documentos: o PK nunca vai para a internet.
+  publicId String @unique @default(uuid()) @map("public_id")
+
+  // Tipo do documento exportado: REPORT_PROTOCOLS, COUNCIL_CALENDAR, etc.
+  // String livre, e não enum, porque a promessa é validar QUALQUER PDF futuro do
+  // sistema — um enum exigiria migração a cada relatório novo. Os rótulos em
+  // pt-BR para o portal ficam em constants/exported-document-types.ts.
+  documentType String @map("document_type")
+
+  // SHA-256 dos bytes finais do PDF. É o que permite a um terceiro conferir o
+  // arquivo que tem em mãos contra o que o portal afirma.
+  sha256Hash String @map("sha256_hash")
+
+  // Nome de quem exportou, JÁ OFUSCADO (ver utils/lgpd-anonymizer.util.ts).
+  // Guardado mascarado, e não mascarado na leitura: o registro alimenta um
+  // endpoint público, e dado pessoal que nunca entra no banco não pode vazar
+  // dele por descuido de uma consulta futura.
+  exporterName String @map("exporter_name")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, documentType])
+  @@map("exported_documents")
 }

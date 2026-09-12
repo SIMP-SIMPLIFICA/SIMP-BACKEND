@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma.js'
+import { getExportedDocumentLabel } from '@/constants/exported-document-types.js'
 
 /**
  * Portal de Validação Pública (Épico 3, Task 3.3).
@@ -25,7 +26,10 @@ import { prisma } from '@/lib/prisma.js'
 
 // ─── Contratos ────────────────────────────────────────────────────────────────
 
-export type ValidatableDocumentType = 'DAILY_ALLOWANCE' | 'FLEET_FUELING'
+export type ValidatableDocumentType =
+  | 'DAILY_ALLOWANCE'
+  | 'FLEET_FUELING'
+  | 'EXPORTED_DOCUMENT'
 
 export interface ValidatedDocument {
   type: ValidatableDocumentType
@@ -35,6 +39,14 @@ export interface ValidatedDocument {
   sha256Hash: string
   issuedAt: Date | null
   organization: { name: string }
+  /**
+   * Quem emitiu, JÁ OFUSCADO na origem (ex: "Carlos M. A. S***").
+   *
+   * Seguro num endpoint aberto porque o banco nunca guarda o nome completo —
+   * a ofuscação acontece ANTES da gravação, não na leitura. Presente apenas
+   * nos documentos exportados, que registram o emissor.
+   */
+  exporterName?: string
 }
 
 interface DocumentSource {
@@ -99,6 +111,40 @@ const SOURCES: DocumentSource[] = [
         select: SELECT_PUBLIC,
       })
       return toValidated({ type: 'FLEET_FUELING', typeLabel: 'Relatório de Abastecimento' }, raw)
+    },
+  },
+  {
+    // Validação UNIVERSAL: qualquer PDF exportado do sistema se registra aqui.
+    // Diferente das duas fontes acima, o rótulo vem da LINHA — cada exportação
+    // tem o seu (Relatório de Protocolos, Calendário…) —, então este caso não
+    // usa o helper de rótulo fixo.
+    type: 'EXPORTED_DOCUMENT',
+    typeLabel: 'Documento Oficial',
+    async find(publicId) {
+      const raw = await prisma.exportedDocument.findFirst({
+        where: { publicId },
+        select: {
+          publicId: true,
+          sha256Hash: true,
+          documentType: true,
+          exporterName: true,
+          createdAt: true,
+          organization: { select: { name: true } },
+        },
+      })
+
+      if (!raw?.sha256Hash) return null
+
+      return {
+        type: 'EXPORTED_DOCUMENT',
+        typeLabel: getExportedDocumentLabel(raw.documentType),
+        publicId: raw.publicId,
+        sha256Hash: raw.sha256Hash,
+        // O registro nasce no ato da exportação, então createdAt É a emissão.
+        issuedAt: raw.createdAt,
+        organization: { name: raw.organization?.name ?? 'Organização não identificada' },
+        exporterName: raw.exporterName,
+      }
     },
   },
 ]

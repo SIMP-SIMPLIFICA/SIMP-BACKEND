@@ -1,4 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
+import { protocolReportService } from '@/services/protocol-report.service.js'
+import { buildProtocolVisibilityFilter } from '@/utils/protocol-access.util.js'
 import { prisma } from '@/lib/prisma.js'
 import { z } from 'zod'
 import { randomBytes } from 'node:crypto'
@@ -45,6 +47,18 @@ const updateStatusSchema = z.object({
   // LibraryDocument.id usa nanoid, não uuid — .uuid() rejeitava todo anexo real com
   // 400 Bad Request. Mesma classe de bug que já ocorrera com departmentId.
   libraryDocumentId: z.string().min(1).optional(),
+})
+
+const reportQuerySchema = z.object({
+  startDate:        z.coerce.date().optional(),
+  endDate:          z.coerce.date().optional(),
+  documentCategory: z.nativeEnum(OfficialDocumentCategory).optional(),
+  // `type` é o nome do parâmetro na especificação; internamente o campo do
+  // modelo chama documentType.
+  type:             z.string().optional(),
+}).refine(q => !q.startDate || !q.endDate || q.startDate <= q.endDate, {
+  message: 'A data inicial não pode ser posterior à data final.',
+  path: ['startDate'],
 })
 
 const listQuerySchema = z.object({
@@ -252,12 +266,17 @@ export const protocolController = {
       const { organizationId, id: userId, isSuperAdmin, permissions } = (request as unknown as RequestUser).user
       const query = listQuerySchema.parse(request.query)
 
-      const hasAdmin = permissions?.includes('protocols:admin') || isSuperAdmin
       const effectiveYear = query.year ?? currentYear()
 
-      const orgFilter = isSuperAdmin ? {} : { organizationId }
+      // Regra de visibilidade compartilhada com o relatório — ver
+      // utils/protocol-access.util.ts.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const where: any = { ...orgFilter }
+      const where: any = await buildProtocolVisibilityFilter({
+        organizationId,
+        userId,
+        isSuperAdmin,
+        permissions,
+      })
       if (query.documentCategory) where.documentCategory = query.documentCategory
       if (query.documentType)     where.documentType     = query.documentType
       if (query.status)           where.status           = query.status
@@ -271,28 +290,18 @@ export const protocolController = {
         where.createdAt = { gte: start, lt: end }
       }
 
-      if (!hasAdmin) {
-        // Caixa compartilhada do setor: vê docs do próprio departamento.
-        // Inclui docs legados (departmentId=null) identificados pelo sector snapshot.
-        const userRecord = await prisma.user.findUnique({
-          where: { id: userId },
-          select: { departments: { take: 1, select: { id: true, code: true } } },
-        })
-        const dept = userRecord?.departments[0]
-        if (dept) {
-          where.OR = [
-            { departmentId: dept.id },
-            { departmentId: null, sector: dept.code.toUpperCase() },
-          ]
-        } else {
-          where.creatorId = userId
-        }
-      }
-
       if (query.search) {
-        where.OR = [
-          { formattedNumber: { contains: query.search, mode: 'insensitive' } },
-          { subject:         { contains: query.search, mode: 'insensitive' } },
+        // AND, e NÃO `where.OR = ...`: a atribuição direta sobrescrevia a
+        // restrição de departamento montada acima, e um usuário comum que
+        // buscasse passava a enxergar documentos de outros setores.
+        where.AND = [
+          ...(where.AND ?? []),
+          {
+            OR: [
+              { formattedNumber: { contains: query.search, mode: 'insensitive' } },
+              { subject:         { contains: query.search, mode: 'insensitive' } },
+            ],
+          },
         ]
       }
 
@@ -382,6 +391,43 @@ export const protocolController = {
     } catch (err: unknown) {
       if (err instanceof z.ZodError) return reply.code(400).send({ error: 'Validation Error', issues: err.issues })
       return reply.code(500).send({ error: 'Delete Failed', message: (err as Error).message })
+    }
+  },
+
+  /**
+   * GET /api/v1/protocols/report — relatório em PDF.
+   *
+   * Responde com o binário do PDF. O registro para validação pública acontece
+   * dentro do serviço, então o arquivo entregue já é conferível pelo QR Code.
+   */
+  async report(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { organizationId, id: userId, isSuperAdmin, permissions } = (request as unknown as RequestUser).user
+      const query = reportQuerySchema.parse(request.query)
+
+      const { bytes, publicId } = await protocolReportService.generate(
+        {
+          startDate: query.startDate,
+          endDate: query.endDate,
+          documentCategory: query.documentCategory,
+          documentType: query.type,
+        },
+        { organizationId, userId, isSuperAdmin, permissions },
+      )
+
+      return reply
+        .header('Content-Type', 'application/pdf')
+        .header('Content-Disposition', `inline; filename="relatorio-protocolos-${publicId}.pdf"`)
+        .send(Buffer.from(bytes))
+    } catch (err: unknown) {
+      if (err instanceof z.ZodError) {
+        return reply.code(400).send({ error: 'VALIDATION_ERROR', issues: err.issues })
+      }
+      request.log.error(err, 'Falha ao gerar relatório de protocolos')
+      return reply.code(500).send({
+        error: 'INTERNAL_SERVER_ERROR',
+        message: 'Não foi possível gerar o relatório.',
+      })
     }
   },
 

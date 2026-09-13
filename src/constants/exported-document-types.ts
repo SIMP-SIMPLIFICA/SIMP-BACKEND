@@ -16,6 +16,15 @@ export const EXPORTED_DOCUMENT_TYPES = {
   COUNCIL_CALENDAR: 'COUNCIL_CALENDAR',
   FINANCE_REPORT: 'FINANCE_REPORT',
   DAILY_ALLOWANCE: 'DAILY_ALLOWANCE',
+  /** Anexo II — prestação de contas do deslocamento. Documento próprio. */
+  DAILY_ALLOWANCE_ACCOUNTABILITY: 'DAILY_ALLOWANCE_ACCOUNTABILITY',
+  REPORT_DAILY_ALLOWANCES: 'REPORT_DAILY_ALLOWANCES',
+  /**
+   * PDF-Manifesto de uma planilha: não contém os dados, apenas atesta o
+   * SHA-256 do .xlsx que viaja ao lado dele no ZIP. É o que dá validação
+   * universal a um formato que não comporta QR Code nem rodapé.
+   */
+  DAILY_ALLOWANCE_XLS_MANIFEST: 'DAILY_ALLOWANCE_XLS_MANIFEST',
   FLEET_FUELING: 'FLEET_FUELING',
 } as const
 
@@ -28,6 +37,11 @@ const LABELS: Record<string, string> = {
   [EXPORTED_DOCUMENT_TYPES.COUNCIL_CALENDAR]: 'Calendário Anual de Reuniões',
   [EXPORTED_DOCUMENT_TYPES.FINANCE_REPORT]: 'Relatório de Lançamentos Financeiros',
   [EXPORTED_DOCUMENT_TYPES.DAILY_ALLOWANCE]: 'Recibo de Diária',
+  [EXPORTED_DOCUMENT_TYPES.DAILY_ALLOWANCE_ACCOUNTABILITY]:
+    'Prestação de Contas de Diária (Anexo II)',
+  [EXPORTED_DOCUMENT_TYPES.REPORT_DAILY_ALLOWANCES]: 'Relatório de Diárias',
+  [EXPORTED_DOCUMENT_TYPES.DAILY_ALLOWANCE_XLS_MANIFEST]:
+    'Manifesto de Integridade de Planilha (Diárias)',
   [EXPORTED_DOCUMENT_TYPES.FLEET_FUELING]: 'Relatório de Abastecimento',
 }
 

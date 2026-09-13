@@ -1337,6 +1337,21 @@ model DailyAllowance {
   qddFonteSnapshot    String? @map("qdd_fonte_snapshot")
   qddNaturezaSnapshot String? @map("qdd_natureza_snapshot")
 
+  /// PRESTAÇÃO DE CONTAS (Anexo II).
+  /// Preenchidos quando o servidor presta contas do deslocamento.
+  accountabilityDate DateTime? @map("accountability_date")
+  /// Relato da atividade desempenhada. Texto livre e longo.
+  activityReport     String?   @map("activity_report") @db.Text
+
+  /// O Anexo II é documento PRÓPRIO, com identificador e hash separados dos do
+  /// Anexo I. São dois papéis distintos circulando: a solicitação e a
+  /// prestação. Reaproveitar o mesmo publicId faria o Portal de Validação
+  /// devolver o documento errado para metade dos QR Codes em circulação.
+  accountabilityPublicId   String?   @unique @map("accountability_public_id")
+  accountabilitySha256Hash String?   @map("accountability_sha256_hash")
+  accountabilityPdfFileKey String?   @map("accountability_pdf_file_key")
+  accountabilityIssuedAt   DateTime? @map("accountability_issued_at")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -1349,6 +1364,8 @@ model DailyAllowance {
 
   @@index([organizationId, departureDate])
   @@index([organizationId, beneficiaryName])
+  /// Sustenta o filtro por situação e a varredura de prestações em atraso.
+  @@index([organizationId, status, returnDate])
   @@map("daily_allowances")
 }
 

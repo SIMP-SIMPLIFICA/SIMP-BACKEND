@@ -56,6 +56,14 @@ export interface OfficialPdfInput {
   /** Nome de quem emitiu, JÁ OFUSCADO. Impresso no rodapé quando presente. */
   exporterName?: string | null
   /**
+   * Hash de conteúdo EXTERNO a imprimir no rodapé.
+   *
+   * NÃO é o hash deste PDF — esse não pode ser impresso aqui dentro, ver
+   * `UniversalFooterInput.printedHash`. Serve ao PDF-Manifesto, que atesta o
+   * SHA-256 de um arquivo que viaja ao lado dele.
+   */
+  printedHash?: string | null
+  /**
    * Logo do tenant (Task 3.4). Aceita PNG e JPEG — os dois formatos que o
    * pdf-lib sabe embutir, e os dois em que uma prefeitura costuma ter a marca.
    * O nome do campo ficou como `logoPng` por já estar no contrato acordado.
@@ -243,6 +251,7 @@ export async function createOfficialPdf(input: OfficialPdfInput): Promise<Offici
   const validationUrl = await applyUniversalValidationFooter(pdf, {
     publicId: input.publicId,
     exporterName: input.exporterName,
+    printedHash: input.printedHash,
     note: input.footNote,
   })
 

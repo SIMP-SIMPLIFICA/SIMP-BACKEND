@@ -1,12 +1,15 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import {
+  type AccountForInput,
   type CreateDailyAllowanceInput,
   DailyAllowanceError,
+  type ReportDailyAllowanceFilter,
   type RequestScope,
   type UpdateDailyAllowanceInput,
   dailyAllowanceService,
 } from '@/services/daily-allowance.service.js'
+import { dailyAllowanceReportService } from '@/services/daily-allowance-report.service.js'
 
 /**
  * Diárias de servidor (Épico 3, Task 3.1).
@@ -35,16 +38,44 @@ const createSchema = z.object({
 
 const updateSchema = createSchema.partial()
 
-const listSchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(100).default(20),
+/**
+ * Filtros compartilhados pela listagem e pelos relatórios.
+ *
+ * Um schema só para os três: se o PDF aceitasse um filtro que a tela não aceita,
+ * o relatório mostraria um recorte que o usuário não consegue conferir em tela.
+ */
+const filterSchema = z.object({
   beneficiaryName: z.string().min(1).optional(),
+  // Aceita com ou sem máscara e normaliza para dígitos: a tela envia
+  // "123.456.789-00", o banco guarda "12345678900".
+  cpf: z
+    .string()
+    .optional()
+    .transform(v => (v ? v.replace(/\D/g, '') : undefined))
+    .refine(v => v === undefined || v.length === 11, 'Informe um CPF completo, com 11 dígitos.'),
+  destination: z.string().min(1).optional(),
+  status: z.enum(['PENDING', 'ISSUED', 'ACCOUNTED']).optional(),
+  departmentId: z.string().min(1).optional(),
   issued: z
     .enum(['true', 'false'])
     .optional()
     .transform(v => (v === undefined ? undefined : v === 'true')),
   startDate: z.coerce.date().optional(),
   endDate: z.coerce.date().optional(),
+})
+
+const listSchema = filterSchema.extend({
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(20),
+})
+
+const accountForSchema = z.object({
+  accountabilityDate: z.coerce.date(),
+  activityReport: z
+    .string()
+    .trim()
+    .min(10, 'Descreva a atividade desempenhada em pelo menos 10 caracteres.')
+    .max(5000),
 })
 
 const paramsSchema = z.object({ id: z.string().uuid('Identificador inválido.') })
@@ -74,7 +105,9 @@ const STATUS_BY_CODE: Record<DailyAllowanceError['code'], number> = {
   NO_ORGANIZATION: 403,
   ALREADY_ISSUED: 409,
   NOT_ISSUED: 409,
+  ALREADY_ACCOUNTED: 409,
   INVALID_PERIOD: 400,
+  INVALID_QDD_ITEM: 400,
 }
 
 function handleError(error: unknown, request: FastifyRequest, reply: FastifyReply) {
@@ -93,6 +126,26 @@ function handleError(error: unknown, request: FastifyRequest, reply: FastifyRepl
     error: 'INTERNAL_SERVER_ERROR',
     message: 'Não foi possível processar a diária.',
   })
+}
+
+/**
+ * Extrai apenas os campos de filtro, descartando paginação.
+ *
+ * zod 3: um schema que contenha `z.coerce.*` é inferido com TODAS as chaves
+ * opcionais (ver o comentário em `create`), então o tipo de saída já é
+ * compatível com o filtro do relatório.
+ */
+function toReportFilter(parsed: z.infer<typeof filterSchema>): ReportDailyAllowanceFilter {
+  return {
+    beneficiaryName: parsed.beneficiaryName,
+    cpf: parsed.cpf,
+    destination: parsed.destination,
+    status: parsed.status,
+    departmentId: parsed.departmentId,
+    issued: parsed.issued,
+    startDate: parsed.startDate,
+    endDate: parsed.endDate,
+  }
 }
 
 // ─── Controller ───────────────────────────────────────────────────────────────
@@ -119,14 +172,7 @@ export const dailyAllowanceController = {
       const filter: z.infer<typeof listSchema> = listSchema.parse(request.query)
 
       const result = await dailyAllowanceService.list(
-        {
-          page: filter.page ?? 1,
-          limit: filter.limit ?? 20,
-          beneficiaryName: filter.beneficiaryName,
-          issued: filter.issued,
-          startDate: filter.startDate,
-          endDate: filter.endDate,
-        },
+        { ...toReportFilter(filter), page: filter.page ?? 1, limit: filter.limit ?? 20 },
         scope
       )
       return reply.send(result)
@@ -188,6 +234,74 @@ export const dailyAllowanceController = {
       return reply
         .header('Content-Type', 'application/pdf')
         .header('Content-Disposition', `inline; filename="diaria-${publicId}.pdf"`)
+        .send(bytes)
+    } catch (error) {
+      return handleError(error, request, reply)
+    }
+  },
+
+  /** POST /:id/account-for — registra a prestação de contas e emite o Anexo II. */
+  async accountFor(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const scope = getScope(request)
+      const { id } = paramsSchema.parse(request.params)
+      // Mesmo cast de `create`: o `z.coerce.date` torna todas as chaves
+      // opcionais na inferência, embora o parse já as garanta em execução.
+      const input = accountForSchema.parse(request.body) as AccountForInput
+
+      return reply.send(await dailyAllowanceService.accountFor(id, input, scope))
+    } catch (error) {
+      return handleError(error, request, reply)
+    }
+  },
+
+  /** GET /:id/accountability/pdf — baixa o Anexo II já emitido. */
+  async downloadAccountabilityPdf(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const scope = getScope(request)
+      const { id } = paramsSchema.parse(request.params)
+      const { bytes, publicId } = await dailyAllowanceService.getAccountabilityPdf(id, scope)
+
+      return reply
+        .header('Content-Type', 'application/pdf')
+        .header('Content-Disposition', `inline; filename="prestacao-contas-${publicId}.pdf"`)
+        .send(bytes)
+    } catch (error) {
+      return handleError(error, request, reply)
+    }
+  },
+
+  /** GET /report/pdf — relatório tabular com os mesmos filtros da listagem. */
+  async reportPdf(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const scope = getScope(request)
+      const filter = toReportFilter(filterSchema.parse(request.query))
+      const { bytes, publicId } = await dailyAllowanceReportService.generatePdf(filter, scope)
+
+      return reply
+        .header('Content-Type', 'application/pdf')
+        .header('Content-Disposition', `inline; filename="relatorio-diarias-${publicId}.pdf"`)
+        .send(Buffer.from(bytes))
+    } catch (error) {
+      return handleError(error, request, reply)
+    }
+  },
+
+  /** GET /report/excel — ZIP com a planilha e o PDF-Manifesto que a atesta. */
+  async reportExcel(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const scope = getScope(request)
+      const filter = toReportFilter(filterSchema.parse(request.query))
+      const { bytes, publicId } = await dailyAllowanceReportService.generateExcelPackage(
+        filter,
+        scope
+      )
+
+      // `attachment`, não `inline`: o navegador não sabe exibir um ZIP, e um
+      // pacote aberto na aba perderia o manifesto que viaja junto da planilha.
+      return reply
+        .header('Content-Type', 'application/zip')
+        .header('Content-Disposition', `attachment; filename="relatorio-diarias-${publicId}.zip"`)
         .send(bytes)
     } catch (error) {
       return handleError(error, request, reply)

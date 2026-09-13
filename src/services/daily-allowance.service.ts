@@ -4,6 +4,8 @@ import { readFile, saveFile } from '@/services/storage.service.js'
 import { createOfficialPdf } from '@/services/document-pdf.service.js'
 import { organizationBrandingService } from '@/services/organization-branding.service.js'
 import { auditLedgerService } from '@/services/audit-ledger.service.js'
+import { exportedDocumentService } from '@/services/exported-document.service.js'
+import { EXPORTED_DOCUMENT_TYPES } from '@/constants/exported-document-types.js'
 import { normalizeBeneficiaryName } from '@/services/beneficiary.service.js'
 
 /**
@@ -284,6 +286,14 @@ export const dailyAllowanceService = {
 
     // Efeito colateral: a trilha registra quem emitiu documento oficial, mas uma
     // falha de auditoria não pode desfazer uma emissão já concluída.
+    await exportedDocumentService.register({
+      organizationId: scope.organizationId,
+      documentType: EXPORTED_DOCUMENT_TYPES.DAILY_ALLOWANCE,
+      publicId: record.publicId,
+      bytes,
+      exporterFullName: issuer || undefined,
+    })
+
     await auditLedgerService.record({
       userId: scope.userId,
       action: 'DAILY_ALLOWANCE_ISSUED',

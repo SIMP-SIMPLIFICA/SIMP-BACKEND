@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { PDFDocument, type PDFFont, type PDFPage, StandardFonts, rgb } from 'pdf-lib'
+import { PDFDocument, PDFString, type PDFFont, type PDFPage, StandardFonts, rgb } from 'pdf-lib'
 import QRCode from 'qrcode'
 import { config } from '@/config/config.js'
 
@@ -340,7 +340,7 @@ export async function applyUniversalValidationFooter(
     })
     cursor -= FOOTER_LINE_HEIGHT
 
-    const lines: string[] = [validationUrl]
+    const lines: string[] = [`Código de verificação: ${input.publicId}`]
 
     if (input.exporterName) {
       lines.push(`Emitido por: ${input.exporterName} em ${formatIssuedAt(issuedAt)}`)
@@ -364,6 +364,20 @@ export async function applyUniversalValidationFooter(
         cursor -= FOOTER_LINE_HEIGHT
       }
     }
+
+    // Link annotation cobrindo todo o rodapé: clicar abre o portal de validação
+    // diretamente no browser, sem precisar copiar/colar o UUID.
+    const linkAnnot = pdf.context.obj({
+      Type: 'Annot',
+      Subtype: 'Link',
+      Rect: [MARGIN, MARGIN, width - MARGIN, FOOTER_TOP],
+      Border: [0, 0, 0],
+      A: {
+        S: 'URI',
+        URI: PDFString.of(validationUrl),
+      },
+    })
+    page.node.addAnnot(pdf.context.register(linkAnnot))
 
     // Numeração à direita: um relatório de várias páginas precisa dela para que
     // se perceba uma folha faltando.

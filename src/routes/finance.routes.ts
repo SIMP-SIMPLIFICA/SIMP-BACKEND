@@ -2,11 +2,13 @@ import { FastifyInstance } from 'fastify';
 import { FinanceCategoryController } from '../controllers/finance-category.controller.js';
 import { FinanceEntryController } from '../controllers/finance-entry.controller.js';
 import { FinanceBankAccountController } from '../controllers/finance-bank-account.controller.js';
+import { FinanceReportController } from '../controllers/finance-report.controller.js';
 import { authMiddleware, requireModule, requirePermission } from '../middleware/auth.middleware.js';
 
 const categoryController = new FinanceCategoryController();
 const entryController = new FinanceEntryController();
 const bankAccountController = new FinanceBankAccountController();
+const reportController = new FinanceReportController();
 
 export function financeRoutes(app: FastifyInstance) {
     // Todas as rotas de finanças requerem autenticação
@@ -35,4 +37,7 @@ export function financeRoutes(app: FastifyInstance) {
     app.get('/entries/:entryId/attachments', entryController.listAttachments);
     app.post('/entries/:entryId/attachments', entryController.uploadAttachment);
     app.delete('/entries/:entryId/attachments/:attachmentId', entryController.deleteAttachment);
+
+    // --- Relatório PDF com validação (QR code + hash) ---
+    app.get('/report/pdf', { preHandler: requirePermission(['finance:export']) }, reportController.generatePdf.bind(reportController));
 }

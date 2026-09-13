@@ -14,6 +14,9 @@
 export const EXPORTED_DOCUMENT_TYPES = {
   REPORT_PROTOCOLS: 'REPORT_PROTOCOLS',
   COUNCIL_CALENDAR: 'COUNCIL_CALENDAR',
+  FINANCE_REPORT: 'FINANCE_REPORT',
+  DAILY_ALLOWANCE: 'DAILY_ALLOWANCE',
+  FLEET_FUELING: 'FLEET_FUELING',
 } as const
 
 export type ExportedDocumentType =
@@ -23,6 +26,9 @@ export type ExportedDocumentType =
 const LABELS: Record<string, string> = {
   [EXPORTED_DOCUMENT_TYPES.REPORT_PROTOCOLS]: 'Relatório de Protocolos',
   [EXPORTED_DOCUMENT_TYPES.COUNCIL_CALENDAR]: 'Calendário Anual de Reuniões',
+  [EXPORTED_DOCUMENT_TYPES.FINANCE_REPORT]: 'Relatório de Lançamentos Financeiros',
+  [EXPORTED_DOCUMENT_TYPES.DAILY_ALLOWANCE]: 'Recibo de Diária',
+  [EXPORTED_DOCUMENT_TYPES.FLEET_FUELING]: 'Relatório de Abastecimento',
 }
 
 /** Rótulo em pt-BR do tipo, com fallback para tipo não catalogado. */

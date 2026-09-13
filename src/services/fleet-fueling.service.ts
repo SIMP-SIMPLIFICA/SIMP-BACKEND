@@ -1,6 +1,8 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma.js'
 import { auditLedgerService } from '@/services/audit-ledger.service.js'
+import { exportedDocumentService } from '@/services/exported-document.service.js'
+import { EXPORTED_DOCUMENT_TYPES } from '@/constants/exported-document-types.js'
 import { createOfficialPdf } from '@/services/document-pdf.service.js'
 import { organizationBrandingService } from '@/services/organization-branding.service.js'
 import { readFile, saveFile } from '@/services/storage.service.js'
@@ -290,6 +292,14 @@ export const fleetFuelingService = {
       where: { id },
       data: { sha256Hash, pdfFileKey, issuedAt: new Date() },
       include: LIST_INCLUDE,
+    })
+
+    await exportedDocumentService.register({
+      organizationId: scope.organizationId,
+      documentType: EXPORTED_DOCUMENT_TYPES.FLEET_FUELING,
+      publicId: record.publicId,
+      bytes,
+      exporterFullName: registeredBy || undefined,
     })
 
     await auditLedgerService.record({

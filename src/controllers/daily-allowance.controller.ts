@@ -18,6 +18,10 @@ import {
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
 const createSchema = z.object({
+  // Recusado no SERVIDOR, não apenas na tela: despesa sem setor identificado
+  // não tem ordenador responsável.
+  departmentId: z.string().min(1, 'Selecione o departamento.'),
+  qddItemId: z.string().uuid().optional(),
   beneficiaryName: z.string().trim().min(1, 'Informe o nome do beneficiário.').max(200),
   destination: z.string().min(1, 'Informe o destino.').max(255),
   purpose: z.string().min(1, 'Informe o motivo do deslocamento.'),

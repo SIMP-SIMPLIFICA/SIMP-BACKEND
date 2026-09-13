@@ -70,6 +70,9 @@ model Organization {
   fleetFuelings            FleetFueling[]
   beneficiaries            Beneficiary[]
   exportedDocuments        ExportedDocument[]
+  councilDepartments       CouncilDepartment[]
+  budgetLaws               BudgetLaw[]
+  qddItems                 QddItem[]
 
   @@map("organizations")
 }
@@ -293,19 +296,31 @@ model Department {
   name        String
   code        String
   description String?
+  /// CNPJ próprio do setor, quando possui inscrição separada da prefeitura.
+  cnpj        String?
+  /// Ordenador de Despesa: autoridade que responde juridicamente pelo empenho.
+  /// DISTINTO de `managerId` — o ordenador frequentemente NÃO é usuário do
+  /// sistema, e confundir os dois misturaria papel operacional com autoridade.
+  chiefName   String?  @map("chief_name")
   isActive    Boolean  @default(true) @map("is_active")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  organizationId String?       @map("organization_id")
-  organization   Organization? @relation(fields: [organizationId], references: [id])
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id])
 
   managerId String? @map("manager_id") @db.Uuid
   manager   User?   @relation("DepartmentManager", fields: [managerId], references: [id])
 
-  members           User[]             @relation("DepartmentMembers")
+  members           User[]              @relation("DepartmentMembers")
   workspaces        Workspace[]
   officialDocuments OfficialDocument[]
+  councils          CouncilDepartment[]
+  covenants         Covenant[]
+  virtualProcesses  VirtualProcess[]
+  budgetLaws        BudgetLaw[]
+  qddItems          QddItem[]
+  dailyAllowances   DailyAllowance[]
 
   @@unique([organizationId, code])
   @@map("departments")
@@ -619,6 +634,9 @@ model FinanceAttachment {
 model VirtualProcess {
   id             String    @id @default(uuid())
   organizationId String    @map("organization_id")
+  /// Setor responsável. Opcional: o vínculo é informativo e nem todo registro
+  /// histórico tem setor identificado.
+  departmentId   String?   @map("department_id")
   processNumber  String    @map("process_number")
   secretaria     String
   source         String
@@ -643,6 +661,9 @@ model VirtualProcess {
   createdById    String    @map("created_by_id") @db.Uuid
 
   organization     Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// SetNull: excluir um setor NÃO pode apagar convênio nem processo — são
+  /// registros com valor próprio, não dependentes do setor.
+  department       Department?              @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   creator          User                     @relation("ProcessCreator", fields: [createdById], references: [id])
   documents        VirtualProcessDocument[]
   covenants        Covenant[]
@@ -874,8 +895,11 @@ enum CovenantStatus {
 }
 
 model Covenant {
-  id             String @id @default(uuid())
-  organizationId String @map("organization_id")
+  id             String  @id @default(uuid())
+  organizationId String  @map("organization_id")
+  /// Setor responsável. Opcional: o vínculo é informativo e nem todo registro
+  /// histórico tem setor identificado.
+  departmentId   String? @map("department_id")
   number         String
 
   typeId       String? @map("type_id")
@@ -904,6 +928,9 @@ model Covenant {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   organization     Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// SetNull: excluir um setor NÃO pode apagar convênio nem processo — são
+  /// registros com valor próprio, não dependentes do setor.
+  department       Department?            @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   covenantType     CovenantType?          @relation(fields: [typeId], references: [id], onDelete: SetNull)
   proponent        VirtualProcessCompany? @relation(fields: [proponentId], references: [id], onDelete: SetNull)
   convenente       Convenente?            @relation(fields: [convenenteId], references: [id], onDelete: SetNull)
@@ -1046,6 +1073,7 @@ model Council {
   organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   memberships  CouncilMembership[]
   meetings     CouncilMeeting[]
+  departments  CouncilDepartment[]
 
   @@unique([organizationId, acronym])
   @@index([organizationId, isActive])
@@ -1260,6 +1288,19 @@ model DailyAllowance {
   // mesma pessoa, e a prestação de contas precisa saber quem autorizou.
   createdById     String @map("created_by_id") @db.Uuid
 
+  /// Setor ao qual a despesa é imputada.
+  /// Obrigatório: despesa sem setor identificado não tem ordenador responsável.
+  departmentId String @map("department_id")
+
+  /// Dotação orçamentária (ficha do QDD) que lastreia a diária.
+  qddItemId String? @map("qdd_item_id")
+
+  status DailyAllowanceStatus @default(PENDING)
+
+  /// ESTOURO DE DOTAÇÃO: a emissão é permitida (remanejamento e suplementação
+  /// são rotina na administração pública), mas fica registrada para auditoria.
+  budgetOverrun Boolean @default(false) @map("budget_overrun")
+
   // Identificador público, usado na URL de validação. Deliberadamente separado
   // da chave primária: o PK nunca vai para a internet, então podemos revogar ou
   // rotacionar um link público sem tocar em nenhuma chave estrangeira.
@@ -1289,11 +1330,22 @@ model DailyAllowance {
   // Validação acusar adulteração num documento legítimo.
   pdfFileKey String?   @map("pdf_file_key")
 
+  /// CÓPIA TEXTUAL da dotação no instante da emissão. Mesmo motivo de
+  /// `beneficiaryName` ser texto: o documento emitido não pode mudar quando o
+  /// cadastro do QDD muda. Preenchida na emissão, nunca na criação do rascunho.
+  qddFichaSnapshot    String? @map("qdd_ficha_snapshot")
+  qddFonteSnapshot    String? @map("qdd_fonte_snapshot")
+  qddNaturezaSnapshot String? @map("qdd_natureza_snapshot")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   createdBy    User         @relation("DailyAllowanceIssuer", fields: [createdById], references: [id])
+  department   Department   @relation(fields: [departmentId], references: [id])
+  /// Restrict: apagar uma dotação usada por diária emitida apagaria o lastro de
+  /// uma despesa já documentada.
+  qddItem      QddItem?     @relation(fields: [qddItemId], references: [id], onDelete: Restrict)
 
   @@index([organizationId, departureDate])
   @@index([organizationId, beneficiaryName])
@@ -1362,6 +1414,10 @@ model Beneficiary {
   // restrição de unicidade abaixo não teria efeito prático.
   name String
 
+  /// CPF apenas em dígitos, sem máscara — a formatação é apresentação.
+  /// Opcional: beneficiários já cadastrados não o possuem.
+  cpf String?
+
   createdAt DateTime @default(now()) @map("created_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -1369,6 +1425,10 @@ model Beneficiary {
   // Unicidade POR ORGANIZAÇÃO: duas prefeituras podem ter servidores homônimos,
   // e uma restrição global impediria a segunda de cadastrar o seu.
   @@unique([name, organizationId])
+  /// Unicidade POR ORGANIZAÇÃO, não global: a mesma pessoa pode ser beneficiária
+  /// em duas prefeituras, e um índice global impediria a segunda de cadastrá-la
+  /// — além de revelar, pela recusa, que ela já existe em outro tenant.
+  @@unique([cpf, organizationId])
   @@index([organizationId])
   @@map("beneficiaries")
 }
@@ -1408,4 +1468,97 @@ model ExportedDocument {
   @@index([organizationId, createdAt])
   @@index([organizationId, documentType])
   @@map("exported_documents")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Épico 4 — Departamentos, Motor Orçamentário (QDD) e Diárias
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Situação da diária ao longo do fluxo.
+enum DailyAllowanceStatus {
+  PENDING
+  ISSUED
+  ACCOUNTED
+}
+
+/// Tipo da lei orçamentária.
+enum BudgetLawType {
+  LOA
+  PPA
+  LDO
+}
+
+/// Vínculo N:N entre Conselho e Departamento.
+model CouncilDepartment {
+  id             String @id @default(nanoid())
+  organizationId String @map("organization_id")
+  councilId      String @map("council_id")
+  departmentId   String @map("department_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  council      Council      @relation(fields: [councilId], references: [id], onDelete: Cascade)
+  department   Department   @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  @@unique([councilId, departmentId])
+  @@index([organizationId])
+  @@map("council_departments")
+}
+
+/// Lei orçamentária de um setor num exercício (LOA, PPA, LDO).
+model BudgetLaw {
+  id             String @id @default(uuid())
+  organizationId String @map("organization_id")
+  departmentId   String @map("department_id")
+
+  type BudgetLawType
+  year Int
+
+  details String? @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  department   Department   @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, departmentId, year])
+  @@map("budget_laws")
+}
+
+/// Ficha do Quadro de Detalhamento da Despesa — a dotação que lastreia a despesa.
+///
+/// NOMES EM PORTUGUÊS de propósito: `ficha`, `fonte`, `projetoAtividade` e
+/// `naturezaDespesa` são termos do orçamento público brasileiro sem equivalente
+/// direto em inglês, no mesmo precedente de `empenho` e `liquidação` já aceitos
+/// na Constituição (Princípio III). Traduzi-los tornaria o campo irreconhecível
+/// para quem opera o orçamento.
+model QddItem {
+  id             String @id @default(uuid())
+  organizationId String @map("organization_id")
+  departmentId   String @map("department_id")
+
+  year  Int
+  ficha String
+  fonte String
+
+  projetoAtividade String @map("projeto_atividade")
+  naturezaDespesa  String @map("natureza_despesa")
+
+  /// Decimal, nunca Float: é dotação de dinheiro público.
+  valorOrcado Decimal @map("valor_orcado") @db.Decimal(15, 2)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  department      Department       @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  dailyAllowances DailyAllowance[]
+
+  /// Duas fichas iguais no mesmo setor e exercício tornariam ambíguo a qual
+  /// dotação a despesa foi imputada.
+  @@unique([departmentId, year, ficha])
+  @@index([organizationId, year])
+  @@map("qdd_items")
 }

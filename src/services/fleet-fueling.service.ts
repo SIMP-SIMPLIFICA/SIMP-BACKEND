@@ -5,6 +5,7 @@ import { exportedDocumentService } from '@/services/exported-document.service.js
 import { EXPORTED_DOCUMENT_TYPES } from '@/constants/exported-document-types.js'
 import { createOfficialPdf } from '@/services/document-pdf.service.js'
 import { organizationBrandingService } from '@/services/organization-branding.service.js'
+import { anonymizeUserName } from '@/utils/lgpd-anonymizer.util.js'
 import { readFile, saveFile } from '@/services/storage.service.js'
 
 /**
@@ -238,9 +239,16 @@ export const fleetFuelingService = {
       select: { name: true },
     })
 
-    const registeredBy = [record.createdBy?.firstName, record.createdBy?.lastName]
+    // LGPD (Princípio VIII): nome ofuscado, no rodapé universal.
+    // O nome COMPLETO só existe em memória, para o registro ofuscá-lo na
+    // fronteira da persistência; o que entra no PDF é a forma já mascarada.
+    const registeredByFullName = [record.createdBy?.firstName, record.createdBy?.lastName]
       .filter(Boolean)
       .join(' ')
+    const exporterName = anonymizeUserName(
+      record.createdBy?.firstName,
+      record.createdBy?.lastName
+    )
 
     const liters = Number(record.liters)
     const totalValue = Number(record.totalValue)
@@ -255,6 +263,7 @@ export const fleetFuelingService = {
       logoPng,
       organizationName: organization?.name ?? 'Organização',
       publicId: record.publicId,
+      exporterName,
       sections: [
         {
           heading: 'Veículo',
@@ -275,11 +284,7 @@ export const fleetFuelingService = {
             { label: 'Valor total', value: formatCurrency(totalValue) },
           ],
         },
-        {
-          fields: [{ label: 'Registrado por', value: registeredBy || '-' }],
-        },
       ],
-      footNote: `Documento ${record.publicId}`,
     })
 
     const pdfFileKey = await saveFile(Buffer.from(bytes), {
@@ -299,7 +304,7 @@ export const fleetFuelingService = {
       documentType: EXPORTED_DOCUMENT_TYPES.FLEET_FUELING,
       publicId: record.publicId,
       bytes,
-      exporterFullName: registeredBy || undefined,
+      exporterFullName: registeredByFullName || undefined,
     })
 
     await auditLedgerService.record({

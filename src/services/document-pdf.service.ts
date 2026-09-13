@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { PDFDocument, PDFString, type PDFFont, type PDFPage, StandardFonts, rgb } from 'pdf-lib'
+import { PDFDocument, type PDFFont, type PDFPage, PDFString, StandardFonts, rgb } from 'pdf-lib'
 import QRCode from 'qrcode'
 import { config } from '@/config/config.js'
 

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import { createTestOrganization, createTestUserWithToken } from './e2e-auth-helper.js'
 import { getApp, prisma } from './setup-e2e.js'
+import { extractPdfText } from './pdf-text.helper.js'
 
 /**
  * Relatório de Protocolos + validação universal — teste de INTEGRAÇÃO.
@@ -175,9 +176,10 @@ describe('Protocol report (integração)', () => {
       })
 
       expect(response.statusCode).toBe(200)
-      // O PDF com 1 registro é menor que o com 2 — comparação indireta, mas o
-      // conteúdo de um PDF não é inspecionável como texto.
-      const withFilter = response.rawPayload.length
+
+      const filtered = await extractPdfText(response.rawPayload)
+      expect(filtered).toContain('Dentro do periodo')
+      expect(filtered).not.toContain('Fora do periodo')
 
       const withoutFilter = await getApp().inject({
         method: 'GET',
@@ -185,7 +187,10 @@ describe('Protocol report (integração)', () => {
         headers: session.headers,
       })
 
-      expect(withoutFilter.rawPayload.length).toBeGreaterThan(withFilter)
+      // Sem recorte, os dois registros aparecem.
+      const unfiltered = await extractPdfText(withoutFilter.rawPayload)
+      expect(unfiltered).toContain('Dentro do periodo')
+      expect(unfiltered).toContain('Fora do periodo')
     })
 
     test('data inicial posterior à final é recusada', async () => {
@@ -230,10 +235,8 @@ describe('Protocol report (integração)', () => {
       const first = await setupScenario()
       const second = await setupScenario()
 
-      await seedProtocol(first.organization.id, first.session.user.id)
+      const protocol = await seedProtocol(first.organization.id, first.session.user.id)
 
-      // A segunda organização não tem protocolo nenhum: seu relatório deve sair
-      // vazio, e portanto menor que o da primeira.
       const firstReport = await getApp().inject({
         method: 'GET',
         url: REPORT_URL,
@@ -247,7 +250,13 @@ describe('Protocol report (integração)', () => {
 
       expect(firstReport.statusCode).toBe(200)
       expect(secondReport.statusCode).toBe(200)
-      expect(secondReport.rawPayload.length).toBeLessThan(firstReport.rawPayload.length)
+
+      // O número do protocolo da primeira organização NÃO pode aparecer no
+      // relatório da segunda — asserção direta, em vez de inferir pelo tamanho.
+      expect(await extractPdfText(firstReport.rawPayload)).toContain(protocol.formattedNumber)
+      expect(await extractPdfText(secondReport.rawPayload)).not.toContain(
+        protocol.formattedNumber
+      )
     })
   })
 })

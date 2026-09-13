@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import { createTestOrganization, createTestUserWithToken } from './e2e-auth-helper.js'
 import { getApp, prisma } from './setup-e2e.js'
+import { extractPdfText } from './pdf-text.helper.js'
 
 /**
  * Calendário Anual de Reuniões — teste de INTEGRAÇÃO.
@@ -83,7 +84,7 @@ describe('Council calendar export (integração)', () => {
       expect(response.rawPayload.subarray(0, 5).toString()).toBe('%PDF-')
     })
 
-    test('as assinaturas da Mesa Diretora aumentam o documento', async () => {
+    test('as assinaturas da Mesa Diretora aparecem no documento', async () => {
       const { organization, session, council } = await setupScenario()
 
       const withoutBoard = await getApp().inject({
@@ -91,6 +92,7 @@ describe('Council calendar export (integração)', () => {
         url: calendarUrl(council.id, 2026),
         headers: session.headers,
       })
+      expect(await extractPdfText(withoutBoard.rawPayload)).not.toContain('Presidente')
 
       await prisma.councilMembership.create({
         data: {
@@ -108,7 +110,11 @@ describe('Council calendar export (integração)', () => {
         headers: session.headers,
       })
 
-      expect(withBoard.rawPayload.length).toBeGreaterThan(withoutBoard.rawPayload.length)
+      // Signatário de ato oficial é nomeado por extenso (Princípio VIII) —
+      // a ofuscação da LGPD vale para quem EXPORTOU, não para quem assina.
+      const text = await extractPdfText(withBoard.rawPayload)
+      expect(text).toContain('Presidente')
+      expect(text).toContain('Servidor de Teste')
     })
   })
 
@@ -225,29 +231,15 @@ describe('Council calendar export (integração)', () => {
         'Reunião do exercício anterior'
       )
 
-      const onlyOneYear = await getApp().inject({
+      const response = await getApp().inject({
         method: 'GET',
         url: calendarUrl(council.id, 2026),
         headers: session.headers,
       })
 
-      // O calendário de 2026 tem 1 reunião; se o recorte falhasse, teria 2 e
-      // portanto um PDF maior.
-      await seedMeeting(
-        organization.id,
-        council.id,
-        session.user.id,
-        new Date('2026-07-01T10:00:00Z'),
-        'Segunda reunião de 2026'
-      )
-
-      const twoMeetings = await getApp().inject({
-        method: 'GET',
-        url: calendarUrl(council.id, 2026),
-        headers: session.headers,
-      })
-
-      expect(twoMeetings.rawPayload.length).toBeGreaterThan(onlyOneYear.rawPayload.length)
+      const text = await extractPdfText(response.rawPayload)
+      expect(text).toContain('Reunião ordinária de planejamento')
+      expect(text).not.toContain('Reunião do exercício anterior')
     })
   })
 })

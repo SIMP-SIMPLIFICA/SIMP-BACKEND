@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma.js'
 import { readFile, saveFile } from '@/services/storage.service.js'
 import { createOfficialPdf } from '@/services/document-pdf.service.js'
 import { organizationBrandingService } from '@/services/organization-branding.service.js'
+import { anonymizeUserName } from '@/utils/lgpd-anonymizer.util.js'
 import { auditLedgerService } from '@/services/audit-ledger.service.js'
 import { exportedDocumentService } from '@/services/exported-document.service.js'
 import { EXPORTED_DOCUMENT_TYPES } from '@/constants/exported-document-types.js'
@@ -41,6 +42,10 @@ export interface RequestScope {
 }
 
 export interface CreateDailyAllowanceInput {
+  /** Setor ao qual a despesa é imputada. Obrigatório desde o Épico 4. */
+  departmentId: string
+  /** Dotação do QDD que lastreia a diária. Opcional até a Fase 3 completa. */
+  qddItemId?: string
   /** Nome de quem viajou. Texto, não FK — ver o comentário no schema. */
   beneficiaryName: string
   destination: string
@@ -96,6 +101,8 @@ export const dailyAllowanceService = {
     return prisma.dailyAllowance.create({
       data: {
         organizationId: scope.organizationId,
+        departmentId: input.departmentId,
+        qddItemId: input.qddItemId,
         beneficiaryName: normalizeBeneficiaryName(input.beneficiaryName),
         createdById: scope.userId,
         destination: input.destination,
@@ -231,7 +238,17 @@ export const dailyAllowanceService = {
       select: { name: true },
     })
 
-    const issuer = [record.createdBy?.firstName, record.createdBy?.lastName].filter(Boolean).join(' ')
+    // LGPD (Princípio VIII): o nome de quem emitiu sai OFUSCADO e vai para o
+    // rodapé universal, nunca em texto plano no corpo do documento.
+    // O nome COMPLETO só existe em memória, para o registro ofuscá-lo na
+    // fronteira da persistência; o que entra no PDF é a forma já mascarada.
+    const issuerFullName = [record.createdBy?.firstName, record.createdBy?.lastName]
+      .filter(Boolean)
+      .join(' ')
+    const exporterName = anonymizeUserName(
+      record.createdBy?.firstName,
+      record.createdBy?.lastName
+    )
 
     // White-label (Task 3.4): a logo do tenant entra no cabeçalho. O serviço
     // nunca lança — sem logo, o documento sai com cabeçalho neutro, porque uma
@@ -243,6 +260,7 @@ export const dailyAllowanceService = {
       logoPng,
       organizationName: organization?.name ?? 'Organização',
       publicId: record.publicId,
+      exporterName,
       sections: [
         {
           heading: 'Servidor',
@@ -265,11 +283,7 @@ export const dailyAllowanceService = {
             { label: 'Valor total', value: formatCurrency(record.totalAmount) },
           ],
         },
-        {
-          fields: [{ label: 'Emitido por', value: issuer || '-' }],
-        },
       ],
-      footNote: `Documento ${record.publicId}`,
     })
 
     const pdfFileKey = await saveFile(Buffer.from(bytes), {
@@ -291,7 +305,7 @@ export const dailyAllowanceService = {
       documentType: EXPORTED_DOCUMENT_TYPES.DAILY_ALLOWANCE,
       publicId: record.publicId,
       bytes,
-      exporterFullName: issuer || undefined,
+      exporterFullName: issuerFullName || undefined,
     })
 
     await auditLedgerService.record({

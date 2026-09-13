@@ -25,11 +25,22 @@ async function setupScenario(permissions: string[]) {
     organizationId: organization.id,
     permissions,
   })
-  return { organization, session }
+
+  // Diária agora exige setor (Épico 4): sem ele não há ordenador responsável.
+  const department = await prisma.department.create({
+    data: {
+      organizationId: organization.id,
+      name: 'Secretaria de Teste',
+      code: `ST${Math.floor(Math.random() * 9000) + 1000}`,
+    },
+  })
+
+  return { organization, session, department }
 }
 
-function draftPayload() {
+function draftPayload(departmentId: string) {
   return {
+    departmentId,
     beneficiaryName: 'joão da silva',
     destination: 'Brasília/DF',
     purpose: 'Reunião no ministério para tratar do convênio',
@@ -43,13 +54,13 @@ function draftPayload() {
 describe('Daily allowances (integração)', () => {
   describe('caminho feliz: rascunho e emissão', () => {
     test('cria o rascunho com 201 e calcula o total no servidor', async () => {
-      const { session } = await setupScenario(['dailyAllowances:write'])
+      const { session, department } = await setupScenario(['dailyAllowances:write'])
 
       const response = await getApp().inject({
         method: 'POST',
         url: BASE_URL,
         headers: session.headers,
-        payload: draftPayload(),
+        payload: draftPayload(department.id),
       })
 
       expect(response.statusCode).toBe(201)
@@ -64,7 +75,7 @@ describe('Daily allowances (integração)', () => {
     })
 
     test('emite o documento com 200, gerando hash e PDF de verdade', async () => {
-      const { session } = await setupScenario([
+      const { session, department } = await setupScenario([
         'dailyAllowances:write',
         'dailyAllowances:issue',
       ])
@@ -73,7 +84,7 @@ describe('Daily allowances (integração)', () => {
         method: 'POST',
         url: BASE_URL,
         headers: session.headers,
-        payload: draftPayload(),
+        payload: draftPayload(department.id),
       })
       const draft = created.json()
 
@@ -103,7 +114,7 @@ describe('Daily allowances (integração)', () => {
     test('o documento emitido passa a ser validável no portal público', async () => {
       // Fecha o ciclo do Épico 3: o que a rota privada emite é exatamente o que
       // o portal público consegue atestar.
-      const { session } = await setupScenario([
+      const { session, department } = await setupScenario([
         'dailyAllowances:write',
         'dailyAllowances:issue',
       ])
@@ -112,7 +123,7 @@ describe('Daily allowances (integração)', () => {
         method: 'POST',
         url: BASE_URL,
         headers: session.headers,
-        payload: draftPayload(),
+        payload: draftPayload(department.id),
       })
       const draft = created.json()
 
@@ -138,7 +149,7 @@ describe('Daily allowances (integração)', () => {
     })
 
     test('emitido não pode mais ser alterado (409)', async () => {
-      const { session } = await setupScenario([
+      const { session, department } = await setupScenario([
         'dailyAllowances:write',
         'dailyAllowances:issue',
       ])
@@ -147,7 +158,7 @@ describe('Daily allowances (integração)', () => {
         method: 'POST',
         url: BASE_URL,
         headers: session.headers,
-        payload: draftPayload(),
+        payload: draftPayload(department.id),
       })
       const draft = created.json()
 
@@ -188,7 +199,7 @@ describe('Daily allowances (integração)', () => {
     test('token válido apresentado de OUTRA rede responde 401', async () => {
       // Fingerprint (Épico 2): o token carrega a faixa de rede de origem. Um
       // token roubado e reapresentado de outro lugar é recusado.
-      const { session } = await setupScenario(['dailyAllowances:write'])
+      const { session, department } = await setupScenario(['dailyAllowances:write'])
 
       const response = await getApp().inject({
         method: 'POST',
@@ -197,7 +208,7 @@ describe('Daily allowances (integração)', () => {
           ...session.headers,
           'X-Forwarded-For': '203.0.113.99',
         },
-        payload: draftPayload(),
+        payload: draftPayload(department.id),
       })
 
       expect(response.statusCode).toBe(401)
@@ -205,13 +216,13 @@ describe('Daily allowances (integração)', () => {
     })
 
     test('sem a permissão de escrita responde 403', async () => {
-      const { session } = await setupScenario(['dailyAllowances:read'])
+      const { session, department } = await setupScenario(['dailyAllowances:read'])
 
       const response = await getApp().inject({
         method: 'POST',
         url: BASE_URL,
         headers: session.headers,
-        payload: draftPayload(),
+        payload: draftPayload(department.id),
       })
 
       expect(response.statusCode).toBe(403)
@@ -220,13 +231,13 @@ describe('Daily allowances (integração)', () => {
     test('emitir exige permissão própria, separada de escrita', async () => {
       // `issue` gera documento oficial e congela o registro — é ato de outra
       // natureza, e ter `write` não basta.
-      const { session } = await setupScenario(['dailyAllowances:write'])
+      const { session, department } = await setupScenario(['dailyAllowances:write'])
 
       const created = await getApp().inject({
         method: 'POST',
         url: BASE_URL,
         headers: session.headers,
-        payload: draftPayload(),
+        payload: draftPayload(department.id),
       })
 
       const issued = await getApp().inject({
@@ -244,12 +255,15 @@ describe('Daily allowances (integração)', () => {
         organizationId: organization.id,
         permissions: ['dailyAllowances:write'],
       })
+      const department = await prisma.department.create({
+        data: { organizationId: organization.id, name: 'Setor', code: `S${Date.now()}` },
+      })
 
       const response = await getApp().inject({
         method: 'POST',
         url: BASE_URL,
         headers: session.headers,
-        payload: draftPayload(),
+        payload: draftPayload(department.id),
       })
 
       expect(response.statusCode).toBe(403)
@@ -266,7 +280,7 @@ describe('Daily allowances (integração)', () => {
         method: 'POST',
         url: BASE_URL,
         headers: first.session.headers,
-        payload: draftPayload(),
+        payload: draftPayload(first.department.id),
       })
       const draft = created.json()
 

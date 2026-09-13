@@ -185,11 +185,21 @@ describe('Beneficiaries (integração)', () => {
         payload: { name: 'Servidor Viajante' },
       })
 
+      // A diária exige setor desde o Épico 4.
+      const department = await prisma.department.create({
+        data: {
+          organizationId: organization.id,
+          name: 'Secretaria de Teste',
+          code: `ST${Math.floor(Math.random() * 9000) + 1000}`,
+        },
+      })
+
       await getApp().inject({
         method: 'POST',
         url: '/api/v1/daily-allowances',
         headers: session.headers,
         payload: {
+          departmentId: department.id,
           beneficiaryName: 'Servidor Viajante',
           destination: 'Brasília/DF',
           purpose: 'Reunião',

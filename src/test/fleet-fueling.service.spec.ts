@@ -17,6 +17,7 @@ const orgFindUniqueMock = vi.fn()
 const saveFileMock = vi.fn()
 const createPdfMock = vi.fn()
 const auditRecordMock = vi.fn()
+const registerExportMock = vi.fn()
 
 vi.mock('@/lib/prisma.js', () => ({
   prisma: {
@@ -39,6 +40,13 @@ vi.mock('@/services/storage.service.js', () => ({
 
 vi.mock('@/services/document-pdf.service.js', () => ({
   createOfficialPdf: (...a: unknown[]) => createPdfMock(...a),
+}))
+
+vi.mock('@/services/exported-document.service.js', () => ({
+  exportedDocumentService: {
+    newPublicId: () => 'public-id-de-teste',
+    register: (...a: unknown[]) => registerExportMock(...a),
+  },
 }))
 
 vi.mock('@/services/audit-ledger.service.js', () => ({
@@ -83,7 +91,7 @@ describe('Abastecimento de frota (Task 3.2)', () => {
   beforeEach(() => {
     for (const m of [
       findFirstMock, findManyMock, countMock, createMock, updateMock,
-      deleteMock, orgFindUniqueMock, saveFileMock, createPdfMock, auditRecordMock,
+      deleteMock, orgFindUniqueMock, saveFileMock, createPdfMock, auditRecordMock, registerExportMock,
     ]) m.mockReset()
 
     findManyMock.mockResolvedValue([])

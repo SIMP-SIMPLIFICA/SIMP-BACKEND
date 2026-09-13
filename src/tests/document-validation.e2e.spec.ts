@@ -41,9 +41,15 @@ async function seedIssuedDailyAllowance() {
 
   const sha256Hash = 'a'.repeat(64)
 
+  // A diária exige setor desde o Épico 4.
+  const department = await prisma.department.create({
+    data: { organizationId: organization.id, name: 'Setor', code: `S${Date.now()}` },
+  })
+
   const allowance = await prisma.dailyAllowance.create({
     data: {
       organizationId: organization.id,
+      departmentId: department.id,
       beneficiaryName: BENEFICIARY_NAME,
       createdById: user.id,
       destination: 'Brasília/DF',

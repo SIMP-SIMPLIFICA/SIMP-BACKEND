@@ -18,6 +18,7 @@ const orgFindUniqueMock = vi.fn()
 const saveFileMock = vi.fn()
 const createPdfMock = vi.fn()
 const auditRecordMock = vi.fn()
+const registerExportMock = vi.fn()
 
 vi.mock('@/lib/prisma.js', () => ({
   prisma: {
@@ -40,6 +41,13 @@ vi.mock('@/services/storage.service.js', () => ({
 
 vi.mock('@/services/document-pdf.service.js', () => ({
   createOfficialPdf: (...a: unknown[]) => createPdfMock(...a),
+}))
+
+vi.mock('@/services/exported-document.service.js', () => ({
+  exportedDocumentService: {
+    newPublicId: () => 'public-id-de-teste',
+    register: (...a: unknown[]) => registerExportMock(...a),
+  },
 }))
 
 vi.mock('@/services/audit-ledger.service.js', () => ({
@@ -77,7 +85,7 @@ describe('Diárias de servidor (Task 3.1)', () => {
   beforeEach(() => {
     for (const m of [
       findFirstMock, findManyMock, countMock, createMock, updateMock,
-      deleteMock, orgFindUniqueMock, saveFileMock, createPdfMock, auditRecordMock,
+      deleteMock, orgFindUniqueMock, saveFileMock, createPdfMock, auditRecordMock, registerExportMock,
     ]) m.mockReset()
 
     findManyMock.mockResolvedValue([])
@@ -114,6 +122,7 @@ describe('Diárias de servidor (Task 3.1)', () => {
     test('o total é calculado no servidor, não aceito do cliente', async () => {
       await dailyAllowanceService.create(
         {
+          departmentId: 'dept-1',
           beneficiaryName: 'joão da silva',
           destination: 'Brasília/DF',
           purpose: 'Reunião',
@@ -138,6 +147,7 @@ describe('Diárias de servidor (Task 3.1)', () => {
       await expect(
         dailyAllowanceService.create(
           {
+            departmentId: 'dept-1',
             beneficiaryName: 'Fulano',
             destination: 'X',
             purpose: 'Y',

@@ -1,6 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { authService } from '@/services/auth.service.js'
 import { db } from '@/utils/database.js'
+import { auditLedgerService } from '@/services/audit-ledger.service.js'
 import { prisma } from '@/lib/prisma.js'
 import { authLogger } from '@/utils/logger.js'
 import { assignRoleSchema, createUserSchema, updateUserSchema, userQuerySchema } from '@/schemas/auth.schemas.js'
@@ -57,13 +58,14 @@ export class UserController {
 
       const paginatedResult = db.paginate(users, query.page, query.limit, total)
 
-      await db.createAuditLog({
+      await auditLedgerService.record({
         userId: (request as any).user?.id,
         action: 'users_listed',
         resource: 'user',
-        ipAddress: request.ip,
+        organizationId: (request.user as any)?.organizationId ?? null,
+        ip: request.ip,
         success: true,
-        metadata: { filters: query, resultCount: users.length }
+        details: { filters: query, resultCount: users.length },
       })
 
       return reply.send(paginatedResult)
@@ -103,13 +105,14 @@ export class UserController {
 
       if (!user) return reply.code(404).send({ error: 'User Not Found', message: 'User with specified ID not found' })
 
-      await db.createAuditLog({
+      await auditLedgerService.record({
         userId: (request as any).user?.id,
         action: 'user_viewed',
         resource: 'user',
         resourceId: id,
-        ipAddress: request.ip,
-        success: true
+        organizationId: (request.user as any)?.organizationId ?? null,
+        ip: request.ip,
+        success: true,
       })
 
       return reply.send({ user })
@@ -156,14 +159,15 @@ export class UserController {
         await prisma.userRole.createMany({ data: roleAssignments })
       }
 
-      await db.createAuditLog({
+      await auditLedgerService.record({
         userId: (request as any).user?.id,
         action: 'user_created',
         resource: 'user',
         resourceId: user.id,
-        ipAddress: request.ip,
+        organizationId: (request.user as any)?.organizationId ?? null,
+        ip: request.ip,
         success: true,
-        newData: { email: user.email, roles: data.roles }
+        details: { newData: { email: user.email, roles: data.roles } },
       })
 
       authLogger.info({ adminId: (request as any).user?.id, createdUserId: user.id, email: user.email }, 'User created by admin')
@@ -209,15 +213,18 @@ export class UserController {
         }
       })
 
-      await db.createAuditLog({
+      await auditLedgerService.record({
         userId: (request as any).user?.id,
         action: 'user_updated',
         resource: 'user',
         resourceId: id,
-        ipAddress: request.ip,
+        organizationId: (request.user as any)?.organizationId ?? null,
+        ip: request.ip,
         success: true,
-        oldData: { email: existingUser.email, isActive: existingUser.isActive },
-        newData: data
+        details: {
+          oldData: { email: existingUser.email, isActive: existingUser.isActive },
+          newData: data,
+        },
       })
 
       return reply.send({ message: 'User updated successfully', user: updatedUser })
@@ -240,14 +247,15 @@ export class UserController {
 
       await prisma.user.delete({ where: { id } })
 
-      await db.createAuditLog({
+      await auditLedgerService.record({
         userId: (request as any).user?.id,
         action: 'user_deleted',
         resource: 'user',
         resourceId: id,
-        ipAddress: request.ip,
+        organizationId: (request.user as any)?.organizationId ?? null,
+        ip: request.ip,
         success: true,
-        oldData: { email: user.email }
+        details: { oldData: { email: user.email } },
       })
 
       authLogger.info({ adminId: (request as any).user?.id, deletedUserId: id, email: user.email }, 'User deleted by admin')
@@ -279,14 +287,17 @@ export class UserController {
 
       await prisma.userRole.createMany({ data: roleAssignments })
 
-      await db.createAuditLog({
+      await auditLedgerService.record({
         userId: (request as any).user?.id,
         action: 'roles_assigned',
         resource: 'user',
         resourceId: id,
-        ipAddress: request.ip,
+        organizationId: (request.user as any)?.organizationId ?? null,
+        ip: request.ip,
         success: true,
-        newData: { roleIds: data.roleIds, roleNames: roles.map(r => r.name), expiresAt: data.expiresAt }
+        details: {
+          newData: { roleIds: data.roleIds, roleNames: roles.map(r => r.name), expiresAt: data.expiresAt },
+        },
       })
 
       return reply.send({
@@ -311,14 +322,15 @@ export class UserController {
       const roles = await prisma.role.findMany({ where: { id: { in: roleIds } }, select: { id: true, name: true } })
       const result = await prisma.userRole.deleteMany({ where: { userId: id, roleId: { in: roleIds } } })
 
-      await db.createAuditLog({
+      await auditLedgerService.record({
         userId: (request as any).user?.id,
         action: 'roles_removed',
         resource: 'user',
         resourceId: id,
-        ipAddress: request.ip,
+        organizationId: (request.user as any)?.organizationId ?? null,
+        ip: request.ip,
         success: true,
-        oldData: { roleIds, roleNames: roles.map(r => r.name) }
+        details: { oldData: { roleIds, roleNames: roles.map(r => r.name) } },
       })
 
       return reply.send({ message: `${result.count} role(s) removed successfully` })
@@ -354,14 +366,15 @@ export class UserController {
       if (!targetUser) return reply.code(404).send({ error: 'User Not Found', message: 'User with specified ID not found' })
       const result = await prisma.userSession.updateMany({ where: { userId: id, isActive: true }, data: { isActive: false } })
 
-      await db.createAuditLog({
+      await auditLedgerService.record({
         userId: (request as any).user?.id,
         action: 'user_sessions_terminated',
         resource: 'user',
         resourceId: id,
-        ipAddress: request.ip,
+        organizationId: (request.user as any)?.organizationId ?? null,
+        ip: request.ip,
         success: true,
-        metadata: { terminatedCount: result.count }
+        details: { terminatedCount: result.count },
       })
 
       return reply.send({ message: `${result.count} session(s) terminated successfully` })
@@ -409,14 +422,15 @@ export class UserController {
         await prisma.userSession.updateMany({ where: { userId: id }, data: { isActive: false } })
       }
 
-      await db.createAuditLog({
+      await auditLedgerService.record({
         userId: (request as any).user?.id,
         action: isActive ? 'user_activated' : 'user_deactivated',
         resource: 'user',
         resourceId: id,
-        ipAddress: request.ip,
+        organizationId: (request.user as any)?.organizationId ?? null,
+        ip: request.ip,
         success: true,
-        metadata: { reason }
+        details: { reason },
       })
 
       return reply.send({ message: `User ${isActive ? 'activated' : 'deactivated'} successfully`, user })
@@ -435,13 +449,14 @@ export class UserController {
 
       await authService.forgotPassword(user.email, request.ip)
 
-      await db.createAuditLog({
+      await auditLedgerService.record({
         userId: (request as any).user?.id,
         action: 'password_reset_forced',
         resource: 'user',
         resourceId: id,
-        ipAddress: request.ip,
-        success: true
+        organizationId: (request.user as any)?.organizationId ?? null,
+        ip: request.ip,
+        success: true,
       })
 
       return reply.send({ message: 'Password reset email sent to user' })
@@ -486,13 +501,14 @@ export class UserController {
         }
       })
 
-      await db.createAuditLog({
+      await auditLedgerService.record({
         userId: userId,
         action: 'certificate_generated',
         resource: 'user',
         resourceId: userId,
-        ipAddress: request.ip,
-        success: true
+        organizationId: (request.user as any)?.organizationId ?? null,
+        ip: request.ip,
+        success: true,
       })
 
       return reply.send({
@@ -577,14 +593,15 @@ export class UserController {
         }
       })
 
-      await db.createAuditLog({
+      await auditLedgerService.record({
         userId,
         action: 'logo_uploaded',
         resource: 'user',
         resourceId: userId,
-        ipAddress: request.ip,
+        organizationId: (request.user as any)?.organizationId ?? null,
+        ip: request.ip,
         success: true,
-        newData: { logoUrl }
+        details: { newData: { logoUrl } },
       })
 
       return reply.send({ message: 'Logo carregada com sucesso', logoUrl })
@@ -620,13 +637,14 @@ export class UserController {
         data: { metadata: restMeta }
       })
 
-      await db.createAuditLog({
+      await auditLedgerService.record({
         userId,
         action: 'logo_removed',
         resource: 'user',
         resourceId: userId,
-        ipAddress: request.ip,
-        success: true
+        organizationId: (request.user as any)?.organizationId ?? null,
+        ip: request.ip,
+        success: true,
       })
 
       return reply.send({ message: 'Logo removida com sucesso' })

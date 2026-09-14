@@ -1,5 +1,6 @@
 import { FastifyReply, FastifyRequest } from 'fastify'
 import { db } from '@/utils/database.js'
+import { auditLedgerService } from '@/services/audit-ledger.service.js'
 import { prisma } from '@/lib/prisma.js'
 import { logger } from '@/utils/logger.js'
 import { departmentExistsInOrganization } from '@/utils/department-scope.util.js'
@@ -135,13 +136,14 @@ export class VirtualProcessController {
         include: { user: { select: { id: true, firstName: true, lastName: true } } }
       })
 
-      await db.createAuditLog({
+      await auditLedgerService.record({
         userId,
         action: 'VISUALIZOU',
         resource: 'VIRTUAL_PROCESS',
         resourceId: id,
-        ipAddress: request.ip,
-        success: true
+        organizationId: (request as any).user?.organizationId ?? null,
+        ip: request.ip,
+        success: true,
       })
 
       // Normalização na leitura: os dois modelos de documento têm formatos
@@ -231,14 +233,15 @@ export class VirtualProcessController {
         }
       })
 
-      await db.createAuditLog({
+      await auditLedgerService.record({
         userId,
         action: 'AUTUOU',
         resource: 'VIRTUAL_PROCESS',
         resourceId: process.id,
-        ipAddress: request.ip,
+        organizationId: (request as any).user?.organizationId ?? null,
+        ip: request.ip,
         success: true,
-        newData: process
+        details: { newData: process },
       })
 
       return reply.code(201).send(process)
@@ -267,15 +270,15 @@ export class VirtualProcessController {
       const oldStatus = process.status
       const updatedProcess = await prisma.virtualProcess.update({ where: { id }, data: { status } })
 
-      await db.createAuditLog({
+      await auditLedgerService.record({
         userId,
         action: 'ALTEROU_STATUS',
         resource: 'VIRTUAL_PROCESS',
         resourceId: id,
-        ipAddress: request.ip,
+        organizationId: (request as any).user?.organizationId ?? null,
+        ip: request.ip,
         success: true,
-        oldData: { status: oldStatus },
-        newData: { status }
+        details: { oldData: { status: oldStatus }, newData: { status } },
       })
 
       return reply.send(updatedProcess)
@@ -303,15 +306,18 @@ export class VirtualProcessController {
         data: { companyName: data.companyName, companyCnpj: data.companyCnpj }
       })
 
-      await db.createAuditLog({
+      await auditLedgerService.record({
         userId,
         action: 'ATUALIZOU_DADOS_EMPRESA',
         resource: 'VIRTUAL_PROCESS',
         resourceId: id,
-        ipAddress: request.ip,
+        organizationId: (request as any).user?.organizationId ?? null,
+        ip: request.ip,
         success: true,
-        oldData: { companyName: process.companyName, companyCnpj: process.companyCnpj },
-        newData: { companyName: updatedProcess.companyName, companyCnpj: updatedProcess.companyCnpj }
+        details: {
+          oldData: { companyName: process.companyName, companyCnpj: process.companyCnpj },
+          newData: { companyName: updatedProcess.companyName, companyCnpj: updatedProcess.companyCnpj },
+        },
       })
 
       return reply.send(updatedProcess)
@@ -352,15 +358,18 @@ export class VirtualProcessController {
         }
       })
 
-      await db.createAuditLog({
+      await auditLedgerService.record({
         userId,
         action: 'ATUALIZOU_VIGENCIA',
         resource: 'VIRTUAL_PROCESS',
         resourceId: id,
-        ipAddress: request.ip,
+        organizationId: (request as any).user?.organizationId ?? null,
+        ip: request.ip,
         success: true,
-        oldData: { validityDate: process.validityDate, totalValue: process.totalValue },
-        newData: { validityDate: updatedProcess.validityDate, totalValue: updatedProcess.totalValue }
+        details: {
+          oldData: { validityDate: process.validityDate, totalValue: process.totalValue },
+          newData: { validityDate: updatedProcess.validityDate, totalValue: updatedProcess.totalValue },
+        },
       })
 
       return reply.send(updatedProcess)
@@ -391,14 +400,15 @@ export class VirtualProcessController {
 
       await prisma.virtualProcess.delete({ where: { id } })
 
-      await db.createAuditLog({
+      await auditLedgerService.record({
         userId,
         action: 'EXCLUIU',
         resource: 'VIRTUAL_PROCESS',
         resourceId: id,
-        ipAddress: request.ip,
+        organizationId: (request as any).user?.organizationId ?? null,
+        ip: request.ip,
         success: true,
-        oldData: process
+        details: { oldData: process },
       })
 
       return reply.code(204).send()
@@ -471,14 +481,20 @@ export class VirtualProcessController {
         }
       })
 
-      await db.createAuditLog({
+      await auditLedgerService.record({
         userId,
         action: 'ANEXOU_DOCUMENTO',
         resource: 'VIRTUAL_PROCESS',
         resourceId: id,
-        ipAddress: request.ip,
+        organizationId: (request as any).user?.organizationId ?? null,
+        ip: request.ip,
         success: true,
-        metadata: { processId: id, documentId: document.id, fileName: fileData.fileName, description: `Anexou o documento: ${fileData.fileName}` }
+        details: {
+          processId: id,
+          documentId: document.id,
+          fileName: fileData.fileName,
+          description: `Anexou o documento: ${fileData.fileName}`,
+        },
       })
 
       return reply.code(201).send(document)
@@ -507,14 +523,15 @@ export class VirtualProcessController {
 
       const signedUrl = getFileUrl(document.fileUrl)
 
-      await db.createAuditLog({
+      await auditLedgerService.record({
         userId,
         action: 'BAIXOU_DOCUMENTO',
         resource: 'VIRTUAL_PROCESS_DOCUMENT',
         resourceId: documentId,
-        ipAddress: request.ip,
+        organizationId: (request as any).user?.organizationId ?? null,
+        ip: request.ip,
         success: true,
-        metadata: { processId: id }
+        details: { processId: id },
       })
 
       return reply.send({ url: signedUrl })
@@ -553,15 +570,15 @@ export class VirtualProcessController {
         // falha ao apagar do disco não impede a exclusão do registro
       }
 
-      await db.createAuditLog({
+      await auditLedgerService.record({
         userId,
         action: 'REMOVEU_DOCUMENTO',
         resource: 'VIRTUAL_PROCESS',
         resourceId: id,
-        ipAddress: request.ip,
+        organizationId: (request as any).user?.organizationId ?? null,
+        ip: request.ip,
         success: true,
-        metadata: { description: `Removeu o documento: ${document.fileName}` },
-        oldData: document
+        details: { description: `Removeu o documento: ${document.fileName}`, oldData: document },
       })
 
       return reply.code(204).send()

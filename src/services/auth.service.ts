@@ -8,6 +8,7 @@ import { authLogger, logSecurity } from '@/utils/logger.js'
 import { emailService } from '@/services/email.service.js'
 import { calculateFingerprint } from '@/services/fingerprint.service.js'
 import { securityAlertService } from '@/services/security-alert.service.js'
+import { auditLedgerService } from '@/services/audit-ledger.service.js'
 
 export class AuthService {
   /** Gera uma senha temporária forte para contas criadas por um admin (nunca retornada na resposta da API — apenas por e-mail). */
@@ -193,17 +194,16 @@ export class AuthService {
         })
       }
 
-      await db.createAuditLog({
+      // Sem organizationId de propósito: o cadastro ainda não atribuiu
+      // organização ao usuário — isso acontece depois, no fluxo de convite.
+      await auditLedgerService.record({
         userId: user.id,
         action: 'user_register',
         resource: 'user',
         resourceId: user.id,
-        ipAddress,
+        ip: ipAddress,
         success: true,
-        newData: {
-          email: user.email,
-          username: user.username
-        }
+        details: { email: user.email, username: user.username },
       })
 
       authLogger.info(
@@ -304,14 +304,15 @@ export class AuthService {
 
       const tokens = await this.generateTokenPair(user.id, data.rememberMe === true, calculateFingerprint(ipAddress, userAgent))
 
-      await db.createAuditLog({
+      await auditLedgerService.record({
         userId: user.id,
         action: 'user_login',
         resource: 'user',
         resourceId: user.id,
-        ipAddress,
+        organizationId: user.organizationId,
+        ip: ipAddress,
         userAgent,
-        success: true
+        success: true,
       })
 
       authLogger.info(
@@ -404,13 +405,20 @@ export class AuthService {
         data: { isActive: false }
       })
 
-      await db.createAuditLog({
+      // Só o `userId` está em escopo aqui; a busca é mínima (um campo) para
+      // não deixar o log de saída sem organização, igual ao de entrada.
+      const loggedOutUser = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { organizationId: true },
+      })
+      await auditLedgerService.record({
         userId,
         action: 'user_logout',
         resource: 'user',
         resourceId: userId,
-        ipAddress,
-        success: true
+        organizationId: loggedOutUser?.organizationId,
+        ip: ipAddress,
+        success: true,
       })
 
       authLogger.info(
@@ -464,13 +472,14 @@ export class AuthService {
         data: { isActive: false }
       })
 
-      await db.createAuditLog({
+      await auditLedgerService.record({
         userId,
         action: 'password_changed',
         resource: 'user',
         resourceId: userId,
-        ipAddress,
-        success: true
+        organizationId: user.organizationId,
+        ip: ipAddress,
+        success: true,
       })
 
       authLogger.info(
@@ -514,13 +523,14 @@ export class AuthService {
 
       await emailService.sendPasswordResetEmail(user.email, resetToken)
 
-      await db.createAuditLog({
+      await auditLedgerService.record({
         userId: user.id,
         action: 'password_reset_requested',
         resource: 'user',
         resourceId: user.id,
-        ipAddress,
-        success: true
+        organizationId: user.organizationId,
+        ip: ipAddress,
+        success: true,
       })
 
       authLogger.info(
@@ -568,13 +578,14 @@ export class AuthService {
         data: { isActive: false }
       })
 
-      await db.createAuditLog({
+      await auditLedgerService.record({
         userId: user.id,
         action: 'password_reset_completed',
         resource: 'user',
         resourceId: user.id,
-        ipAddress,
-        success: true
+        organizationId: user.organizationId,
+        ip: ipAddress,
+        success: true,
       })
 
       authLogger.info(
@@ -612,13 +623,14 @@ export class AuthService {
         }
       })
 
-      await db.createAuditLog({
+      await auditLedgerService.record({
         userId: user.id,
         action: 'email_verified',
         resource: 'user',
         resourceId: user.id,
-        ipAddress,
-        success: true
+        organizationId: user.organizationId,
+        ip: ipAddress,
+        success: true,
       })
 
       authLogger.info(
@@ -658,14 +670,15 @@ export class AuthService {
         }
       })
 
-      await db.createAuditLog({
+      await auditLedgerService.record({
         userId,
         action: 'user_profile_updated',
         resource: 'user',
         resourceId: userId,
-        ipAddress,
+        organizationId: user.organizationId,
+        ip: ipAddress,
         success: true,
-        newData: data
+        details: data,
       })
 
       return updatedUser

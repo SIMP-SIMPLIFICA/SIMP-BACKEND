@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { db } from '@/utils/database.js'
+import { auditLedgerService } from '@/services/audit-ledger.service.js'
 import { prisma } from '@/lib/prisma.js'
 import { authLogger } from '@/utils/logger.js'
 import { createRoleSchema, paginationSchema, updateRoleSchema } from '@/schemas/auth.schemas.js'
@@ -63,16 +64,14 @@ export class RoleController {
 
       const paginatedResult = db.paginate(roles, query.page, query.limit, total)
 
-      await db.createAuditLog({
+      await auditLedgerService.record({
         userId: (request as any).user?.id,
         action: 'roles_listed',
         resource: 'role',
-        ipAddress: request.ip,
+        organizationId: (request.user as any)?.organizationId ?? null,
+        ip: request.ip,
         success: true,
-        metadata: {
-          filters: query,
-          resultCount: roles.length
-        }
+        details: { filters: query, resultCount: roles.length },
       })
 
       return reply.send(paginatedResult)
@@ -107,13 +106,14 @@ export class RoleController {
         return reply.code(404).send({ error: 'Role Not Found', message: 'Role with specified ID not found' })
       }
 
-      await db.createAuditLog({
+      await auditLedgerService.record({
         userId: (request as any).user?.id,
         action: 'role_viewed',
         resource: 'role',
         resourceId: id,
-        ipAddress: request.ip,
-        success: true
+        organizationId: (request.user as any)?.organizationId ?? null,
+        ip: request.ip,
+        success: true,
       })
 
       return reply.send({ role })
@@ -154,14 +154,15 @@ export class RoleController {
         }
       })
 
-      await db.createAuditLog({
+      await auditLedgerService.record({
         userId: (request as any).user?.id,
         action: 'role_created',
         resource: 'role',
         resourceId: role.id,
-        ipAddress: request.ip,
+        organizationId: (request.user as any)?.organizationId ?? null,
+        ip: request.ip,
         success: true,
-        newData: { name: role.name, permissions: data.permissions }
+        details: { newData: { name: role.name, permissions: data.permissions } },
       })
 
       authLogger.info({ adminId: (request as any).user?.id, roleId: role.id, roleName: role.name }, 'Role created')
@@ -198,15 +199,15 @@ export class RoleController {
 
       const updatedRole = await prisma.role.update({ where: { id }, data })
 
-      await db.createAuditLog({
+      await auditLedgerService.record({
         userId: (request as any).user?.id,
         action: 'role_updated',
         resource: 'role',
         resourceId: id,
-        ipAddress: request.ip,
+        organizationId: (request.user as any)?.organizationId ?? null,
+        ip: request.ip,
         success: true,
-        oldData: { name: existingRole.name },
-        newData: data
+        details: { oldData: { name: existingRole.name }, newData: data },
       })
 
       return reply.send({ message: 'Role updated successfully', role: updatedRole })
@@ -230,14 +231,15 @@ export class RoleController {
 
       await prisma.role.delete({ where: { id } })
 
-      await db.createAuditLog({
+      await auditLedgerService.record({
         userId: (request as any).user?.id,
         action: 'role_deleted',
         resource: 'role',
         resourceId: id,
-        ipAddress: request.ip,
+        organizationId: (request.user as any)?.organizationId ?? null,
+        ip: request.ip,
         success: true,
-        oldData: { name: role.name }
+        details: { oldData: { name: role.name } },
       })
 
       authLogger.info({ adminId: (request as any).user?.id, roleId: id }, 'Role deleted')
@@ -345,14 +347,15 @@ export class RoleController {
         }
       })
 
-      await db.createAuditLog({
-        userId: (request as any).user?.id, // CORREÇÃO
+      await auditLedgerService.record({
+        userId: (request as any).user?.id,
         action: 'role_duplicated',
         resource: 'role',
         resourceId: duplicatedRole.id,
-        ipAddress: request.ip,
+        organizationId: (request.user as any)?.organizationId ?? null,
+        ip: request.ip,
         success: true,
-        metadata: { sourceRoleId: id }
+        details: { sourceRoleId: id },
       })
 
       return reply.code(201).send({ message: 'Role duplicated successfully', role: duplicatedRole })

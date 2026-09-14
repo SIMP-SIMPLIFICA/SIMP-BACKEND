@@ -43,6 +43,9 @@ export interface RequestScope {
 }
 
 export interface CreateFleetFuelingInput {
+  /** Setor ao qual a despesa é imputada. Opcional: registros anteriores ao
+   *  Épico 4 não têm setor, e exigi-lo invalidaria o histórico já prestado. */
+  departmentId?: string | null
   licensePlate: string
   odometer: number
   liters: number
@@ -55,6 +58,7 @@ export type UpdateFleetFuelingInput = Partial<CreateFleetFuelingInput>
 export interface ListFleetFuelingFilter {
   page: number
   limit: number
+  departmentId?: string
   licensePlate?: string
   issued?: boolean
   startDate?: Date
@@ -63,6 +67,7 @@ export interface ListFleetFuelingFilter {
 
 const LIST_INCLUDE = {
   createdBy: { select: { id: true, firstName: true, lastName: true } },
+  department: { select: { id: true, name: true, code: true } },
 } satisfies Prisma.FleetFuelingInclude
 
 // ─── Placa ────────────────────────────────────────────────────────────────────
@@ -121,6 +126,7 @@ export const fleetFuelingService = {
       data: {
         organizationId: scope.organizationId,
         createdById: scope.userId,
+        departmentId: input.departmentId ?? null,
         licensePlate: assertPlate(input.licensePlate),
         odometer: input.odometer,
         liters: new Prisma.Decimal(input.liters),
@@ -139,6 +145,7 @@ export const fleetFuelingService = {
     // A placa do filtro passa pela mesma normalização do registro; senão buscar
     // por "abc-1234" não encontraria nada.
     if (filter.licensePlate) where.licensePlate = normalizeLicensePlate(filter.licensePlate)
+    if (filter.departmentId) where.departmentId = filter.departmentId
     if (filter.issued === true) where.sha256Hash = { not: null }
     if (filter.issued === false) where.sha256Hash = null
 

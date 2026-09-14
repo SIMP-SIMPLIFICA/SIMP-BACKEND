@@ -22,6 +22,9 @@ const createSchema = z.object({
   name: z.string().min(1, 'Informe o nome do beneficiário.').max(200),
   // Opcional: o combobox cria pelo nome, e o CPF pode vir depois (Q-3).
   cpf: z.string().max(20).nullable().optional(),
+  // Lotação do servidor. Alimenta o preenchimento automático do setor no
+  // formulário de diária — é sugestão, não trava.
+  departmentId: z.string().min(1).nullable().optional(),
 })
 
 const paramsSchema = z.object({ id: z.string().uuid('Identificador inválido.') })
@@ -88,9 +91,9 @@ export const beneficiaryController = {
   async create(request: FastifyRequest, reply: FastifyReply) {
     try {
       const scope = getScope(request)
-      const { name, cpf } = createSchema.parse(request.body)
+      const { name, cpf, departmentId } = createSchema.parse(request.body)
 
-      const { beneficiary, created } = await beneficiaryService.create(name, scope, cpf)
+      const { beneficiary, created } = await beneficiaryService.create(name, scope, cpf, departmentId)
       return reply.code(created ? 201 : 200).send(beneficiary)
     } catch (error) {
       return handleError(error, request, reply)

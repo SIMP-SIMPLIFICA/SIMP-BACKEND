@@ -48,7 +48,14 @@ export function normalizeBeneficiaryName(name: string): string {
 }
 
 /** Campos devolvidos ao cliente. O CPF sai SEMPRE mascarado — ver `toPublic`. */
-const SELECT = { id: true, name: true, cpf: true, createdAt: true } as const
+const SELECT = {
+  id: true,
+  name: true,
+  cpf: true,
+  departmentId: true,
+  department: { select: { id: true, name: true, code: true } },
+  createdAt: true,
+} as const
 
 /**
  * Forma de saída do beneficiário.
@@ -103,7 +110,12 @@ export const beneficiaryService = {
    * Devolve `created` para o controller escolher entre 201 e 200 sem precisar
    * de uma consulta extra só para descobrir se o registro já existia.
    */
-  async create(name: string, scope: RequestScope, rawCpf?: string | null) {
+  async create(
+    name: string,
+    scope: RequestScope,
+    rawCpf?: string | null,
+    departmentId?: string | null
+  ) {
     const normalized = normalizeBeneficiaryName(name)
 
     if (!normalized) {
@@ -119,7 +131,12 @@ export const beneficiaryService = {
 
     try {
       const created = await prisma.beneficiary.create({
-        data: { name: normalized, cpf, organizationId: scope.organizationId },
+        data: {
+          name: normalized,
+          cpf,
+          departmentId: departmentId ?? null,
+          organizationId: scope.organizationId,
+        },
         select: SELECT,
       })
       return { beneficiary: toPublic(created), created: true }
@@ -168,10 +185,17 @@ export const beneficiaryService = {
 
       // Nome já cadastrado SEM CPF, e agora veio um: completa o cadastro. É o
       // fluxo normal da criação rápida — o nome entra primeiro, o CPF depois.
-      if (cpf && !existing.cpf) {
+      // Nome já cadastrado e faltando CPF ou lotação: completa o que está
+      // vazio. É o fluxo normal da criação rápida — o nome entra primeiro, o
+      // resto vem depois. O que JÁ tem valor nunca é sobrescrito aqui.
+      const fill: { cpf?: string; departmentId?: string } = {}
+      if (cpf && !existing.cpf) fill.cpf = cpf
+      if (departmentId && !existing.departmentId) fill.departmentId = departmentId
+
+      if (Object.keys(fill).length > 0) {
         const completed = await prisma.beneficiary.update({
           where: { id: existing.id },
-          data: { cpf },
+          data: fill,
           select: SELECT,
         })
         return { beneficiary: toPublic(completed), created: false }

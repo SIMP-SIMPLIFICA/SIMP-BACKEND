@@ -31,7 +31,9 @@ const { beneficiaryService, normalizeBeneficiaryName, BeneficiaryError } = await
 
 const SCOPE = { organizationId: 'org-1', userId: 'user-1' }
 
-const EXISTING = { id: 'b-1', name: 'JOÃO DA SILVA', createdAt: new Date() }
+// `cpf` entra no contrato desde o Épico 4: o serviço devolve o campo sempre,
+// mascarado quando preenchido e `null` quando não há.
+const EXISTING = { id: 'b-1', name: 'JOÃO DA SILVA', cpf: null, createdAt: new Date() }
 
 /** Erro de violação de unicidade, como o Prisma o emite. */
 function duplicateError() {

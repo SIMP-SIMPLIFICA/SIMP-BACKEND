@@ -26,6 +26,8 @@ export const EXPORTED_DOCUMENT_TYPES = {
    */
   DAILY_ALLOWANCE_XLS_MANIFEST: 'DAILY_ALLOWANCE_XLS_MANIFEST',
   FLEET_FUELING: 'FLEET_FUELING',
+  /** Dossiê do Setor — retrato dos vínculos de um departamento (Épico 4). */
+  DEPARTMENT_DOSSIER: 'DEPARTMENT_DOSSIER',
 } as const
 
 export type ExportedDocumentType =
@@ -40,6 +42,7 @@ const LABELS: Record<string, string> = {
   [EXPORTED_DOCUMENT_TYPES.DAILY_ALLOWANCE_ACCOUNTABILITY]:
     'Prestação de Contas de Diária (Anexo II)',
   [EXPORTED_DOCUMENT_TYPES.REPORT_DAILY_ALLOWANCES]: 'Relatório de Diárias',
+  [EXPORTED_DOCUMENT_TYPES.DEPARTMENT_DOSSIER]: 'Dossiê do Setor',
   [EXPORTED_DOCUMENT_TYPES.DAILY_ALLOWANCE_XLS_MANIFEST]:
     'Manifesto de Integridade de Planilha (Diárias)',
   [EXPORTED_DOCUMENT_TYPES.FLEET_FUELING]: 'Relatório de Abastecimento',

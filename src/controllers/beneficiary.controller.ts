@@ -14,10 +14,14 @@ import {
 
 const listSchema = z.object({
   search: z.string().optional(),
+  /** Casamento exato. Aceita com ou sem máscara; o serviço normaliza. */
+  cpf: z.string().optional(),
 })
 
 const createSchema = z.object({
   name: z.string().min(1, 'Informe o nome do beneficiário.').max(200),
+  // Opcional: o combobox cria pelo nome, e o CPF pode vir depois (Q-3).
+  cpf: z.string().max(20).nullable().optional(),
 })
 
 const paramsSchema = z.object({ id: z.string().uuid('Identificador inválido.') })
@@ -39,6 +43,9 @@ const STATUS_BY_CODE: Record<BeneficiaryError['code'], number> = {
   NOT_FOUND: 404,
   NO_ORGANIZATION: 403,
   INVALID_NAME: 400,
+  INVALID_CPF: 400,
+  DUPLICATE_CPF: 409,
+  CPF_MISMATCH: 409,
 }
 
 function handleError(error: unknown, request: FastifyRequest, reply: FastifyReply) {
@@ -64,8 +71,8 @@ export const beneficiaryController = {
   async list(request: FastifyRequest, reply: FastifyReply) {
     try {
       const scope = getScope(request)
-      const { search } = listSchema.parse(request.query)
-      return reply.send(await beneficiaryService.list(scope, search))
+      const { search, cpf } = listSchema.parse(request.query)
+      return reply.send(await beneficiaryService.list(scope, search, cpf))
     } catch (error) {
       return handleError(error, request, reply)
     }
@@ -81,9 +88,9 @@ export const beneficiaryController = {
   async create(request: FastifyRequest, reply: FastifyReply) {
     try {
       const scope = getScope(request)
-      const { name } = createSchema.parse(request.body)
+      const { name, cpf } = createSchema.parse(request.body)
 
-      const { beneficiary, created } = await beneficiaryService.create(name, scope)
+      const { beneficiary, created } = await beneficiaryService.create(name, scope, cpf)
       return reply.code(created ? 201 : 200).send(beneficiary)
     } catch (error) {
       return handleError(error, request, reply)

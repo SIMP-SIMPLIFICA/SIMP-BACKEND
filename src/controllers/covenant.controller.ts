@@ -2,12 +2,16 @@ import { FastifyReply, FastifyRequest } from 'fastify'
 import { db } from '@/utils/database.js'
 import { prisma } from '@/lib/prisma.js'
 import { logger } from '@/utils/logger.js'
+import { departmentExistsInOrganization } from '@/utils/department-scope.util.js'
 import { z } from 'zod'
 import { CovenantStatus } from '@prisma/client'
 
 // ─── Zod schemas ──────────────────────────────────────────────────────────────
 
 const covenantCreateSchema = z.object({
+  // Setor responsável pelo convênio (Épico 4). Opcional para não invalidar os
+  // convênios já cadastrados sem setor; a tela é que exige na criação.
+  departmentId:    z.string().min(1).nullable().optional(),
   number:          z.string().min(1),
   typeId:          z.string().uuid().optional(),
   proponentId:     z.string().uuid().optional(),
@@ -140,8 +144,18 @@ export class CovenantController {
       const { organizationId } = (request as unknown as RequestUser).user
       const data = covenantCreateSchema.parse(request.body)
 
+      if (data.departmentId && !(await departmentExistsInOrganization(data.departmentId, organizationId))) {
+        return reply.code(400).send({
+          error: 'Bad Request',
+          message: 'O departamento informado não existe nesta organização.',
+        })
+      }
+
       const covenant = await prisma.covenant.create({
         data: {
+          // Forma de RELAÇÃO, não escalar: este `create` já usa `connect` para a
+          // organização, e o Prisma não aceita os dois estilos no mesmo objeto.
+          ...(data.departmentId && { department: { connect: { id: data.departmentId } } }),
           number:        data.number,
           processObject: data.processObject,
           status:        data.status,
@@ -182,9 +196,22 @@ export class CovenantController {
       const existing = await prisma.covenant.findFirst({ where: { id, organizationId } })
       if (!existing) return reply.code(404).send({ error: 'Not Found', message: 'Convênio não encontrado' })
 
+      if (data.departmentId && !(await departmentExistsInOrganization(data.departmentId, organizationId))) {
+        return reply.code(400).send({
+          error: 'Bad Request',
+          message: 'O departamento informado não existe nesta organização.',
+        })
+      }
+
       const updated = await prisma.covenant.update({
         where: { id },
         data: {
+          // `null` explícito desvincula o setor; `undefined` não mexe no campo.
+          ...(data.departmentId !== undefined && {
+            department: data.departmentId
+              ? { connect: { id: data.departmentId } }
+              : { disconnect: true },
+          }),
           ...(data.number        !== undefined && { number: data.number }),
           ...(data.processObject !== undefined && { processObject: data.processObject }),
           ...(data.status        !== undefined && { status: data.status }),

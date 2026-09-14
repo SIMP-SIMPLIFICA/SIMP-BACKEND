@@ -1,6 +1,11 @@
 import { z } from 'zod'
 
 export const createVirtualProcessSchema = z.object({
+  // Setor responsável (Épico 4). Opcional para não invalidar os processos já
+  // cadastrados sem setor; a tela é que exige na criação.
+  // Precisa estar declarado: o `.strip()` no fim descarta chave desconhecida em
+  // silêncio, e o campo chegaria sem erro nenhum e sem ser gravado.
+  departmentId: z.string().min(1).optional().nullable(),
   processNumber: z.string().regex(/^\d+\/\d{4}$/, 'O número deve estar no formato NUMERO/ANO (ex: 001/2026)'),
   secretaria: z.string().min(1),
   source: z.string().min(1),

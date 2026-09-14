@@ -2,6 +2,7 @@ import { FastifyReply, FastifyRequest } from 'fastify'
 import { db } from '@/utils/database.js'
 import { prisma } from '@/lib/prisma.js'
 import { logger } from '@/utils/logger.js'
+import { departmentExistsInOrganization } from '@/utils/department-scope.util.js'
 import { z } from 'zod'
 import { createVirtualProcessSchema, updateCompanyInfoSchema, updateValiditySchema, uploadDocumentSchema } from '@/schemas/virtual-process.schemas.js'
 import { deleteFile, getFileUrl, saveFile } from '@/services/storage.service.js'
@@ -199,9 +200,17 @@ export class VirtualProcessController {
         return reply.code(400).send({ error: 'Conflict', message: 'Número de processo já existe nesta organização' })
       }
 
+      if (data.departmentId && !(await departmentExistsInOrganization(data.departmentId, organizationId))) {
+        return reply.code(400).send({
+          error: 'Bad Request',
+          message: 'O departamento informado não existe nesta organização.',
+        })
+      }
+
       const process = await prisma.virtualProcess.create({
         data: {
           organizationId,
+          departmentId: data.departmentId ?? null,
           processNumber: data.processNumber,
           secretaria: data.secretaria,
           source: data.source,

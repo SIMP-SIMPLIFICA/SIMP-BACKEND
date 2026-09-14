@@ -390,6 +390,44 @@ describe('Detalhe do departamento (integração)', () => {
   })
 })
 
+describe('Listagem de departamentos — teto de paginação (regressão)', () => {
+  // BUG REAL: `useDepartmentOptions()` no frontend pedia `limit: 200` para
+  // popular o `DepartmentSelect` inteiro numa única página. O backend aceita
+  // no máximo `MAX_PAGE_SIZE` (100, em `constants/pagination.ts`) — acima
+  // disso o Zod recusa com 400 ANTES de qualquer consulta ao banco. A
+  // requisição inteira falhava, e o seletor abria vazio e em silêncio em toda
+  // tela que o usava (convênio, processo virtual, vínculo de conselho,
+  // diária) — sem nenhum aviso de erro, porque o componente não tratava o
+  // estado de falha.
+  test('limit acima do teto responde 400, não uma lista vazia por engano', async () => {
+    const { session } = await setupScenario()
+
+    const response = await getApp().inject({
+      method: 'GET',
+      url: `${BASE_URL}/?limit=200`,
+      headers: session.headers,
+    })
+
+    expect(response.statusCode).toBe(400)
+  })
+
+  test('limit no teto (100) devolve os departamentos normalmente', async () => {
+    // É o valor que qualquer seletor "traga tudo" deve usar — inclusive
+    // `useDepartmentOptions()`, corrigido nesta mesma correção.
+    const { session, department } = await setupScenario()
+
+    const response = await getApp().inject({
+      method: 'GET',
+      url: `${BASE_URL}/?limit=100`,
+      headers: session.headers,
+    })
+
+    expect(response.statusCode).toBe(200)
+    const ids = response.json().data.map((d: { id: string }) => d.id)
+    expect(ids).toContain(department.id)
+  })
+})
+
 describe('Dossiê do Setor (integração)', () => {
   /** Setor com conteúdo em todas as seções, para provar inclusão e omissão. */
   async function setupPopulated() {

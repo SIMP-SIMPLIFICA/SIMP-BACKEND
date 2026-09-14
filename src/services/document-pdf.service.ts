@@ -616,6 +616,209 @@ export async function createTabularReportPdf(
   return { bytes, sha256Hash: calculateDocumentHash(bytes), validationUrl }
 }
 
+// ─── Relatórios com várias seções ─────────────────────────────────────────────
+
+export interface ReportTableSection {
+  /** Título da seção, impresso em negrito sob uma régua horizontal. */
+  heading: string
+  /** Pares rótulo/valor, para seções que não são lista (identificação, CNPJ). */
+  fields?: PdfField[]
+  /** Colunas da tabela. A soma das larguras cabe na área útil (495 pt). */
+  columns?: ReportColumn[]
+  rows?: string[][]
+  /**
+   * Texto quando a seção foi pedida e não tem conteúdo.
+   *
+   * Obrigatório na prática: título seguido de espaço em branco parece falha de
+   * impressão, e num documento de consulta a diferença entre "não tem" e "não
+   * imprimiu" é o que decide se alguém vai atrás do dado.
+   */
+  emptyMessage?: string
+}
+
+export interface SectionedReportInput {
+  title: string
+  organizationName: string
+  publicId: string
+  exporterName?: string | null
+  subtitles?: string[]
+  sections: ReportTableSection[]
+  logoPng?: Uint8Array | null
+  footNote?: string
+}
+
+const SECTION_HEADING_SIZE = 11
+const FIELD_LABEL_WIDTH = 150
+
+/**
+ * Documento executivo com VÁRIAS seções, cada uma com sua tabela.
+ *
+ * Terceiro ponto de entrada do motor, ao lado de `createOfficialPdf` (um
+ * registro) e `createTabularReportPdf` (uma lista). Este monta um dossiê:
+ * várias listas heterogêneas no mesmo documento, cada qual com cabeçalho
+ * próprio, separadas por régua.
+ *
+ * Existe porque a alternativa era imprimir listas como texto corrido em
+ * `createOfficialPdf`, que é como o dossiê saía antes — colunas desalinhadas e
+ * ilegíveis assim que uma lista passava de três itens.
+ */
+export async function createSectionedReportPdf(
+  input: SectionedReportInput
+): Promise<OfficialPdfResult> {
+  const pdf = await PDFDocument.create()
+  pdf.setTitle(sanitizeForPdf(input.title))
+  pdf.setProducer('SIMP')
+  pdf.setCreator('SIMP')
+
+  const font = await pdf.embedFont(StandardFonts.Helvetica)
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold)
+  const logo = await embedLogoSafely(pdf, input.logoPng)
+
+  const headerInput: TabularReportInput = {
+    title: input.title,
+    organizationName: input.organizationName,
+    publicId: input.publicId,
+    subtitles: input.subtitles,
+    columns: [],
+    rows: [],
+  }
+
+  let page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
+  let cursor = await drawReportHeader(page, { input: headerInput, font, bold, logo, isFirstPage: true })
+
+  /** Abre página nova quando o próximo bloco não couber acima do rodapé. */
+  async function ensureSpace(needed: number) {
+    if (cursor - needed >= FOOTER_TOP + 12) return
+
+    page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
+    cursor = await drawReportHeader(page, { input: headerInput, font, bold, logo, isFirstPage: false })
+  }
+
+  for (const section of input.sections) {
+    // Título e ao menos uma linha precisam caber JUNTOS: um cabeçalho de seção
+    // sozinho no pé da página é a falha clássica de relatório paginado.
+    await ensureSpace(SECTION_HEADING_SIZE + ROW_HEIGHT * 2 + 24)
+
+    cursor -= 8
+    page.drawLine({
+      start: { x: MARGIN, y: cursor },
+      end: { x: PAGE_WIDTH - MARGIN, y: cursor },
+      thickness: 0.8,
+      color: COLOR_RULE,
+    })
+    cursor -= 16
+
+    page.drawText(sanitizeForPdf(section.heading.toUpperCase()), {
+      x: MARGIN,
+      y: cursor,
+      size: SECTION_HEADING_SIZE,
+      font: bold,
+      color: COLOR_TEXT,
+    })
+    cursor -= 18
+
+    // ── Pares rótulo/valor ──
+    if (section.fields?.length) {
+      for (const field of section.fields) {
+        await ensureSpace(ROW_HEIGHT)
+
+        page.drawText(sanitizeForPdf(`${field.label}`), {
+          x: MARGIN,
+          y: cursor,
+          size: 9.5,
+          font: bold,
+          color: COLOR_MUTED,
+        })
+        // Coluna de valores alinhada, não colada no rótulo: é o alinhamento que
+        // permite ler a coluna inteira de cima a baixo.
+        for (const line of wrapText(
+          field.value,
+          font,
+          9.5,
+          PAGE_WIDTH - MARGIN * 2 - FIELD_LABEL_WIDTH
+        )) {
+          page.drawText(sanitizeForPdf(line), {
+            x: MARGIN + FIELD_LABEL_WIDTH,
+            y: cursor,
+            size: 9.5,
+            font,
+            color: COLOR_TEXT,
+          })
+          cursor -= 13
+        }
+      }
+      cursor -= 6
+    }
+
+    // ── Tabela ──
+    if (section.columns?.length) {
+      const rows = section.rows ?? []
+
+      if (rows.length === 0) {
+        page.drawText(sanitizeForPdf(section.emptyMessage ?? 'Nenhum registro.'), {
+          x: MARGIN,
+          y: cursor - 4,
+          size: 9,
+          font,
+          color: COLOR_MUTED,
+        })
+        cursor -= 22
+      } else {
+        cursor = drawTableHeader(page, section.columns, cursor, bold)
+
+        for (const [index, row] of rows.entries()) {
+          if (cursor - ROW_HEIGHT < FOOTER_TOP + 12) {
+            page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
+            cursor = await drawReportHeader(page, {
+              input: headerInput,
+              font,
+              bold,
+              logo,
+              isFirstPage: false,
+            })
+            // Cabeçalho da tabela repetido na página nova: uma folha solta com
+            // números sem rótulo de coluna não significa nada.
+            cursor = drawTableHeader(page, section.columns, cursor, bold)
+          }
+
+          if (index % 2 === 1) {
+            page.drawRectangle({
+              x: MARGIN,
+              y: cursor - ROW_HEIGHT + 4,
+              width: PAGE_WIDTH - MARGIN * 2,
+              height: ROW_HEIGHT,
+              color: COLOR_ROW_ALT,
+            })
+          }
+
+          drawTableRow(page, section.columns, row, cursor, font)
+          cursor -= ROW_HEIGHT
+        }
+        cursor -= 10
+      }
+    } else if (!section.fields?.length) {
+      page.drawText(sanitizeForPdf(section.emptyMessage ?? 'Nenhum registro.'), {
+        x: MARGIN,
+        y: cursor - 4,
+        size: 9,
+        font,
+        color: COLOR_MUTED,
+      })
+      cursor -= 22
+    }
+  }
+
+  const validationUrl = await applyUniversalValidationFooter(pdf, {
+    publicId: input.publicId,
+    exporterName: input.exporterName,
+    note: input.footNote,
+  })
+
+  const bytes = await pdf.save()
+
+  return { bytes, sha256Hash: calculateDocumentHash(bytes), validationUrl }
+}
+
 /** Embute a logo tolerando arquivo inválido — nunca impede a emissão. */
 async function embedLogoSafely(pdf: PDFDocument, logoPng?: Uint8Array | null) {
   if (!logoPng) return null

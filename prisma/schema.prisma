@@ -298,10 +298,11 @@ model Department {
   description String?
   /// CNPJ próprio do setor, quando possui inscrição separada da prefeitura.
   cnpj        String?
-  /// Ordenador de Despesa: autoridade que responde juridicamente pelo empenho.
-  /// DISTINTO de `managerId` — o ordenador frequentemente NÃO é usuário do
-  /// sistema, e confundir os dois misturaria papel operacional com autoridade.
-  chiefName   String?  @map("chief_name")
+  /// Logo PRÓPRIA do setor, para o cabeçalho dos documentos dele.
+  /// Guarda o fileKey do StorageService, não URL absoluta: URL gravada apodrece
+  /// quando APP_URL muda de dev para produção, e não serve para ler os bytes na
+  /// hora de montar o PDF. Ausente, o documento cai na logo da organização.
+  logoUrl     String?  @map("logo_url")
   isActive    Boolean  @default(true) @map("is_active")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -321,6 +322,8 @@ model Department {
   budgetLaws        BudgetLaw[]
   qddItems          QddItem[]
   dailyAllowances   DailyAllowance[]
+  fleetFuelings     FleetFueling[]
+  beneficiaries     Beneficiary[]
 
   @@unique([organizationId, code])
   @@map("departments")
@@ -1387,6 +1390,11 @@ model FleetFueling {
   // Placa normalizada (maiúsculas, sem hífen). Sem normalização, "abc-1234" e
   // "ABC1234" virariam dois veículos distintos e o relatório por placa nasceria
   // furado.
+  /// Setor ao qual o abastecimento é imputado.
+  /// Opcional: registros anteriores ao Épico 4 não têm setor, e torná-lo
+  /// obrigatório invalidaria o histórico já prestado.
+  departmentId String? @map("department_id")
+
   licensePlate String @map("license_plate")
 
   // Odômetro em quilômetros inteiros — o painel do veículo não marca fração.
@@ -1412,8 +1420,10 @@ model FleetFueling {
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   createdBy    User         @relation("FleetFuelingCreator", fields: [createdById], references: [id])
+  department   Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, date])
+  @@index([departmentId])
   @@index([organizationId, licensePlate])
   @@map("fleet_fuelings")
 }
@@ -1435,9 +1445,15 @@ model Beneficiary {
   /// Opcional: beneficiários já cadastrados não o possuem.
   cpf String?
 
+  /// Setor de lotação. Alimenta o preenchimento automático do departamento no
+  /// formulário de diária — é SUGESTÃO, não trava: servidor cedido viaja a
+  /// serviço de outra pasta, e a despesa corre por quem a autorizou.
+  departmentId String? @map("department_id")
+
   createdAt DateTime @default(now()) @map("created_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  department   Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
 
   // Unicidade POR ORGANIZAÇÃO: duas prefeituras podem ter servidores homônimos,
   // e uma restrição global impediria a segunda de cadastrar o seu.

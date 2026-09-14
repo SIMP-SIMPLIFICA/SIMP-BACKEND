@@ -21,22 +21,30 @@ async function setupScenario(
   const organization = await createTestOrganization({ modules })
   const session = await createTestUserWithToken({ organizationId: organization.id, permissions })
 
+  // O Ordenador de Despesa é o CHEFE do setor, apontado em `managerId`. Não há
+  // mais nome solto: derivar do cadastro é o que impede o nome impresso nos
+  // empenhos divergir de quem de fato responde pela pasta.
+  const chief = await createTestUserWithToken({
+    organizationId: organization.id,
+    permissions: [],
+  })
+
   const department = await prisma.department.create({
     data: {
       organizationId: organization.id,
       name: 'Secretaria de Obras',
       code: `SO${Math.floor(Math.random() * 9000) + 1000}`,
       cnpj: '11222333000181',
-      chiefName: 'MARIA DAS DORES',
+      managerId: chief.user.id,
     },
   })
 
-  return { organization, session, department }
+  return { organization, session, department, chief }
 }
 
 describe('Detalhe do departamento (integração)', () => {
   test('GET /:id devolve CNPJ, ordenador e as contagens dos vínculos', async () => {
-    const { session, department } = await setupScenario()
+    const { session, department, chief } = await setupScenario()
 
     const response = await getApp().inject({
       method: 'GET',
@@ -48,7 +56,11 @@ describe('Detalhe do departamento (integração)', () => {
     const body = response.json()
 
     expect(body.cnpj).toBe('11222333000181')
-    expect(body.chiefName).toBe('MARIA DAS DORES')
+    // `chiefName` é DERIVADO do gestor, não coluna: vem pronto para tela e PDF
+    // exibirem exatamente o mesmo nome.
+    const expectedChief = [chief.user.firstName, chief.user.lastName].filter(Boolean).join(' ')
+    expect(body.chiefName).toBe(expectedChief)
+    expect(body.manager?.id).toBe(chief.user.id)
     // As contagens vêm juntas para a tela saber quais abas têm conteúdo sem
     // disparar quatro requisições.
     expect(body._count).toMatchObject({ councils: 0, covenants: 0, virtualProcesses: 0, qddItems: 0 })
@@ -111,6 +123,167 @@ describe('Detalhe do departamento (integração)', () => {
 
       expect(response.statusCode).toBe(200)
       expect(response.json().cnpj).toBeNull()
+    })
+  })
+
+  describe('ordenador de despesa', () => {
+    test('é definido já na CRIAÇÃO, não só na edição', async () => {
+      // Antes o gestor só existia no update, e o setor nascia sem ordenador —
+      // que é justamente o dado que os documentos dele precisam.
+      const { organization, session } = await setupScenario()
+      const chief = await createTestUserWithToken({
+        organizationId: organization.id,
+        permissions: [],
+      })
+
+      const created = await getApp().inject({
+        method: 'POST',
+        url: `${BASE_URL}/`,
+        headers: session.headers,
+        payload: { name: 'Secretaria de Cultura', code: 'SCULT1', managerId: chief.user.id },
+      })
+
+      expect(created.statusCode).toBe(201)
+
+      const detail = await getApp().inject({
+        method: 'GET',
+        url: `${BASE_URL}/${created.json().id}`,
+        headers: session.headers,
+      })
+      expect(detail.json().manager.id).toBe(chief.user.id)
+      expect(detail.json().chiefName).not.toBe('Não informado')
+    })
+
+    test('recusa gestor de outra organização', async () => {
+      // A chave estrangeira aceitaria: ela não sabe nada sobre organizações, e
+      // o ordenador do setor passaria a ser um estranho.
+      const mine = await setupScenario()
+      const theirs = await setupScenario()
+
+      const response = await getApp().inject({
+        method: 'POST',
+        url: `${BASE_URL}/`,
+        headers: mine.session.headers,
+        payload: { name: 'Secretaria Nova', code: 'SN77', managerId: theirs.chief.user.id },
+      })
+
+      expect(response.statusCode).toBe(400)
+    })
+
+    test('setor sem chefe diz "Não informado", não vem vazio', async () => {
+      // Campo em branco num documento oficial parece falha de impressão.
+      const { session } = await setupScenario()
+
+      const created = await getApp().inject({
+        method: 'POST',
+        url: `${BASE_URL}/`,
+        headers: session.headers,
+        payload: { name: 'Secretaria Sem Chefe', code: 'SSC01' },
+      })
+
+      const detail = await getApp().inject({
+        method: 'GET',
+        url: `${BASE_URL}/${created.json().id}`,
+        headers: session.headers,
+      })
+
+      expect(detail.json().chiefName).toBe('Não informado')
+    })
+  })
+
+  describe('logo do setor', () => {
+    /** PNG 1x1 válido — o validador confere a ASSINATURA, não a extensão. */
+    const PNG_1X1 = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64'
+    )
+
+    /** Monta o corpo multipart na mão — o helper E2E não cobre upload. */
+    function multipart(buffer: Buffer, filename: string, contentType: string) {
+      const boundary = '----simpTestBoundary'
+      const head = Buffer.from(
+        `--${boundary}\r\n` +
+          `Content-Disposition: form-data; name="file"; filename="${filename}"\r\n` +
+          `Content-Type: ${contentType}\r\n\r\n`
+      )
+      const tail = Buffer.from(`\r\n--${boundary}--\r\n`)
+      return {
+        payload: Buffer.concat([head, buffer, tail]),
+        contentType: `multipart/form-data; boundary=${boundary}`,
+      }
+    }
+
+    test('aceita PNG e grava o fileKey no setor', async () => {
+      const { session, department } = await setupScenario()
+      const { payload, contentType } = multipart(PNG_1X1, 'logo.png', 'image/png')
+
+      const response = await getApp().inject({
+        method: 'POST',
+        url: `${BASE_URL}/${department.id}/logo`,
+        headers: { ...session.headers, 'content-type': contentType },
+        payload,
+      })
+
+      expect(response.statusCode).toBe(200)
+      expect(response.json().logoUrl).toBeTruthy()
+
+      const stored = await prisma.department.findUnique({ where: { id: department.id } })
+      // fileKey do StorageService, NUNCA URL absoluta: URL gravada apodrece
+      // quando APP_URL muda de dev para produção.
+      expect(stored?.logoUrl).not.toMatch(/^https?:/)
+    })
+
+    test('recusa formato que o pdf-lib não embute', async () => {
+      // Aceitar GIF faria o upload passar e a logo sumir do PDF — falha
+      // silenciosa que só apareceria num documento já emitido.
+      const { session, department } = await setupScenario()
+      const gif = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64')
+      const { payload, contentType } = multipart(gif, 'logo.gif', 'image/gif')
+
+      const response = await getApp().inject({
+        method: 'POST',
+        url: `${BASE_URL}/${department.id}/logo`,
+        headers: { ...session.headers, 'content-type': contentType },
+        payload,
+      })
+
+      expect(response.statusCode).toBe(415)
+    })
+
+    test('não se troca a logo do setor de outra organização', async () => {
+      const mine = await setupScenario()
+      const theirs = await setupScenario()
+      const { payload, contentType } = multipart(PNG_1X1, 'logo.png', 'image/png')
+
+      const response = await getApp().inject({
+        method: 'POST',
+        url: `${BASE_URL}/${theirs.department.id}/logo`,
+        headers: { ...mine.session.headers, 'content-type': contentType },
+        payload,
+      })
+
+      expect(response.statusCode).toBe(404)
+    })
+
+    test('remover devolve o setor à logo da organização', async () => {
+      const { session, department } = await setupScenario()
+      const { payload, contentType } = multipart(PNG_1X1, 'logo.png', 'image/png')
+
+      await getApp().inject({
+        method: 'POST',
+        url: `${BASE_URL}/${department.id}/logo`,
+        headers: { ...session.headers, 'content-type': contentType },
+        payload,
+      })
+
+      const removed = await getApp().inject({
+        method: 'DELETE',
+        url: `${BASE_URL}/${department.id}/logo`,
+        headers: session.headers,
+      })
+
+      expect(removed.statusCode).toBe(200)
+      expect(removed.json().logoUrl).toBeNull()
     })
   })
 
@@ -287,11 +460,13 @@ describe('Dossiê do Setor (integração)', () => {
     })
 
     const text = await extractPdfText(response.rawPayload)
-    expect(text).toContain('Conselhos vinculados')
-    expect(text).toContain('Dotações do QDD')
-    expect(text).toContain('Convênios')
-    expect(text).toContain('Processos virtuais')
-    expect(text).toContain('Servidores lotados')
+    // Os títulos de seção saem em CAIXA ALTA no relatório executivo; a
+    // asserção ignora a caixa para não quebrar a cada ajuste de estilo.
+    expect(text).toMatch(/conselhos vinculados/i)
+    expect(text).toMatch(/dotações do qdd/i)
+    expect(text).toMatch(/convênios/i)
+    expect(text).toMatch(/processos virtuais/i)
+    expect(text).toMatch(/servidores lotados/i)
     expect(text).toContain('11.222.333/0001-81')
   })
 
@@ -309,8 +484,8 @@ describe('Dossiê do Setor (integração)', () => {
     const text = await extractPdfText(response.rawPayload)
 
     expect(text).toContain('11.222.333/0001-81')
-    expect(text).not.toContain('Conselhos vinculados')
-    expect(text).not.toContain('Dotações do QDD')
+    expect(text).not.toMatch(/conselhos vinculados/i)
+    expect(text).not.toMatch(/dotações do qdd/i)
     expect(text).not.toContain('Pavimentação')
   })
 
@@ -326,7 +501,7 @@ describe('Dossiê do Setor (integração)', () => {
     })
 
     const text = await extractPdfText(response.rawPayload)
-    expect(text).toContain('Nenhum convênio vinculado')
+    expect(text).toMatch(/nenhum convênio vinculado/i)
   })
 
   test('nome de seção desconhecido é descartado, não derruba a exportação', async () => {

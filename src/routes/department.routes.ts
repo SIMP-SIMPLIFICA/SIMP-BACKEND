@@ -14,6 +14,10 @@ export async function departmentRoutes(app: FastifyInstance) {
   app.get('/:id/virtual-processes', departmentController.listVirtualProcesses)
   app.get('/:id/dossier', departmentController.dossier)
 
+  // Identidade visual do setor. Escrita, portanto sob `departments:write`.
+  app.post('/:id/logo', { preHandler: [requireAnyPermission(['departments:write'])] }, departmentController.uploadLogo)
+  app.delete('/:id/logo', { preHandler: [requireAnyPermission(['departments:write'])] }, departmentController.removeLogo)
+
   app.get('/:id', departmentController.getById)
 
   app.post('/', { preHandler: [requireAnyPermission(['departments:write'])] }, departmentController.create)

@@ -3,6 +3,12 @@ import { prisma } from '@/lib/prisma.js'
 import { z } from 'zod'
 import { MAX_PAGE_SIZE } from '@/constants/pagination.js'
 import { isValidCnpj, normalizeCnpj } from '@/utils/cnpj.util.js'
+import { resolveChiefName } from '@/utils/department-chief.util.js'
+import {
+  DepartmentBrandingError,
+  departmentBrandingService,
+} from '@/services/department-branding.service.js'
+import { UnsupportedFileTypeError } from '@/services/file-validation.service.js'
 import {
   DOSSIER_SECTIONS,
   DepartmentDossierError,
@@ -26,15 +32,20 @@ const cnpjField = z
   .nullable()
   .optional()
 
-/** Ordenador de despesa — nome de quem assina, não usuário do sistema. */
-const chiefNameField = z.string().trim().max(150).nullable().optional()
+/**
+ * Secretário / Chefe do Setor — é ele o Ordenador de Despesa.
+ *
+ * Aceito já na CRIAÇÃO: antes só existia no update, e o setor nascia sem
+ * ordenador, que é justamente o dado que os documentos dele precisam.
+ */
+const managerField = z.string().min(1).nullable().optional()
 
 const createSchema = z.object({
   name:        z.string().min(1).max(150).trim(),
   code:        z.string().min(1).max(20).trim().toUpperCase(),
   description: z.string().max(500).trim().optional(),
   cnpj:        cnpjField,
-  chiefName:   chiefNameField,
+  managerId:   managerField,
 })
 
 const updateSchema = z.object({
@@ -42,9 +53,8 @@ const updateSchema = z.object({
   code:        z.string().min(1).max(20).trim().toUpperCase().optional(),
   description: z.string().max(500).trim().nullable().optional(),
   isActive:    z.boolean().optional(),
-  managerId:   z.string().nullable().optional(),
+  managerId:   managerField,
   cnpj:        cnpjField,
-  chiefName:   chiefNameField,
 })
 
 const listSchema = z.object({
@@ -88,6 +98,32 @@ function orgId(request: FastifyRequest): string {
 }
 
 const deptSelect = { _count: { select: { members: true } } } as const
+
+const LOGO_STATUS: Record<DepartmentBrandingError['code'], number> = {
+  DEPARTMENT_NOT_FOUND: 404,
+  NO_FILE: 400,
+  FILE_TOO_LARGE: 413,
+  UNSUPPORTED_FORMAT: 415,
+}
+
+function handleLogoError(error: unknown, request: FastifyRequest, reply: FastifyReply) {
+  if (error instanceof z.ZodError) {
+    return reply.code(400).send({ error: 'Validation Error', issues: error.issues })
+  }
+  if (error instanceof DepartmentBrandingError) {
+    return reply.code(LOGO_STATUS[error.code]).send({ error: error.code, message: error.message })
+  }
+  // O validador de assinatura binária recusou: o arquivo não é o que dizia ser.
+  if (error instanceof UnsupportedFileTypeError) {
+    return reply.code(415).send({ error: 'UNSUPPORTED_FORMAT', message: error.message })
+  }
+
+  request.log.error(error, 'Falha ao processar a logo do setor')
+  return reply.code(500).send({
+    error: 'INTERNAL_SERVER_ERROR',
+    message: 'Não foi possível processar a logo do setor.',
+  })
+}
 
 /**
  * Confere que o setor existe NESTA organização antes de listar seus vínculos.
@@ -199,7 +235,10 @@ export const departmentController = {
 
       if (!department) return reply.code(404).send({ error: 'Not Found', message: 'Departamento não encontrado.' })
 
-      return reply.send(department)
+      // `chiefName` é DERIVADO do gestor, não coluna. Enviá-lo pronto mantém
+      // tela e PDF exibindo exatamente o mesmo nome — se cada lado montasse a
+      // string por conta própria, um deles acabaria formatando diferente.
+      return reply.send({ ...department, chiefName: resolveChiefName(department.manager) })
     } catch (err: unknown) {
       if (err instanceof z.ZodError) return reply.code(400).send({ error: 'Validation Error', issues: err.issues })
       return reply.code(500).send({ error: 'Get Failed', message: (err as Error).message })
@@ -296,6 +335,41 @@ export const departmentController = {
     }
   },
 
+  /** POST /:id/logo (multipart) — identidade visual própria do setor. */
+  async uploadLogo(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const organizationId = orgId(request)
+      const { id } = z.object({ id: z.string().min(1) }).parse(request.params)
+
+      const file = await request.file()
+      if (!file) {
+        return reply.code(400).send({ error: 'NO_FILE', message: 'Nenhum arquivo enviado.' })
+      }
+
+      const result = await departmentBrandingService.uploadLogo(
+        id,
+        organizationId,
+        await file.toBuffer(),
+        file.mimetype,
+        file.filename ?? 'logo'
+      )
+      return reply.send(result)
+    } catch (err: unknown) {
+      return handleLogoError(err, request, reply)
+    }
+  },
+
+  /** DELETE /:id/logo — os documentos voltam a usar a logo da organização. */
+  async removeLogo(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const organizationId = orgId(request)
+      const { id } = z.object({ id: z.string().min(1) }).parse(request.params)
+      return reply.send(await departmentBrandingService.removeLogo(id, organizationId))
+    } catch (err: unknown) {
+      return handleLogoError(err, request, reply)
+    }
+  },
+
   async create(request: FastifyRequest, reply: FastifyReply) {
     try {
       const organizationId = orgId(request)
@@ -312,6 +386,18 @@ export const departmentController = {
         return reply.code(409).send({ error: 'Conflict', message: `Já existe um departamento com o código "${body.code}" nesta organização.` })
       }
 
+      // Mesma conferência que o update já fazia: um `managerId` de outra
+      // prefeitura seria aceito pela chave estrangeira, que não sabe nada sobre
+      // organizações — e o ordenador do setor passaria a ser um estranho.
+      if (body.managerId) {
+        const managerUser = await prisma.user.findFirst({
+          where: { id: body.managerId, organizationId },
+        })
+        if (!managerUser) {
+          return reply.code(400).send({ error: 'Bad Request', message: 'Usuário não encontrado nesta organização.' })
+        }
+      }
+
       const department = await prisma.department.create({
         data: {
           organizationId,
@@ -319,7 +405,7 @@ export const departmentController = {
           code:        body.code,
           description: body.description ?? null,
           cnpj:        body.cnpj ?? null,
-          chiefName:   body.chiefName ?? null,
+          managerId:   body.managerId ?? null,
           isActive:    true,
         },
         include: { ...deptSelect, manager: { select: { id: true, firstName: true, lastName: true } } },
@@ -370,7 +456,6 @@ export const departmentController = {
           ...(body.isActive    !== undefined ? { isActive:    body.isActive }    : {}),
           ...(body.managerId   !== undefined ? { managerId:   body.managerId }   : {}),
           ...(body.cnpj        !== undefined ? { cnpj:        body.cnpj }        : {}),
-          ...(body.chiefName   !== undefined ? { chiefName:   body.chiefName }   : {}),
         },
         include: { ...deptSelect, manager: { select: { id: true, firstName: true, lastName: true } } },
       })

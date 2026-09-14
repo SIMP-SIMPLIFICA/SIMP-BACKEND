@@ -70,6 +70,23 @@ export async function councilRoutes(app: FastifyInstance) {
     councilController.removeMember,
   )
 
+  // ─── Departamentos vinculados ───────────────────────────────────────────────
+
+  app.get('/:id/departments',
+    { preHandler: [requireAnyPermission(READ)] },
+    councilController.listDepartments,
+  )
+
+  app.post('/:id/departments',
+    { preHandler: [requireAnyPermission(WRITE)] },
+    councilController.linkDepartment,
+  )
+
+  app.delete('/:id/departments/:departmentId',
+    { preHandler: [requireAnyPermission(WRITE)] },
+    councilController.unlinkDepartment,
+  )
+
   // ─── Reuniões ───────────────────────────────────────────────────────────────
 
   app.get('/:councilId/meetings',

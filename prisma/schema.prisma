@@ -1548,7 +1548,12 @@ model BudgetLaw {
   type BudgetLawType
   year Int
 
-  details String? @db.Text
+  /// Número/ano da lei, ex: "1.234/2026". Texto e não numérico: leis municipais
+  /// costumam ter sufixo ou formatação própria que um Int não comportaria.
+  lawNumber   String?   @map("law_number")
+  /// Data de publicação — é o marco que o Tribunal de Contas confere.
+  publishedAt DateTime? @map("published_at")
+  details     String?   @db.Text
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -1556,6 +1561,9 @@ model BudgetLaw {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   department   Department   @relation(fields: [departmentId], references: [id], onDelete: Cascade)
 
+  /// Um LOA, um PPA e um LDO por setor e exercício. Suplementação ou emenda
+  /// atualiza o registro existente — não cria um segundo.
+  @@unique([departmentId, type, year])
   @@index([organizationId, departmentId, year])
   @@map("budget_laws")
 }

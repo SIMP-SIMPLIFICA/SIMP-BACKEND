@@ -26,6 +26,7 @@ import { covenantRoutes } from '@/routes/covenant.routes.js'
 import { protocolRoutes } from '@/routes/protocol.routes.js'
 import { departmentRoutes } from '@/routes/department.routes.js'
 import { qddItemRoutes } from '@/routes/qdd-item.routes.js'
+import { budgetLawRoutes } from '@/routes/budget-law.routes.js'
 import { councilPublicRoutes, councilRoutes } from '@/routes/council.routes.js'
 import { supportRoutes } from '@/routes/support.routes.js'
 import { errorHandler } from '@/utils/error-handler.js'
@@ -188,6 +189,8 @@ export async function registerRoutes(server: AppServer) {
   await server.register(departmentRoutes, { prefix: '/departments', logLevel: 'info' })
   // QDD — dotações orçamentárias do setor (Épico 4).
   await server.register(qddItemRoutes, { prefix: '/qdd-items', logLevel: 'info' })
+  // Leis Orçamentárias — LOA, PPA e LDO (Épico 4).
+  await server.register(budgetLawRoutes, { prefix: '/budget-laws', logLevel: 'info' })
   await server.register(councilRoutes, { prefix: '/councils', logLevel: 'info' })
   await server.register(councilPublicRoutes, { prefix: '/councils', logLevel: 'info' })
   await server.register(supportRoutes, { prefix: '/support', logLevel: 'info' })

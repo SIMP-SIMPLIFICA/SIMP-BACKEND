@@ -54,8 +54,28 @@ const SELECT = {
   cpf: true,
   departmentId: true,
   department: { select: { id: true, name: true, code: true } },
+  // Dados de registro (Épico 4) — alimentam o preenchimento automático do
+  // Bloco 2 da diária quando um beneficiário JÁ CONHECIDO é escolhido.
+  registrationNumber: true,
+  rg: true,
+  jobTitle: true,
+  lotacao: true,
+  bankName: true,
+  bankAgency: true,
+  bankAccount: true,
   createdAt: true,
 } as const
+
+/** Dados de registro opcionais que a criação rápida pode preencher junto do nome. */
+export interface BeneficiaryRegistryInput {
+  registrationNumber?: string | null
+  rg?: string | null
+  jobTitle?: string | null
+  lotacao?: string | null
+  bankName?: string | null
+  bankAgency?: string | null
+  bankAccount?: string | null
+}
 
 /**
  * Forma de saída do beneficiário.
@@ -114,7 +134,8 @@ export const beneficiaryService = {
     name: string,
     scope: RequestScope,
     rawCpf?: string | null,
-    departmentId?: string | null
+    departmentId?: string | null,
+    registry?: BeneficiaryRegistryInput
   ) {
     const normalized = normalizeBeneficiaryName(name)
 
@@ -136,6 +157,13 @@ export const beneficiaryService = {
           cpf,
           departmentId: departmentId ?? null,
           organizationId: scope.organizationId,
+          registrationNumber: registry?.registrationNumber ?? null,
+          rg: registry?.rg ?? null,
+          jobTitle: registry?.jobTitle ?? null,
+          lotacao: registry?.lotacao ?? null,
+          bankName: registry?.bankName ?? null,
+          bankAgency: registry?.bankAgency ?? null,
+          bankAccount: registry?.bankAccount ?? null,
         },
         select: SELECT,
       })
@@ -185,12 +213,22 @@ export const beneficiaryService = {
 
       // Nome já cadastrado SEM CPF, e agora veio um: completa o cadastro. É o
       // fluxo normal da criação rápida — o nome entra primeiro, o CPF depois.
-      // Nome já cadastrado e faltando CPF ou lotação: completa o que está
-      // vazio. É o fluxo normal da criação rápida — o nome entra primeiro, o
-      // resto vem depois. O que JÁ tem valor nunca é sobrescrito aqui.
-      const fill: { cpf?: string; departmentId?: string } = {}
+      // Nome já cadastrado e faltando algum dado: completa o que está vazio.
+      // É o fluxo normal da criação rápida — o nome entra primeiro, o resto
+      // vem depois, possivelmente numa diária futura. O que JÁ tem valor
+      // nunca é sobrescrito aqui.
+      const fill: Prisma.BeneficiaryUncheckedUpdateInput = {}
       if (cpf && !existing.cpf) fill.cpf = cpf
       if (departmentId && !existing.departmentId) fill.departmentId = departmentId
+      if (registry?.registrationNumber && !existing.registrationNumber) {
+        fill.registrationNumber = registry.registrationNumber
+      }
+      if (registry?.rg && !existing.rg) fill.rg = registry.rg
+      if (registry?.jobTitle && !existing.jobTitle) fill.jobTitle = registry.jobTitle
+      if (registry?.lotacao && !existing.lotacao) fill.lotacao = registry.lotacao
+      if (registry?.bankName && !existing.bankName) fill.bankName = registry.bankName
+      if (registry?.bankAgency && !existing.bankAgency) fill.bankAgency = registry.bankAgency
+      if (registry?.bankAccount && !existing.bankAccount) fill.bankAccount = registry.bankAccount
 
       if (Object.keys(fill).length > 0) {
         const completed = await prisma.beneficiary.update({

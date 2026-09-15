@@ -28,3 +28,17 @@ export function maskCpf(raw: string | null | undefined): string {
   if (!digits) return ''
   return `***.${digits.slice(3, 6)}.${digits.slice(6, 9)}-**`
 }
+
+/**
+ * Forma COMPLETA, com pontuação: `123.456.789-00`.
+ *
+ * Só para o único lugar do sistema com exceção documentada à máscara: o
+ * Anexo I de Diária, que é o formulário que o beneficiário assina para
+ * receber o valor e precisa do número completo para ter validade (ver
+ * `DailyAllowance.beneficiaryCpf`). Fora dali, é `maskCpf` que vale.
+ */
+export function formatCpf(raw: string | null | undefined): string {
+  const digits = normalizeCpf(raw)
+  if (!digits) return ''
+  return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`
+}

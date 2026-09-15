@@ -829,8 +829,20 @@ async function embedLogoSafely(pdf: PDFDocument, logoPng?: Uint8Array | null) {
   }
 }
 
+/**
+ * Só o que `drawReportHeader` de fato usa — não o contrato inteiro de
+ * `TabularReportInput`. Mais estreito, serve a qualquer chamador (inclusive
+ * `createSectionedReportPdf` e o motor de formulário em grade) sem precisar
+ * fingir campos que não tem, como `columns`/`rows`.
+ */
+interface ReportHeaderInput {
+  title: string
+  organizationName: string
+  subtitles?: string[]
+}
+
 interface HeaderContext {
-  input: TabularReportInput
+  input: ReportHeaderInput
   font: PDFFont
   bold: PDFFont
   logo: Awaited<ReturnType<typeof embedLogoSafely>>
@@ -971,4 +983,269 @@ function truncateToWidth(
     result = result.slice(0, -1)
   }
   return `${result}...`
+}
+
+// ─── Formulário em grade (Anexo I de Diária e afins) ──────────────────────────
+//
+// Quarto ponto de entrada do motor, ao lado de `createOfficialPdf` (um
+// registro em lista de campos), `createTabularReportPdf` (uma lista) e
+// `createSectionedReportPdf` (várias tabelas nomeadas). Este reproduz um
+// FORMULÁRIO FÍSICO NUMERADO — células com borda visível, dispostas em linhas
+// de largura fixa, como o papel que a prefeitura já usa. Nasceu porque o
+// Anexo I de Diária tem 20 campos numerados que o usuário exige ver
+// exatamente na mesma disposição do formulário impresso, e nem o "lista de
+// campos" nem o "tabela de linhas" dos outros motores desenham bordas de
+// célula.
+
+export interface FormGridCell {
+  /** Numeração impressa antes do rótulo, ex: "5." — ausente quando a célula não tem número no papel. */
+  number?: number
+  label: string
+  value: string
+  /** Peso relativo da largura dentro da linha. Uma linha com pesos [1,1,1] divide em três terços. */
+  span?: number
+}
+
+export interface FormGridRow {
+  cells: FormGridCell[]
+}
+
+/** Um bloco de assinatura: linha, nome em negrito, função abaixo em cinza. */
+export interface FormSignatureBlock {
+  type: 'signature'
+  name: string
+  role?: string
+}
+
+/** Um parágrafo com título opcional — usado pela seção "RECIBO" do Anexo I. */
+export interface FormTextBlock {
+  type: 'text'
+  heading?: string
+  /** Régua horizontal ANTES do bloco — separa visualmente do que veio antes. */
+  ruleBefore?: boolean
+  lines: string[]
+}
+
+export interface FormGridBlock {
+  type: 'grid'
+  rows: FormGridRow[]
+}
+
+export type FormBlock = FormGridBlock | FormTextBlock | FormSignatureBlock
+
+export interface FormDocumentInput {
+  title: string
+  organizationName: string
+  publicId: string
+  exporterName?: string | null
+  logoPng?: Uint8Array | null
+  blocks: FormBlock[]
+  footNote?: string
+}
+
+const GRID_MIN_ROW_HEIGHT = 32
+const GRID_LABEL_SIZE = 7
+const GRID_VALUE_SIZE = 9.5
+const GRID_VALUE_LINE_HEIGHT = 12
+const GRID_CELL_PAD_X = 5
+
+/** Altura que a linha vai ocupar, já considerando quebra de texto na célula mais cheia. */
+function measureGridRowHeight(row: FormGridRow, contentWidth: number, font: PDFFont): number {
+  const totalSpan = row.cells.reduce((sum, cell) => sum + (cell.span ?? 1), 0)
+  let maxLines = 1
+
+  for (const cell of row.cells) {
+    const cellWidth = (contentWidth * (cell.span ?? 1)) / totalSpan - GRID_CELL_PAD_X * 2
+    const lines = wrapText(cell.value || '-', font, GRID_VALUE_SIZE, cellWidth)
+    maxLines = Math.max(maxLines, lines.length)
+  }
+
+  return Math.max(GRID_MIN_ROW_HEIGHT, 20 + maxLines * GRID_VALUE_LINE_HEIGHT)
+}
+
+/**
+ * Desenha uma linha do formulário e devolve o Y onde a próxima começa.
+ *
+ * Bordas de TODAS as células, inclusive a borda externa esquerda e direita —
+ * é o que faz o formulário parecer o papel, e não uma lista com títulos.
+ */
+function drawGridRow(
+  page: PDFPage,
+  row: FormGridRow,
+  x0: number,
+  yTop: number,
+  contentWidth: number,
+  rowHeight: number,
+  font: PDFFont,
+  bold: PDFFont
+): number {
+  const yBottom = yTop - rowHeight
+  const totalSpan = row.cells.reduce((sum, cell) => sum + (cell.span ?? 1), 0)
+
+  page.drawLine({ start: { x: x0, y: yTop }, end: { x: x0 + contentWidth, y: yTop }, thickness: 0.7, color: COLOR_RULE })
+
+  let x = x0
+  for (const cell of row.cells) {
+    const cellWidth = (contentWidth * (cell.span ?? 1)) / totalSpan
+
+    page.drawLine({ start: { x, y: yTop }, end: { x, y: yBottom }, thickness: 0.7, color: COLOR_RULE })
+
+    const label = cell.number ? `${cell.number}. ${cell.label}` : cell.label
+    page.drawText(sanitizeForPdf(label.toUpperCase()), {
+      x: x + GRID_CELL_PAD_X,
+      y: yTop - 11,
+      size: GRID_LABEL_SIZE,
+      font: bold,
+      color: COLOR_MUTED,
+    })
+
+    const lines = wrapText(cell.value || '-', font, GRID_VALUE_SIZE, cellWidth - GRID_CELL_PAD_X * 2)
+    let lineY = yTop - 22
+    for (const line of lines) {
+      page.drawText(sanitizeForPdf(line), {
+        x: x + GRID_CELL_PAD_X,
+        y: lineY,
+        size: GRID_VALUE_SIZE,
+        font,
+        color: COLOR_TEXT,
+      })
+      lineY -= GRID_VALUE_LINE_HEIGHT
+    }
+
+    x += cellWidth
+  }
+
+  // Borda direita externa — as internas já saíram do loop acima.
+  page.drawLine({ start: { x, y: yTop }, end: { x, y: yBottom }, thickness: 0.7, color: COLOR_RULE })
+  page.drawLine({ start: { x: x0, y: yBottom }, end: { x, y: yBottom }, thickness: 0.7, color: COLOR_RULE })
+
+  return yBottom
+}
+
+/**
+ * Documento em formulário numerado — Anexo I de Diária e qualquer papel
+ * futuro que precise da mesma disposição em grade com bordas.
+ *
+ * O cabeçalho (logo, organização, título) usa a MESMA primitiva que os
+ * relatórios tabulares — um formulário oficial não deveria ter cabeçalho
+ * diferente de um relatório oficial, os dois saem do mesmo motor.
+ */
+export async function createFormDocumentPdf(input: FormDocumentInput): Promise<OfficialPdfResult> {
+  const pdf = await PDFDocument.create()
+  pdf.setTitle(sanitizeForPdf(input.title))
+  pdf.setProducer('SIMP')
+  pdf.setCreator('SIMP')
+
+  const font = await pdf.embedFont(StandardFonts.Helvetica)
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold)
+  const logo = await embedLogoSafely(pdf, input.logoPng)
+  const contentWidth = PAGE_WIDTH - MARGIN * 2
+  const headerInput: ReportHeaderInput = { title: input.title, organizationName: input.organizationName }
+
+  let page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
+  let cursor = await drawReportHeader(page, { input: headerInput, font, bold, logo, isFirstPage: true })
+
+  async function ensureSpace(needed: number) {
+    if (cursor - needed >= FOOTER_TOP + 12) return
+    page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
+    cursor = await drawReportHeader(page, { input: headerInput, font, bold, logo, isFirstPage: false })
+  }
+
+  for (const block of input.blocks) {
+    if (block.type === 'grid') {
+      for (const row of block.rows) {
+        const rowHeight = measureGridRowHeight(row, contentWidth, font)
+        await ensureSpace(rowHeight)
+        cursor = drawGridRow(page, row, MARGIN, cursor, contentWidth, rowHeight, font, bold)
+      }
+      cursor -= 10
+      continue
+    }
+
+    if (block.type === 'text') {
+      const linesHeight = block.lines.reduce(
+        (sum, line) => sum + wrapText(line, font, 10, contentWidth).length * 13,
+        0
+      )
+      await ensureSpace((block.ruleBefore ? 16 : 0) + (block.heading ? 20 : 0) + linesHeight + 10)
+
+      if (block.ruleBefore) {
+        cursor -= 6
+        page.drawLine({
+          start: { x: MARGIN, y: cursor },
+          end: { x: PAGE_WIDTH - MARGIN, y: cursor },
+          thickness: 0.8,
+          color: COLOR_RULE,
+        })
+        cursor -= 16
+      }
+
+      if (block.heading) {
+        page.drawText(sanitizeForPdf(block.heading), {
+          x: PAGE_WIDTH / 2 - bold.widthOfTextAtSize(block.heading, 12) / 2,
+          y: cursor,
+          size: 12,
+          font: bold,
+          color: COLOR_TEXT,
+        })
+        cursor -= 20
+      }
+
+      for (const line of block.lines) {
+        for (const wrapped of wrapText(line, font, 10, contentWidth)) {
+          page.drawText(sanitizeForPdf(wrapped), { x: MARGIN, y: cursor, size: 10, font, color: COLOR_TEXT })
+          cursor -= 13
+        }
+      }
+      cursor -= 8
+      continue
+    }
+
+    // Assinatura: linha centralizada, nome em negrito, função abaixo em cinza —
+    // mesmo desenho de `createTabularReportPdf`, reescrito aqui para não
+    // acoplar os dois motores a uma função privada em comum sem necessidade.
+    const SIGNATURE_HEIGHT = 50
+    await ensureSpace(SIGNATURE_HEIGHT)
+    cursor -= 20
+
+    const centerX = PAGE_WIDTH / 2
+    page.drawLine({
+      start: { x: centerX - 130, y: cursor },
+      end: { x: centerX + 130, y: cursor },
+      thickness: 0.7,
+      color: COLOR_TEXT,
+    })
+    cursor -= 13
+
+    const name = sanitizeForPdf(block.name)
+    page.drawText(name, {
+      x: centerX - bold.widthOfTextAtSize(name, 10) / 2,
+      y: cursor,
+      size: 10,
+      font: bold,
+      color: COLOR_TEXT,
+    })
+    cursor -= 12
+
+    if (block.role) {
+      const role = sanitizeForPdf(block.role)
+      page.drawText(role, {
+        x: centerX - font.widthOfTextAtSize(role, 9) / 2,
+        y: cursor,
+        size: 9,
+        font,
+        color: COLOR_MUTED,
+      })
+      cursor -= 12
+    }
+  }
+
+  const validationUrl = await applyUniversalValidationFooter(pdf, {
+    publicId: input.publicId,
+    exporterName: input.exporterName,
+    note: input.footNote,
+  })
+
+  const bytes = await pdf.save()
+  return { bytes, sha256Hash: calculateDocumentHash(bytes), validationUrl }
 }

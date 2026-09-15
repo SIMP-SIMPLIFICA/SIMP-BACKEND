@@ -50,6 +50,10 @@ const updateOrgSchema = z.object({
   name:     z.string().min(3).optional(),
   plan:     z.string().optional(),
   isActive: z.boolean().optional(),
+  // Município e UF (Épico 4) — alimentam o texto padrão do Recibo de diária
+  // ("Pequizeiro - TO"). `state` em UF, 2 letras.
+  city:     z.string().max(150).nullable().optional(),
+  state:    z.string().length(2).toUpperCase().nullable().optional(),
 })
 
 const toggleModuleSchema = z.object({
@@ -230,8 +234,13 @@ export class AdminController {
         ...(data.name     !== undefined && { name: data.name }),
         ...(data.plan     !== undefined && { plan: data.plan }),
         ...(data.isActive !== undefined && { isActive: data.isActive }),
+        ...(data.city     !== undefined && { city: data.city }),
+        ...(data.state    !== undefined && { state: data.state }),
       },
-      select: { id: true, name: true, slug: true, plan: true, isActive: true, updatedAt: true },
+      select: {
+        id: true, name: true, slug: true, plan: true, isActive: true,
+        city: true, state: true, updatedAt: true,
+      },
     })
 
     // Kill switch: o estado de suspensão é cacheado no middleware de autenticação.

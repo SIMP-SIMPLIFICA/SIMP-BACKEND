@@ -1,14 +1,20 @@
-import { type DailyAllowanceStatus, Prisma } from '@prisma/client'
+import { type DailyAllowanceStatus, type FundingSource, Prisma, type TransportMeans } from '@prisma/client'
 import { prisma } from '@/lib/prisma.js'
 import { readFile, saveFile } from '@/services/storage.service.js'
-import { createOfficialPdf } from '@/services/document-pdf.service.js'
+import { createFormDocumentPdf } from '@/services/document-pdf.service.js'
 import { organizationBrandingService } from '@/services/organization-branding.service.js'
 import { anonymizeUserName } from '@/utils/lgpd-anonymizer.util.js'
-import { normalizeCpf } from '@/utils/cpf.util.js'
+import { formatCpf, normalizeCpf } from '@/utils/cpf.util.js'
+import { resolveChiefName } from '@/utils/department-chief.util.js'
+import { currencyToWords } from '@/utils/currency-in-words.util.js'
+import { formatStateLong } from '@/constants/brazilian-states.js'
 import { auditLedgerService } from '@/services/audit-ledger.service.js'
 import { exportedDocumentService } from '@/services/exported-document.service.js'
 import { EXPORTED_DOCUMENT_TYPES } from '@/constants/exported-document-types.js'
 import { normalizeBeneficiaryName } from '@/services/beneficiary.service.js'
+import { BudgetError, budgetService } from '@/services/budget.service.js'
+import { holidayService } from '@/services/holiday.service.js'
+import { withSerializableRetry } from '@/utils/serializable-retry.util.js'
 
 /**
  * Diárias de servidor (Épico 3, Task 3.1; Épico 4, Fases 3 a 5).
@@ -37,7 +43,9 @@ export class DailyAllowanceError extends Error {
       | 'NOT_ISSUED'
       | 'ALREADY_ACCOUNTED'
       | 'INVALID_PERIOD'
-      | 'INVALID_QDD_ITEM',
+      | 'INVALID_QDD_ITEM'
+      | 'TOO_EARLY'
+      | 'WEEKEND_JUSTIFICATION_REQUIRED',
     message: string
   ) {
     super(message)
@@ -66,6 +74,32 @@ export interface CreateDailyAllowanceInput {
   returnDate: Date
   dailyRate: number
   dayCount: number
+
+  /// Dados de registro do beneficiário, para o Anexo I (Épico 4). Ver o
+  /// comentário do schema: são cópia textual, capturados AQUI, na criação.
+  /** Único campo com o CPF completo, sem máscara — só para imprimir no Anexo I. */
+  beneficiaryCpf?: string
+  beneficiaryRegistrationNumber?: string
+  beneficiaryRg?: string
+  /** Órgão emissor do RG — campo da cartilha oficial de prestação de contas. */
+  beneficiaryRgIssuer?: string
+  beneficiaryJobTitle?: string
+  beneficiaryLotacao?: string
+  beneficiaryBankName?: string
+  beneficiaryBankAgency?: string
+  beneficiaryBankAccount?: string
+
+  departureTime?: string
+  arrivalTime?: string
+  transportMeans?: TransportMeans
+  fundingSource?: FundingSource
+
+  /**
+   * Justificativa legal exigida pelo TCE quando o período toca sábado,
+   * domingo ou feriado cadastrado (Épico 8, FR-022). Capturada no rascunho —
+   * a EXIGÊNCIA (bloquear sem ela) só é aplicada em `issue()`.
+   */
+  weekendHolidayJustification?: string
 }
 
 export type UpdateDailyAllowanceInput = Partial<CreateDailyAllowanceInput>
@@ -75,6 +109,12 @@ export interface ListDailyAllowanceFilter {
   limit: number
   /** Busca parcial, sem distinção de maiúsculas. */
   beneficiaryName?: string
+  /**
+   * Busca única (Épico 8, FR-006): casa nome, CPF (dígitos) ou "Número da
+   * Diária" (`formattedNumber`). Combina com os demais filtros — nunca os
+   * substitui.
+   */
+  search?: string
   /**
    * CPF do beneficiário, em dígitos. Casamento EXATO.
    *
@@ -95,15 +135,38 @@ export interface ListDailyAllowanceFilter {
 /** Os mesmos filtros da listagem, sem paginação — relatórios levam tudo. */
 export type ReportDailyAllowanceFilter = Omit<ListDailyAllowanceFilter, 'page' | 'limit'>
 
+/** Uma nota fiscal ou documento comprobatório (Épico 8, FR-003). */
+export interface AccountForReceiptInput {
+  receiptNumber: string
+  payeeName: string
+  issuedAt: Date
+  amount: number
+}
+
 export interface AccountForInput {
   accountabilityDate: Date
   activityReport: string
+  /** Campos da cartilha oficial anexada pelo cliente (Épico 8, FR-003). */
+  ticketNumber?: string
+  eventAddress?: string
+  contactsInfo?: string
+  receipts?: AccountForReceiptInput[]
 }
 
 const LIST_INCLUDE = {
   createdBy: { select: { id: true, firstName: true, lastName: true } },
-  department: { select: { id: true, name: true, code: true } },
+  department: {
+    select: {
+      id: true,
+      name: true,
+      code: true,
+      // Para o Ordenador de Despesa do Anexo I — o mesmo `resolveChiefName`
+      // que a página de detalhe do setor usa.
+      manager: { select: { firstName: true, lastName: true } },
+    },
+  },
   qddItem: { select: { id: true, ficha: true, fonte: true, naturezaDespesa: true, year: true } },
+  receipts: { orderBy: { issuedAt: 'asc' } },
 } satisfies Prisma.DailyAllowanceInclude
 
 type DailyAllowanceRecord = Prisma.DailyAllowanceGetPayload<{ include: typeof LIST_INCLUDE }>
@@ -127,6 +190,75 @@ function assertPeriod(departureDate: Date, returnDate: Date) {
       'A data de retorno não pode ser anterior à data de saída.'
     )
   }
+}
+
+/**
+ * Confere o vínculo de QDD, traduzindo `BudgetError` (de `budgetService`,
+ * compartilhado com `VirtualProcess`) para `DailyAllowanceError` — o
+ * `handleError` do controller de diárias só reconhece o segundo. Sem esta
+ * tradução, uma dotação de outra organização vazaria como 500 em vez do 400
+ * de domínio esperado.
+ */
+async function assertQddItemLinkable(qddItemId: string, organizationId: string) {
+  try {
+    await budgetService.assertQddItemBelongsToOrganization(qddItemId, organizationId)
+  } catch (error) {
+    if (error instanceof BudgetError) {
+      throw new DailyAllowanceError('INVALID_QDD_ITEM', error.message)
+    }
+    throw error
+  }
+}
+
+/**
+ * A prestação de contas só pode ser emitida a partir do dia de retorno da
+ * viagem (Épico 8, FR-001) — nunca antes, mesmo que a requisição contorne a
+ * UI. Comparação por DIA DE CALENDÁRIO (UTC), não por instante exato: a
+ * diária guarda datas sem hora, e comparar `now` bruto faria a trava liberar
+ * só depois da meia-noite UTC do dia de retorno, horas depois do que a tela
+ * mostra como "hoje" (mesma técnica de `isAccountabilityLate`).
+ */
+function assertReturnDateReached(returnDate: Date, now = new Date()) {
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+  const returnDay = Date.UTC(returnDate.getUTCFullYear(), returnDate.getUTCMonth(), returnDate.getUTCDate())
+
+  if (today < returnDay) {
+    throw new DailyAllowanceError(
+      'TOO_EARLY',
+      `A prestação de contas só pode ser emitida a partir de ${formatDate(returnDate)}, quando a viagem termina.`
+    )
+  }
+}
+
+/**
+ * O período `[departureDate, returnDate]` (inclusive) toca sábado, domingo ou
+ * um feriado cadastrado (Épico 8, FR-021)?
+ *
+ * Percorre dia a dia em vez de calcular por fórmula: o intervalo de uma
+ * diária tem no máximo poucas semanas, então o custo é irrelevante, e
+ * percorrer é o jeito mais direto de não errar limites (o dia de RETORNO
+ * conta — um evento que termina no sábado ainda é uma diária de fim de
+ * semana).
+ */
+export function touchesWeekendOrHoliday(
+  departureDate: Date,
+  returnDate: Date,
+  holidays: Pick<{ date: Date }, 'date'>[]
+): boolean {
+  const holidayDates = new Set(holidays.map(h => h.date.toISOString().slice(0, 10)))
+
+  const cursor = new Date(
+    Date.UTC(departureDate.getUTCFullYear(), departureDate.getUTCMonth(), departureDate.getUTCDate())
+  )
+  const end = new Date(Date.UTC(returnDate.getUTCFullYear(), returnDate.getUTCMonth(), returnDate.getUTCDate()))
+
+  while (cursor <= end) {
+    const dayOfWeek = cursor.getUTCDay() // 0 = domingo, 6 = sábado
+    if (dayOfWeek === 0 || dayOfWeek === 6) return true
+    if (holidayDates.has(cursor.toISOString().slice(0, 10))) return true
+    cursor.setUTCDate(cursor.getUTCDate() + 1)
+  }
+  return false
 }
 
 /** Prazo legal para prestar contas, contado do retorno. */
@@ -185,6 +317,24 @@ export async function buildDailyAllowanceWhere(
   if (filter.beneficiaryName) {
     where.beneficiaryName = { contains: filter.beneficiaryName, mode: 'insensitive' }
   }
+
+  // Busca única (Épico 8, FR-006): nome, CPF ou "Número da Diária" — o que o
+  // usuário digitar. Um OR à parte dos filtros estruturados acima: os dois
+  // compõem (AND), nunca um substitui o outro.
+  if (filter.search) {
+    const term = filter.search.trim()
+    const digits = term.replace(/\D/g, '')
+    where.OR = [
+      { beneficiaryName: { contains: term, mode: 'insensitive' } },
+      { formattedNumber: { contains: term, mode: 'insensitive' } },
+      // CPF só entra por IGUALDADE EXATA de 11 dígitos, nunca `contains`: o
+      // mesmo raciocínio do filtro `cpf` acima — busca parcial por CPF
+      // transformaria a caixa de busca num oráculo para descobrir, dígito a
+      // dígito, se um CPF existe na base.
+      ...(digits.length === 11 ? [{ beneficiaryCpf: digits }] : []),
+    ]
+  }
+
   if (filter.destination) {
     where.destination = { contains: filter.destination, mode: 'insensitive' }
   }
@@ -222,26 +372,70 @@ export const dailyAllowanceService = {
     assertPeriod(input.departureDate, input.returnDate)
 
     if (input.qddItemId) {
-      await assertQddItemBelongsToOrganization(input.qddItemId, scope.organizationId)
+      await assertQddItemLinkable(input.qddItemId, scope.organizationId)
     }
 
-    const record = await prisma.dailyAllowance.create({
-      data: {
-        organizationId: scope.organizationId,
-        departmentId: input.departmentId,
-        qddItemId: input.qddItemId,
-        beneficiaryName: normalizeBeneficiaryName(input.beneficiaryName),
-        createdById: scope.userId,
-        destination: input.destination,
-        purpose: input.purpose,
-        departureDate: input.departureDate,
-        returnDate: input.returnDate,
-        dailyRate: new Prisma.Decimal(input.dailyRate),
-        dayCount: new Prisma.Decimal(input.dayCount),
-        totalAmount: new Prisma.Decimal(calculateTotalAmount(input.dailyRate, input.dayCount)),
-      },
-      include: LIST_INCLUDE,
-    })
+    // Exercício da numeração: o ano da VIAGEM, não o de hoje — mesma âncora já
+    // usada pelas fichas do QDD (`QddItem.year`), para que a numeração de uma
+    // diária lançada em janeiro sobre uma viagem de dezembro não fique presa
+    // ao ano "errado".
+    const year = input.departureDate.getUTCFullYear()
+
+    const record = await withSerializableRetry(() =>
+      prisma.$transaction(
+        async tx => {
+          // Numeração legível ("Número da Diária", Épico 8, FR-002) — mesmo
+          // padrão de OfficialDocument: sequencial por organização e ano.
+          // Calculada e gravada DENTRO desta transação Serializable para que
+          // duas criações concorrentes nunca recebam o mesmo número; o retry
+          // acima cobre o conflito que o Postgres acusa quando isso quase
+          // acontece.
+          const last = await tx.dailyAllowance.aggregate({
+            where: { organizationId: scope.organizationId, year },
+            _max: { sequenceNumber: true },
+          })
+          const sequenceNumber = (last._max.sequenceNumber ?? 0) + 1
+          const formattedNumber = `${String(sequenceNumber).padStart(4, '0')}/${year}`
+
+          return tx.dailyAllowance.create({
+            data: {
+              organizationId: scope.organizationId,
+              departmentId: input.departmentId,
+              qddItemId: input.qddItemId,
+              sequenceNumber,
+              year,
+              formattedNumber,
+              beneficiaryName: normalizeBeneficiaryName(input.beneficiaryName),
+              createdById: scope.userId,
+              destination: input.destination,
+              purpose: input.purpose,
+              departureDate: input.departureDate,
+              returnDate: input.returnDate,
+              dailyRate: new Prisma.Decimal(input.dailyRate),
+              dayCount: new Prisma.Decimal(input.dayCount),
+              totalAmount: new Prisma.Decimal(calculateTotalAmount(input.dailyRate, input.dayCount)),
+              // CPF em dígitos apenas — a máscara é apresentação, ver `cpf.util.ts`.
+              beneficiaryCpf: normalizeCpf(input.beneficiaryCpf) ?? undefined,
+              beneficiaryRegistrationNumber: input.beneficiaryRegistrationNumber,
+              beneficiaryRg: input.beneficiaryRg,
+              beneficiaryRgIssuer: input.beneficiaryRgIssuer,
+              beneficiaryJobTitle: input.beneficiaryJobTitle,
+              beneficiaryLotacao: input.beneficiaryLotacao,
+              beneficiaryBankName: input.beneficiaryBankName,
+              beneficiaryBankAgency: input.beneficiaryBankAgency,
+              beneficiaryBankAccount: input.beneficiaryBankAccount,
+              departureTime: input.departureTime,
+              arrivalTime: input.arrivalTime,
+              transportMeans: input.transportMeans,
+              fundingSource: input.fundingSource,
+              weekendHolidayJustification: input.weekendHolidayJustification,
+            },
+            include: LIST_INCLUDE,
+          })
+        },
+        { isolationLevel: 'Serializable' }
+      )
+    )
 
     return withDerivedFlags(record)
   },
@@ -316,7 +510,7 @@ export const dailyAllowanceService = {
     assertPeriod(departureDate, returnDate)
 
     if (input.qddItemId) {
-      await assertQddItemBelongsToOrganization(input.qddItemId, scope.organizationId)
+      await assertQddItemLinkable(input.qddItemId, scope.organizationId)
     }
 
     const dailyRate = input.dailyRate ?? Number(current.dailyRate)
@@ -337,6 +531,38 @@ export const dailyAllowanceService = {
         dailyRate: new Prisma.Decimal(dailyRate),
         dayCount: new Prisma.Decimal(dayCount),
         totalAmount: new Prisma.Decimal(calculateTotalAmount(dailyRate, dayCount)),
+        ...(input.beneficiaryCpf !== undefined
+          ? { beneficiaryCpf: normalizeCpf(input.beneficiaryCpf) }
+          : {}),
+        ...(input.beneficiaryRegistrationNumber !== undefined
+          ? { beneficiaryRegistrationNumber: input.beneficiaryRegistrationNumber }
+          : {}),
+        ...(input.beneficiaryRg !== undefined ? { beneficiaryRg: input.beneficiaryRg } : {}),
+        ...(input.beneficiaryRgIssuer !== undefined
+          ? { beneficiaryRgIssuer: input.beneficiaryRgIssuer }
+          : {}),
+        ...(input.beneficiaryJobTitle !== undefined
+          ? { beneficiaryJobTitle: input.beneficiaryJobTitle }
+          : {}),
+        ...(input.beneficiaryLotacao !== undefined
+          ? { beneficiaryLotacao: input.beneficiaryLotacao }
+          : {}),
+        ...(input.beneficiaryBankName !== undefined
+          ? { beneficiaryBankName: input.beneficiaryBankName }
+          : {}),
+        ...(input.beneficiaryBankAgency !== undefined
+          ? { beneficiaryBankAgency: input.beneficiaryBankAgency }
+          : {}),
+        ...(input.beneficiaryBankAccount !== undefined
+          ? { beneficiaryBankAccount: input.beneficiaryBankAccount }
+          : {}),
+        ...(input.departureTime !== undefined ? { departureTime: input.departureTime } : {}),
+        ...(input.arrivalTime !== undefined ? { arrivalTime: input.arrivalTime } : {}),
+        ...(input.transportMeans !== undefined ? { transportMeans: input.transportMeans } : {}),
+        ...(input.fundingSource !== undefined ? { fundingSource: input.fundingSource } : {}),
+        ...(input.weekendHolidayJustification !== undefined
+          ? { weekendHolidayJustification: input.weekendHolidayJustification }
+          : {}),
       },
       include: LIST_INCLUDE,
     })
@@ -375,9 +601,28 @@ export const dailyAllowanceService = {
       )
     }
 
+    // Regra do TCE (Épico 8, FR-021/FR-022): período em fim de semana ou
+    // feriado cadastrado exige justificativa — checado no SERVIDOR, na
+    // EMISSÃO, não no rascunho (o rascunho ainda pode ter datas incompletas
+    // ou ser corrigido antes de virar despesa).
+    const holidays = await holidayService.getHolidaysInRange(
+      scope.organizationId,
+      record.departureDate,
+      record.returnDate
+    )
+    if (
+      touchesWeekendOrHoliday(record.departureDate, record.returnDate, holidays) &&
+      !record.weekendHolidayJustification?.trim()
+    ) {
+      throw new DailyAllowanceError(
+        'WEEKEND_JUSTIFICATION_REQUIRED',
+        'O período da viagem inclui sábado, domingo ou feriado cadastrado. Informe a justificativa legal antes de emitir.'
+      )
+    }
+
     const organization = await prisma.organization.findUnique({
       where: { id: scope.organizationId },
-      select: { name: true },
+      select: { name: true, city: true, state: true },
     })
 
     // ── Snapshot da dotação ──
@@ -410,53 +655,112 @@ export const dailyAllowanceService = {
     // imagem faltando não pode impedir a emissão de um documento oficial.
     const logoPng = await organizationBrandingService.getLogoBytes(scope.organizationId)
 
-    const sections = [
-      {
-        heading: 'Servidor',
-        fields: [{ label: 'Nome', value: record.beneficiaryName }],
-      },
-      {
-        heading: 'Unidade Orçamentária',
-        fields: [
-          { label: 'Setor', value: formatDepartment(record.department) },
-          ...(record.qddItem
-            ? [
-                { label: 'Ficha (QDD)', value: record.qddItem.ficha },
-                { label: 'Fonte de recurso', value: record.qddItem.fonte },
-                { label: 'Natureza da despesa', value: record.qddItem.naturezaDespesa },
-              ]
-            : []),
-        ],
-      },
-      {
-        heading: 'Deslocamento',
-        fields: [
-          { label: 'Destino', value: record.destination },
-          { label: 'Motivo', value: record.purpose },
-          { label: 'Saída', value: formatDate(record.departureDate) },
-          { label: 'Retorno', value: formatDate(record.returnDate) },
-        ],
-      },
-      {
-        heading: 'Valores',
-        fields: [
-          { label: 'Valor unitário da diária', value: formatCurrency(record.dailyRate) },
-          { label: 'Quantidade de diárias', value: String(record.dayCount) },
-          { label: 'Valor total', value: formatCurrency(record.totalAmount) },
-        ],
-      },
-    ]
+    // Logo do SETOR primeiro; sem ela, a da organização — mesma cascata já
+    // usada no dossiê do departamento.
+    const issuedAt = new Date()
+    const cityName = organization?.city || 'Município'
+    const stateLong = formatStateLong(organization?.state)
 
     // Fora da transação, e de propósito: montar o PDF e gravá-lo em disco leva
     // centenas de milissegundos: segurar uma transação aberta por todo esse
     // tempo prenderia a conexão e, num pico de emissões, esgotaria o pool.
-    const { bytes, sha256Hash } = await createOfficialPdf({
-      title: 'RECIBO DE DIÁRIA',
+    //
+    // GRADE NUMERADA, replicando o formulário físico "Afastamento e Concessão
+    // de Diárias" que a prefeitura já usa — 20 campos, na mesma disposição do
+    // papel. Não é texto corrido: é a estrutura que o usuário exigiu.
+    const { bytes, sha256Hash } = await createFormDocumentPdf({
+      title: 'FORMULÁRIO DE AFASTAMENTO E CONCESSÃO DE DIÁRIAS',
       logoPng,
       organizationName: organization?.name ?? 'Organização',
       publicId: record.publicId,
       exporterName,
-      sections,
+      blocks: [
+        {
+          type: 'grid',
+          rows: [
+            {
+              cells: [
+                { number: 1, label: 'Data', value: formatDate(issuedAt) },
+                { number: 2, label: 'Matrícula Funcional', value: record.beneficiaryRegistrationNumber ?? '' },
+              ],
+            },
+            {
+              cells: [
+                { number: 3, label: 'Ficha', value: record.qddItem?.ficha ?? '' },
+                { number: 4, label: 'Fonte', value: record.qddItem?.fonte ?? '' },
+              ],
+            },
+            {
+              cells: [{ number: 5, label: 'Beneficiário', value: record.beneficiaryName }],
+            },
+            {
+              cells: [
+                { number: 6, label: 'Lotação', value: record.beneficiaryLotacao ?? '' },
+                { number: 7, label: 'Cargo/Função', value: record.beneficiaryJobTitle ?? '' },
+              ],
+            },
+            {
+              cells: [
+                // ÚNICA exceção do sistema à máscara de CPF — ver o comentário
+                // em `beneficiaryCpf` no schema e `cpf.util.ts#formatCpf`.
+                { number: 8, label: 'CPF', value: formatCpf(record.beneficiaryCpf) },
+                { number: 9, label: 'RG/Órgão Expedidor', value: record.beneficiaryRg ?? '' },
+                { number: 10, label: 'Banco/Agência/Conta', value: formatBankInfo(record) },
+              ],
+            },
+            {
+              cells: [
+                { number: 11, label: 'Itinerário', value: record.destination },
+                { number: 12, label: 'Horário de Saída', value: record.departureTime || 'EM ABERTO' },
+                { number: 13, label: 'Meio de Transporte', value: TRANSPORT_LABELS[record.transportMeans ?? ''] ?? '' },
+              ],
+            },
+            {
+              cells: [
+                {
+                  number: 14,
+                  label: 'Período da Viagem',
+                  value: `${formatDate(record.departureDate)} a ${formatDate(record.returnDate)}`,
+                },
+                { number: 15, label: 'Horário de Chegada', value: record.arrivalTime || 'EM ABERTO' },
+                { number: 16, label: 'Recursos', value: FUNDING_LABELS[record.fundingSource ?? ''] ?? '' },
+              ],
+            },
+            {
+              cells: [
+                { number: 17, label: 'Número de Diárias', value: String(record.dayCount) },
+                { number: 18, label: 'Valor Unitário (R$)', value: formatCurrency(record.dailyRate) },
+                { number: 19, label: 'Valor Total (R$)', value: formatCurrency(record.totalAmount) },
+              ],
+            },
+            {
+              cells: [{ number: 20, label: 'Finalidade da Viagem', value: record.purpose }],
+            },
+          ],
+        },
+        {
+          type: 'signature',
+          name: resolveChiefName(record.department.manager),
+          role: formatDepartment(record.department),
+        },
+        {
+          type: 'text',
+          heading: 'RECIBO',
+          ruleBefore: true,
+          lines: [
+            `Valor: ${formatCurrency(record.totalAmount)}`,
+            `Recebi da Prefeitura Municipal de ${cityName}${stateLong ? `, ${stateLong}` : ''} a importância ` +
+              `de ${formatCurrency(record.totalAmount)} (${currencyToWords(Number(record.totalAmount))}) ` +
+              'proveniente de diária de viagem, conforme formulário acima.',
+            `${cityName}${organization?.state ? ` - ${organization.state}` : ''}, ${formatDate(issuedAt)}`,
+          ],
+        },
+        {
+          type: 'signature',
+          name: record.beneficiaryName,
+          role: record.beneficiaryJobTitle || undefined,
+        },
+      ],
     })
 
     const pdfFileKey = await saveFile(Buffer.from(bytes), {
@@ -490,7 +794,7 @@ export const dailyAllowanceService = {
       // administração pública, e travar a emissão engessaria o município. O que
       // se registra é o rastro para a auditoria.
       const overrun = record.qddItemId
-        ? await detectBudgetOverrun(tx, record.qddItemId)
+        ? await budgetService.detectOverrun(tx, record.qddItemId)
         : false
 
       if (overrun) {
@@ -550,6 +854,10 @@ export const dailyAllowanceService = {
       )
     }
 
+    // Regra de liberação (Épico 8, FR-001): recusada no SERVIDOR, não apenas
+    // pelo botão desabilitado na tela.
+    assertReturnDateReached(record.returnDate)
+
     if (input.accountabilityDate < record.departureDate) {
       throw new DailyAllowanceError(
         'INVALID_PERIOD',
@@ -572,38 +880,135 @@ export const dailyAllowanceService = {
 
     const logoPng = await organizationBrandingService.getLogoBytes(scope.organizationId)
     const accountabilityPublicId = exportedDocumentService.newPublicId()
+    const receipts = input.receipts ?? []
 
-    const { bytes, sha256Hash } = await createOfficialPdf({
+    // GRADE, replicando campo a campo a cartilha oficial de Prestação de
+    // Contas de Diária anexada pelo cliente (Épico 8, FR-004) — mesmo motor
+    // do Anexo I (`createFormDocumentPdf`): o papel também é um formulário de
+    // células com borda, não uma lista de campos em prosa como o Anexo II
+    // anterior a este épico.
+    const { bytes, sha256Hash } = await createFormDocumentPdf({
       title: 'PRESTAÇÃO DE CONTAS DE DIÁRIA (ANEXO II)',
       logoPng,
       organizationName: organization?.name ?? 'Organização',
       publicId: accountabilityPublicId,
       exporterName,
-      sections: [
+      blocks: [
         {
-          heading: 'Servidor',
-          fields: [
-            { label: 'Nome', value: record.beneficiaryName },
-            { label: 'Setor', value: formatDepartment(record.department) },
+          type: 'grid',
+          rows: [
+            {
+              cells: [
+                { label: 'Órgão/Entidade Concedente', value: organization?.name ?? 'Organização', span: 2 },
+                { label: 'Data de Prestação de Contas', value: formatDate(input.accountabilityDate), span: 1 },
+              ],
+            },
+            { cells: [{ label: 'Número do Processo de Solicitação', value: record.formattedNumber }] },
+          ],
+        },
+        { type: 'text', heading: 'IDENTIFICAÇÃO DO BENEFICIÁRIO', lines: [] },
+        {
+          type: 'grid',
+          rows: [
+            { cells: [{ label: 'Nome', value: record.beneficiaryName }] },
+            {
+              cells: [
+                { label: 'Cargo/Função', value: record.beneficiaryJobTitle ?? '' },
+                { label: 'Lotação', value: record.beneficiaryLotacao ?? '' },
+                { label: 'Matrícula', value: record.beneficiaryRegistrationNumber ?? '' },
+              ],
+            },
+            {
+              cells: [
+                // ÚNICA exceção do sistema à máscara de CPF — mesmo motivo do
+                // Anexo I: este anexo é o formulário físico que comprova a
+                // identidade de quem recebeu o valor.
+                { label: 'CPF', value: formatCpf(record.beneficiaryCpf) },
+                { label: 'Identidade', value: record.beneficiaryRg ?? '' },
+                { label: 'Órgão Emissor', value: record.beneficiaryRgIssuer ?? '' },
+              ],
+            },
+          ],
+        },
+        { type: 'text', heading: 'PERÍODO DA VIAGEM', lines: [] },
+        {
+          type: 'grid',
+          rows: [
+            {
+              cells: [
+                { label: 'Data de Saída', value: formatDate(record.departureDate) },
+                { label: 'Data de Volta', value: formatDate(record.returnDate) },
+              ],
+            },
+            {
+              cells: [
+                { label: 'Horário de Saída', value: record.departureTime || 'EM ABERTO' },
+                { label: 'Horário de Chegada', value: record.arrivalTime || 'EM ABERTO' },
+              ],
+            },
+          ],
+        },
+        { type: 'text', heading: 'DOCUMENTOS COMPROBATÓRIOS', lines: [] },
+        {
+          type: 'grid',
+          rows: [
+            { cells: [{ label: 'Nº Bilhete de Passagem', value: input.ticketNumber ?? '' }] },
+            // Uma linha por nota fiscal — a cartilha física tem exatamente essa
+            // tabela (Número/Favorecido/Data/Valor), com quantas linhas o
+            // comprovante exigir.
+            ...receipts.map(receipt => ({
+              cells: [
+                { label: 'Número', value: receipt.receiptNumber, span: 1 },
+                { label: 'Favorecido', value: receipt.payeeName, span: 2 },
+                { label: 'Data', value: formatDate(receipt.issuedAt), span: 1 },
+                { label: 'Valor', value: formatCurrency(receipt.amount), span: 1 },
+              ],
+            })),
+          ],
+        },
+        { type: 'text', heading: 'INFORMAÇÕES COMPLEMENTARES', lines: [] },
+        {
+          type: 'grid',
+          rows: [
+            {
+              cells: [
+                {
+                  label: 'Endereço e Local do Evento/Reunião/Atividade Desenvolvida',
+                  value: input.eventAddress ?? '',
+                },
+              ],
+            },
+            {
+              cells: [
+                {
+                  label: 'Nome, Cargo/Função e Telefone(s) de Contato(s) Efetuado(s)',
+                  value: input.contactsInfo ?? '',
+                },
+              ],
+            },
           ],
         },
         {
-          heading: 'Diária prestada',
-          fields: [
-            { label: 'Documento de origem (Anexo I)', value: record.publicId },
-            { label: 'Destino', value: record.destination },
-            { label: 'Saída', value: formatDate(record.departureDate) },
-            { label: 'Retorno', value: formatDate(record.returnDate) },
-            { label: 'Valor total recebido', value: formatCurrency(record.totalAmount) },
-          ],
+          type: 'text',
+          heading: 'RELATÓRIO DE ATIVIDADES DESENVOLVIDAS',
+          ruleBefore: true,
+          lines: [input.activityReport],
         },
+        { type: 'signature', name: record.beneficiaryName, role: 'Beneficiário' },
         {
-          heading: 'Prestação de contas',
-          fields: [
-            { label: 'Data da prestação', value: formatDate(input.accountabilityDate) },
-            { label: 'Relatório de atividades', value: input.activityReport },
-          ],
+          type: 'text',
+          heading: 'APROVAÇÃO',
+          ruleBefore: true,
+          lines: [`Data: ${formatDate(new Date())}`],
         },
+        // Nome em branco de propósito: quem analisa a prestação assina à mão
+        // depois de impresso — o sistema não atribui esse nome (Épico 8,
+        // Assumption "Aprovação é impressa, não é workflow digital").
+        { type: 'signature', name: '', role: 'Setor Responsável pela Análise da Prestação de Contas' },
+        // O Ordenador de Despesa É o chefe do departamento (`resolveChiefName`,
+        // ver o comentário do util) — nunca um `chiefName` de texto livre, que
+        // já foi removido do domínio por divergir do organograma real.
+        { type: 'signature', name: resolveChiefName(record.department.manager), role: 'Ordenador de Despesas' },
       ],
       footNote:
         'Este anexo deve ser arquivado acompanhado dos comprovantes originais de ' +
@@ -627,6 +1032,9 @@ export const dailyAllowanceService = {
           status: 'ACCOUNTED',
           accountabilityDate: input.accountabilityDate,
           activityReport: input.activityReport,
+          accountabilityTicketNumber: input.ticketNumber,
+          accountabilityEventAddress: input.eventAddress,
+          accountabilityContactsInfo: input.contactsInfo,
           accountabilityPublicId,
           accountabilitySha256Hash: sha256Hash,
           accountabilityPdfFileKey,
@@ -639,6 +1047,25 @@ export const dailyAllowanceService = {
           'ALREADY_ACCOUNTED',
           'A prestação de contas desta diária já foi registrada e não pode ser refeita.'
         )
+      }
+
+      // Notas fiscais comprobatórias — gravadas na MESMA transação que o hash
+      // do Anexo II (Épico 8, FR-026): um Anexo já registrado sem seus
+      // comprovantes, ou comprovantes gravados sem o Anexo correspondente, são
+      // os dois lados da mesma inconsistência que o Princípio VIII proíbe.
+      // Não há endpoint de edição para `DailyAllowanceReceipt` — a
+      // imutabilidade pós-hash (FR-005) é garantida por não existir caminho
+      // de escrita nenhum além deste, não por uma trava adicional.
+      if (receipts.length > 0) {
+        await tx.dailyAllowanceReceipt.createMany({
+          data: receipts.map(receipt => ({
+            dailyAllowanceId: id,
+            receiptNumber: receipt.receiptNumber,
+            payeeName: receipt.payeeName,
+            issuedAt: receipt.issuedAt,
+            amount: new Prisma.Decimal(receipt.amount),
+          })),
+        })
       }
 
       return tx.dailyAllowance.findUniqueOrThrow({ where: { id }, include: LIST_INCLUDE })
@@ -658,7 +1085,7 @@ export const dailyAllowanceService = {
       resource: 'DAILY_ALLOWANCE',
       resourceId: record.id,
       organizationId: scope.organizationId,
-      details: { publicId: accountabilityPublicId, sha256Hash },
+      details: { publicId: accountabilityPublicId, sha256Hash, receiptCount: receipts.length },
     })
 
     return withDerivedFlags(accounted)
@@ -695,56 +1122,6 @@ export const dailyAllowanceService = {
   },
 }
 
-// ─── Apoio ────────────────────────────────────────────────────────────────────
-
-/**
- * A dotação existe e pertence à MESMA organização?
- *
- * Sem esta conferência, um `qddItemId` copiado de outro tenant lastrearia a
- * despesa na dotação de outra prefeitura — a chave estrangeira aceitaria, porque
- * ela não sabe nada sobre organizações.
- */
-async function assertQddItemBelongsToOrganization(qddItemId: string, organizationId: string) {
-  const exists = await prisma.qddItem.findFirst({
-    where: { id: qddItemId, organizationId },
-    select: { id: true },
-  })
-
-  if (!exists) {
-    throw new DailyAllowanceError(
-      'INVALID_QDD_ITEM',
-      'A dotação orçamentária informada não existe nesta organização.'
-    )
-  }
-}
-
-/**
- * O empenhado na ficha já passou do orçado?
- *
- * Soma apenas o que foi EMITIDO (ISSUED ou ACCOUNTED): rascunho não compromete
- * dotação, e contá-lo acusaria estouro por diárias que talvez nunca saiam.
- *
- * Toda a aritmética em Decimal, nunca em Number: uma diferença de centavo no
- * ponto flutuante decidiria errado se houve estouro — e é uma flag de auditoria.
- */
-async function detectBudgetOverrun(
-  tx: Prisma.TransactionClient,
-  qddItemId: string
-): Promise<boolean> {
-  const [qddItem, committed] = await Promise.all([
-    tx.qddItem.findUnique({ where: { id: qddItemId }, select: { valorOrcado: true } }),
-    tx.dailyAllowance.aggregate({
-      where: { qddItemId, status: { in: ['ISSUED', 'ACCOUNTED'] } },
-      _sum: { totalAmount: true },
-    }),
-  ])
-
-  if (!qddItem) return false
-
-  const total = committed._sum.totalAmount ?? new Prisma.Decimal(0)
-  return total.greaterThan(qddItem.valorOrcado)
-}
-
 // ─── Formatação (conteúdo do PDF é pt-BR) ─────────────────────────────────────
 
 export function formatDepartment(department: { name: string; code: string } | null): string {
@@ -758,4 +1135,34 @@ function formatDate(date: Date): string {
 
 function formatCurrency(value: Prisma.Decimal | number): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value))
+}
+
+/** Rótulos em pt-BR das opções do formulário físico — mesmas caixas de seleção. */
+const TRANSPORT_LABELS: Record<string, string> = {
+  RODOVIARIO: 'Rodoviário',
+  AEREO: 'Aéreo',
+  VEICULO_OFICIAL: 'Veículo Oficial',
+  OUTRO: 'Outro',
+}
+
+const FUNDING_LABELS: Record<string, string> = {
+  PROPRIO: 'Próprio',
+  CONVENIO: 'Convênio',
+}
+
+/**
+ * "BRADESCO · AG: 1725-6 · CONTA: 24309-4" — as três partes do campo 10 do
+ * formulário físico, que trata banco/agência/conta como UMA célula só.
+ * Partes ausentes somem, em vez de imprimir "· ·" vazio.
+ */
+function formatBankInfo(record: {
+  beneficiaryBankName: string | null
+  beneficiaryBankAgency: string | null
+  beneficiaryBankAccount: string | null
+}): string {
+  const parts: string[] = []
+  if (record.beneficiaryBankName) parts.push(record.beneficiaryBankName)
+  if (record.beneficiaryBankAgency) parts.push(`AG: ${record.beneficiaryBankAgency}`)
+  if (record.beneficiaryBankAccount) parts.push(`CONTA: ${record.beneficiaryBankAccount}`)
+  return parts.join(' · ')
 }

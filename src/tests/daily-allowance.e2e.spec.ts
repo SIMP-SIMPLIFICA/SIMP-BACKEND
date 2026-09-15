@@ -44,10 +44,13 @@ function draftPayload(departmentId: string) {
     beneficiaryName: 'joão da silva',
     destination: 'Brasília/DF',
     purpose: 'Reunião no ministério para tratar do convênio',
+    // 10/09/2026 (quinta) a 12/09/2026 (sábado) — cruza fim de semana, por
+    // isso a justificativa abaixo (Épico 8, FR-021/FR-022).
     departureDate: '2026-09-10',
     returnDate: '2026-09-12',
     dailyRate: 350,
     dayCount: 2,
+    weekendHolidayJustification: 'Reunião extraordinária de última hora, autorizada pelo secretário.',
   }
 }
 

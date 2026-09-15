@@ -20,6 +20,19 @@ import { dailyAllowanceReportService } from '@/services/daily-allowance-report.s
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
+/**
+ * CPF opcional, mas se vier tem que ser um CPF de verdade — 11 dígitos, com
+ * ou sem máscara. Recusar aqui, e não silenciar no serviço, é o que impede um
+ * número mal digitado de virar um Anexo I com o campo 8 em branco sem que
+ * ninguém percebesse a tempo.
+ */
+const beneficiaryCpfField = z
+  .string()
+  .trim()
+  .optional()
+  .transform(v => (v ? v.replace(/\D/g, '') : undefined))
+  .refine(v => v === undefined || v.length === 11, 'Informe um CPF completo, com 11 dígitos.')
+
 const createSchema = z.object({
   // Recusado no SERVIDOR, não apenas na tela: despesa sem setor identificado
   // não tem ordenador responsável.
@@ -34,6 +47,30 @@ const createSchema = z.object({
   // digitação num documento de prestação de contas.
   dailyRate: z.coerce.number().positive('O valor da diária deve ser maior que zero.'),
   dayCount: z.coerce.number().positive('A quantidade de diárias deve ser maior que zero.'),
+
+  // Anexo I (Épico 4) — dados de registro do beneficiário, capturados na
+  // criação. Todos opcionais: o rascunho pode nascer incompleto e ser
+  // corrigido antes da emissão.
+  beneficiaryCpf: beneficiaryCpfField,
+  beneficiaryRegistrationNumber: z.string().trim().max(30).optional(),
+  beneficiaryRg: z.string().trim().max(40).optional(),
+  // Órgão emissor do RG — campo da cartilha oficial de prestação de contas
+  // (Épico 8), capturado já na criação, junto do resto da identificação.
+  beneficiaryRgIssuer: z.string().trim().max(60).optional(),
+  beneficiaryJobTitle: z.string().trim().max(150).optional(),
+  beneficiaryLotacao: z.string().trim().max(150).optional(),
+  beneficiaryBankName: z.string().trim().max(80).optional(),
+  beneficiaryBankAgency: z.string().trim().max(20).optional(),
+  beneficiaryBankAccount: z.string().trim().max(30).optional(),
+
+  departureTime: z.string().trim().max(30).optional(),
+  arrivalTime: z.string().trim().max(30).optional(),
+  transportMeans: z.enum(['RODOVIARIO', 'AEREO', 'VEICULO_OFICIAL', 'OUTRO']).optional(),
+  fundingSource: z.enum(['PROPRIO', 'CONVENIO']).optional(),
+  // Justificativa legal do TCE para diária em fim de semana/feriado (Épico 8,
+  // FR-022) — opcional no rascunho; a EXIGÊNCIA é aplicada no servidor, em
+  // `issue()`, quando o período de fato tocar um desses dias.
+  weekendHolidayJustification: z.string().trim().min(10, 'Descreva a justificativa em pelo menos 10 caracteres.').max(1000).optional(),
 })
 
 const updateSchema = createSchema.partial()
@@ -46,6 +83,10 @@ const updateSchema = createSchema.partial()
  */
 const filterSchema = z.object({
   beneficiaryName: z.string().min(1).optional(),
+  // Busca única (Épico 8, FR-006): nome, CPF ou "Número da Diária" num só
+  // campo — os filtros estruturados abaixo continuam existindo à parte, para
+  // quem prefere refinar por situação/departamento/período.
+  search: z.string().trim().min(1).max(100).optional(),
   // Aceita com ou sem máscara e normaliza para dígitos: a tela envia
   // "123.456.789-00", o banco guarda "12345678900".
   cpf: z
@@ -69,6 +110,16 @@ const listSchema = filterSchema.extend({
   limit: z.coerce.number().int().positive().max(100).default(20),
 })
 
+/** Uma nota fiscal ou documento comprobatório (Épico 8, FR-003). */
+const receiptSchema = z.object({
+  receiptNumber: z.string().trim().min(1, 'Informe o número da nota fiscal.').max(50),
+  payeeName: z.string().trim().min(1, 'Informe o favorecido.').max(200),
+  issuedAt: z.coerce.date(),
+  // Positivo: nota fiscal de valor zero ou negativo não existe e mascararia
+  // erro de digitação num documento que soma para a prestação de contas.
+  amount: z.coerce.number().positive('O valor da nota fiscal deve ser maior que zero.'),
+})
+
 const accountForSchema = z.object({
   accountabilityDate: z.coerce.date(),
   activityReport: z
@@ -76,6 +127,13 @@ const accountForSchema = z.object({
     .trim()
     .min(10, 'Descreva a atividade desempenhada em pelo menos 10 caracteres.')
     .max(5000),
+  // Campos da cartilha oficial anexada pelo cliente (Épico 8, FR-003), todos
+  // opcionais: nem toda viagem tem bilhete, evento com endereço próprio ou
+  // contato registrado.
+  ticketNumber: z.string().trim().max(60).optional(),
+  eventAddress: z.string().trim().max(500).optional(),
+  contactsInfo: z.string().trim().max(500).optional(),
+  receipts: z.array(receiptSchema).max(50).optional(),
 })
 
 const paramsSchema = z.object({ id: z.string().uuid('Identificador inválido.') })
@@ -108,6 +166,8 @@ const STATUS_BY_CODE: Record<DailyAllowanceError['code'], number> = {
   ALREADY_ACCOUNTED: 409,
   INVALID_PERIOD: 400,
   INVALID_QDD_ITEM: 400,
+  TOO_EARLY: 409,
+  WEEKEND_JUSTIFICATION_REQUIRED: 409,
 }
 
 function handleError(error: unknown, request: FastifyRequest, reply: FastifyReply) {
@@ -138,6 +198,7 @@ function handleError(error: unknown, request: FastifyRequest, reply: FastifyRepl
 function toReportFilter(parsed: z.infer<typeof filterSchema>): ReportDailyAllowanceFilter {
   return {
     beneficiaryName: parsed.beneficiaryName,
+    search: parsed.search,
     cpf: parsed.cpf,
     destination: parsed.destination,
     status: parsed.status,

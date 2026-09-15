@@ -235,7 +235,9 @@ describe('QDD (integração)', () => {
         method: 'PATCH',
         url: `${BASE_URL}/${created.json().id}`,
         headers: session.headers,
-        payload: { valorOrcado: 200000, naturezaDespesa: '3.3.90.30' },
+        // Épico 8 (FR-013): mudar valorOrcado agora exige motivo — sem ele o
+        // serviço recusa com REASON_REQUIRED, mesmo sendo edição de catálogo.
+        payload: { valorOrcado: 200000, naturezaDespesa: '3.3.90.30', reason: 'Correção de lançamento' },
       })
 
       expect(updated.statusCode).toBe(200)
@@ -295,6 +297,11 @@ describe('QDD (integração)', () => {
           totalAmount: 700,
           status: 'ISSUED',
           sha256Hash: 'a'.repeat(64),
+          // Épico 8 (FR-002): numeração passou a ser obrigatória mesmo criando
+          // o registro direto pelo Prisma, fora do serviço.
+          sequenceNumber: 1,
+          year: 2026,
+          formattedNumber: '0001/2026',
         },
       })
 
@@ -336,6 +343,9 @@ describe('QDD (integração)', () => {
           dailyRate: 350,
           dayCount: 2,
           totalAmount: 700,
+          sequenceNumber: 1,
+          year: 2026,
+          formattedNumber: '0001/2026',
         },
       })
 

@@ -62,6 +62,11 @@ async function seedIssuedDailyAllowance() {
       sha256Hash,
       issuedAt: new Date('2026-09-09T13:00:00Z'),
       pdfFileKey: 'organizations/x/daily-allowances/teste.pdf',
+      // Épico 8 (FR-002): numeração passou a ser obrigatória mesmo criando o
+      // registro direto pelo Prisma, fora do serviço.
+      sequenceNumber: 1,
+      year: 2026,
+      formattedNumber: '0001/2026',
     },
   })
 

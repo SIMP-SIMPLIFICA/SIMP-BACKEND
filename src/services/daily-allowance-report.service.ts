@@ -89,6 +89,7 @@ function buildSubtitles(filter: ReportDailyAllowanceFilter, departmentLabel?: st
   if (filter.beneficiaryName) lines.push(`Servidor: "${filter.beneficiaryName}"`)
   if (filter.cpf) lines.push('CPF: filtro informado (número omitido por proteção de dados)')
   if (filter.destination) lines.push(`Destino: "${filter.destination}"`)
+  if (filter.search) lines.push(`Busca: "${filter.search}"`)
 
   if (lines.length === 0) lines.push('Todos os registros')
 

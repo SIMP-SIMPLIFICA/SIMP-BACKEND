@@ -19,10 +19,14 @@ const findUniqueOrThrowMock = vi.fn()
 const aggregateMock = vi.fn()
 const qddFindFirstMock = vi.fn()
 const qddFindUniqueMock = vi.fn()
+const virtualProcessAggregateMock = vi.fn()
+const virtualProcessGroupByMock = vi.fn()
+const holidaysInRangeMock = vi.fn()
 const deleteMock = vi.fn()
 const orgFindUniqueMock = vi.fn()
 const saveFileMock = vi.fn()
 const createPdfMock = vi.fn()
+const createFormPdfMock = vi.fn()
 const auditRecordMock = vi.fn()
 const registerExportMock = vi.fn()
 
@@ -46,17 +50,25 @@ vi.mock('@/lib/prisma.js', () => {
     findFirst: (...a: unknown[]) => qddFindFirstMock(...a),
     findUnique: (...a: unknown[]) => qddFindUniqueMock(...a),
   }
+  // Épico 8: `budgetService.detectOverrun`/`getBalancesForItems` somam também
+  // `VirtualProcess` vinculado à ficha — precisa do mesmo espião, mesmo que
+  // nenhum teste desta suíte cadastre processo algum.
+  const virtualProcess = {
+    aggregate: (...a: unknown[]) => virtualProcessAggregateMock(...a),
+    groupBy: (...a: unknown[]) => virtualProcessGroupByMock(...a),
+  }
 
   return {
     prisma: {
       dailyAllowance,
       qddItem,
+      virtualProcess,
       beneficiary: { findFirst: vi.fn().mockResolvedValue(null) },
       organization: { findUnique: (...a: unknown[]) => orgFindUniqueMock(...a) },
       // `$transaction` interativo: executa a função recebida na hora. Não
       // simula rollback — o que se testa aqui são as regras, e a atomicidade de
       // verdade é exercida contra o Postgres na suíte E2E.
-      $transaction: (fn: (tx: unknown) => unknown) => fn({ dailyAllowance, qddItem }),
+      $transaction: (fn: (tx: unknown) => unknown) => fn({ dailyAllowance, qddItem, virtualProcess }),
     },
   }
 })
@@ -67,7 +79,12 @@ vi.mock('@/services/storage.service.js', () => ({
 }))
 
 vi.mock('@/services/document-pdf.service.js', () => ({
+  // `createOfficialPdf` segue de pé para o Anexo II (accountFor); o Anexo I
+  // (issue) passou a usar `createFormDocumentPdf`, a grade numerada — os dois
+  // precisam de espiões PRÓPRIOS, senão uma asserção no formato errado passaria
+  // por acidente.
   createOfficialPdf: (...a: unknown[]) => createPdfMock(...a),
+  createFormDocumentPdf: (...a: unknown[]) => createFormPdfMock(...a),
 }))
 
 vi.mock('@/services/exported-document.service.js', () => ({
@@ -81,10 +98,15 @@ vi.mock('@/services/audit-ledger.service.js', () => ({
   auditLedgerService: { record: (...a: unknown[]) => auditRecordMock(...a) },
 }))
 
+vi.mock('@/services/holiday.service.js', () => ({
+  holidayService: { getHolidaysInRange: (...a: unknown[]) => holidaysInRangeMock(...a) },
+}))
+
 const {
   dailyAllowanceService,
   calculateTotalAmount,
   isAccountabilityLate,
+  touchesWeekendOrHoliday,
   DailyAllowanceError,
 } = await import('../services/daily-allowance.service.js')
 
@@ -115,6 +137,10 @@ const DRAFT = {
   qddItemId: null,
   qddItem: null,
   createdBy: { id: 'issuer-1', firstName: 'Maria', lastName: 'Souza' },
+  // O período (10 a 12/set/2026) vai de quinta a sábado — TOCA fim de semana.
+  // Preenchida aqui para que os testes de emissão que não são SOBRE a regra
+  // do Épico 8 não precisem conhecê-la; a regra em si ganha describe própria.
+  weekendHolidayJustification: 'Reunião extraordinária de última hora, autorizada pelo secretário.',
 }
 
 /** Emitido: hash publicado, portanto congelado. */
@@ -130,7 +156,9 @@ describe('Diárias de servidor (Task 3.1)', () => {
     for (const m of [
       findFirstMock, findManyMock, countMock, createMock, updateMock, updateManyMock,
       findUniqueOrThrowMock, aggregateMock, qddFindFirstMock, qddFindUniqueMock,
-      deleteMock, orgFindUniqueMock, saveFileMock, createPdfMock, auditRecordMock, registerExportMock,
+      virtualProcessAggregateMock, virtualProcessGroupByMock, holidaysInRangeMock,
+      deleteMock, orgFindUniqueMock, saveFileMock, createPdfMock, createFormPdfMock,
+      auditRecordMock, registerExportMock,
     ]) m.mockReset()
 
     findManyMock.mockResolvedValue([])
@@ -140,15 +168,25 @@ describe('Diárias de servidor (Task 3.1)', () => {
     // A trava de corrida acerta o registro: `count: 1` é o caminho feliz.
     updateManyMock.mockResolvedValue({ count: 1 })
     findUniqueOrThrowMock.mockResolvedValue(ISSUED)
-    aggregateMock.mockResolvedValue({ _sum: { totalAmount: null } })
+    // `_max` sustenta a numeração da diária (Épico 8, `create`); `_sum`
+    // sustenta a detecção de estouro (`issue`) — o mesmo espião serve aos
+    // dois usos de `dailyAllowance.aggregate`.
+    aggregateMock.mockResolvedValue({ _sum: { totalAmount: null }, _max: { sequenceNumber: null } })
+    virtualProcessAggregateMock.mockResolvedValue({ _sum: { totalValue: null } })
+    virtualProcessGroupByMock.mockResolvedValue([])
+    // Sem feriado cadastrado por padrão — só o fim de semana entra na conta,
+    // a menos que um teste específico sobrescreva.
+    holidaysInRangeMock.mockResolvedValue([])
     qddFindFirstMock.mockResolvedValue({ id: 'qdd-1' })
-    orgFindUniqueMock.mockResolvedValue({ name: 'Prefeitura de Exemplo' })
+    orgFindUniqueMock.mockResolvedValue({ name: 'Prefeitura de Exemplo', city: 'Exemplo', state: 'TO' })
     saveFileMock.mockResolvedValue('org-1/daily-allowances/x.pdf')
-    createPdfMock.mockResolvedValue({
+    const pdfResult = {
       bytes: new Uint8Array([1, 2, 3]),
       sha256Hash: 'b'.repeat(64),
       validationUrl: 'https://exemplo/validar-documento/pub-1',
-    })
+    }
+    createPdfMock.mockResolvedValue(pdfResult)
+    createFormPdfMock.mockResolvedValue(pdfResult)
     auditRecordMock.mockResolvedValue(undefined)
   })
 
@@ -278,9 +316,11 @@ describe('Diárias de servidor (Task 3.1)', () => {
 
       await dailyAllowanceService.issue('da-1', SCOPE)
 
-      expect(createPdfMock).toHaveBeenCalledTimes(1)
-      expect(createPdfMock.mock.calls[0][0]).toMatchObject({
-        title: 'RECIBO DE DIÁRIA',
+      // Anexo I passou a sair pelo motor de grade — o Recibo de Diária virou
+      // o formulário numerado, não mais a lista de seções.
+      expect(createFormPdfMock).toHaveBeenCalledTimes(1)
+      expect(createFormPdfMock.mock.calls[0][0]).toMatchObject({
+        title: 'FORMULÁRIO DE AFASTAMENTO E CONCESSÃO DE DIÁRIAS',
         publicId: 'pub-1',
       })
 
@@ -328,7 +368,7 @@ describe('Diárias de servidor (Task 3.1)', () => {
       await expect(dailyAllowanceService.issue('da-1', SCOPE)).rejects.toMatchObject({
         code: 'ALREADY_ISSUED',
       })
-      expect(createPdfMock).not.toHaveBeenCalled()
+      expect(createFormPdfMock).not.toHaveBeenCalled()
     })
   })
 
@@ -424,7 +464,7 @@ describe('Diárias de servidor (Task 3.1)', () => {
       await dailyAllowanceService.issue('da-1', SCOPE)
 
       // Emitiu: o PDF foi gerado e o hash, gravado.
-      expect(createPdfMock).toHaveBeenCalledTimes(1)
+      expect(createFormPdfMock).toHaveBeenCalledTimes(1)
       expect(updateMock.mock.calls[0][0]).toMatchObject({
         where: { id: 'da-1' },
         data: { budgetOverrun: true },
@@ -502,17 +542,19 @@ describe('Diárias de servidor (Task 3.1)', () => {
 
     test('emite documento com identificador PRÓPRIO, distinto do Anexo I', async () => {
       // São dois papéis circulando. Reaproveitar o publicId faria o Portal
-      // devolver o documento errado para metade dos QR Codes.
+      // devolver o documento errado para metade dos QR Codes. O Anexo II
+      // passou a sair pelo motor de grade também (Épico 8) — mesma cartilha
+      // oficial, mesmo motor do Anexo I.
       findFirstMock.mockResolvedValue(ISSUED)
       findUniqueOrThrowMock.mockResolvedValue({ ...ISSUED, status: 'ACCOUNTED' })
 
       await dailyAllowanceService.accountFor('da-1', INPUT, SCOPE)
 
-      expect(createPdfMock.mock.calls[0][0]).toMatchObject({
+      expect(createFormPdfMock.mock.calls[0][0]).toMatchObject({
         title: 'PRESTAÇÃO DE CONTAS DE DIÁRIA (ANEXO II)',
         publicId: 'public-id-de-teste',
       })
-      expect(createPdfMock.mock.calls[0][0].publicId).not.toBe(ISSUED.publicId)
+      expect(createFormPdfMock.mock.calls[0][0].publicId).not.toBe(ISSUED.publicId)
 
       expect(updateManyMock.mock.calls[0][0].data).toMatchObject({
         status: 'ACCOUNTED',
@@ -527,7 +569,7 @@ describe('Diárias de servidor (Task 3.1)', () => {
 
       await dailyAllowanceService.accountFor('da-1', INPUT, SCOPE)
 
-      expect(createPdfMock.mock.calls[0][0].footNote).toMatch(/notas fiscais/i)
+      expect(createFormPdfMock.mock.calls[0][0].footNote).toMatch(/notas fiscais/i)
     })
 
     test('não se presta contas de diária ainda não emitida', async () => {
@@ -536,7 +578,7 @@ describe('Diárias de servidor (Task 3.1)', () => {
       await expect(dailyAllowanceService.accountFor('da-1', INPUT, SCOPE)).rejects.toMatchObject({
         code: 'NOT_ISSUED',
       })
-      expect(createPdfMock).not.toHaveBeenCalled()
+      expect(createFormPdfMock).not.toHaveBeenCalled()
     })
 
     test('não se presta contas duas vezes', async () => {
@@ -557,6 +599,119 @@ describe('Diárias de servidor (Task 3.1)', () => {
           SCOPE
         )
       ).rejects.toMatchObject({ code: 'INVALID_PERIOD' })
+    })
+  })
+
+  // ── Épico 8 ──
+
+  describe('fim de semana e feriado (função pura)', () => {
+    test('período todo em dias úteis não toca fim de semana nem feriado', () => {
+      // Segunda a quarta.
+      const touches = touchesWeekendOrHoliday(
+        new Date('2026-09-14T00:00:00Z'),
+        new Date('2026-09-16T00:00:00Z'),
+        []
+      )
+      expect(touches).toBe(false)
+    })
+
+    test('período que inclui sábado toca fim de semana', () => {
+      const touches = touchesWeekendOrHoliday(
+        new Date('2026-09-10T00:00:00Z'), // quinta
+        new Date('2026-09-12T00:00:00Z'), // sábado
+        []
+      )
+      expect(touches).toBe(true)
+    })
+
+    test('um único dia de retorno em domingo já conta', () => {
+      const touches = touchesWeekendOrHoliday(
+        new Date('2026-09-13T00:00:00Z'), // domingo
+        new Date('2026-09-13T00:00:00Z'),
+        []
+      )
+      expect(touches).toBe(true)
+    })
+
+    test('dias úteis com feriado cadastrado no meio toca feriado', () => {
+      // Segunda a quarta, com feriado municipal na terça.
+      const touches = touchesWeekendOrHoliday(
+        new Date('2026-09-14T00:00:00Z'),
+        new Date('2026-09-16T00:00:00Z'),
+        [{ date: new Date('2026-09-15T00:00:00Z') }]
+      )
+      expect(touches).toBe(true)
+    })
+
+    test('feriado fora do período não conta', () => {
+      const touches = touchesWeekendOrHoliday(
+        new Date('2026-09-14T00:00:00Z'),
+        new Date('2026-09-16T00:00:00Z'),
+        [{ date: new Date('2026-12-25T00:00:00Z') }]
+      )
+      expect(touches).toBe(false)
+    })
+  })
+
+  describe('justificativa de fim de semana/feriado na emissão (Épico 8, FR-021/FR-022)', () => {
+    // Segunda (14/set) a quarta (16/set) — dias úteis, sem feriado.
+    const DRAFT_WEEKDAYS_ONLY = {
+      ...DRAFT,
+      departureDate: new Date('2026-09-14T00:00:00Z'),
+      returnDate: new Date('2026-09-16T00:00:00Z'),
+      weekendHolidayJustification: null,
+    }
+
+    test('período em dias úteis emite normalmente, sem justificativa', async () => {
+      findFirstMock.mockResolvedValue(DRAFT_WEEKDAYS_ONLY)
+
+      await dailyAllowanceService.issue('da-1', SCOPE)
+
+      expect(updateManyMock).toHaveBeenCalledTimes(1)
+    })
+
+    test('período que toca sábado/domingo SEM justificativa é recusado', async () => {
+      // DRAFT vai de quinta a sábado; aqui a justificativa é removida de
+      // propósito para exercitar a trava.
+      findFirstMock.mockResolvedValue({ ...DRAFT, weekendHolidayJustification: null })
+
+      await expect(dailyAllowanceService.issue('da-1', SCOPE)).rejects.toMatchObject({
+        code: 'WEEKEND_JUSTIFICATION_REQUIRED',
+      })
+      expect(updateManyMock).not.toHaveBeenCalled()
+      expect(createFormPdfMock).not.toHaveBeenCalled()
+    })
+
+    test('período que toca fim de semana COM justificativa é aceito', async () => {
+      // O DRAFT padrão já vem com justificativa preenchida — cobre o caminho
+      // feliz sem precisar duplicar a asserção do describe de emissão.
+      findFirstMock.mockResolvedValue(DRAFT)
+
+      await dailyAllowanceService.issue('da-1', SCOPE)
+
+      expect(updateManyMock).toHaveBeenCalledTimes(1)
+    })
+
+    test('feriado cadastrado em dias úteis também exige justificativa', async () => {
+      findFirstMock.mockResolvedValue(DRAFT_WEEKDAYS_ONLY)
+      // Terça (15/set), dentro do período segunda-quarta, cadastrada como feriado.
+      holidaysInRangeMock.mockResolvedValue([{ date: new Date('2026-09-15T00:00:00Z') }])
+
+      await expect(dailyAllowanceService.issue('da-1', SCOPE)).rejects.toMatchObject({
+        code: 'WEEKEND_JUSTIFICATION_REQUIRED',
+      })
+    })
+
+    test('a checagem de feriado é escopada pela organização do token', async () => {
+      findFirstMock.mockResolvedValue(DRAFT_WEEKDAYS_ONLY)
+
+      await dailyAllowanceService.issue('da-1', SCOPE)
+
+      expect(holidaysInRangeMock).toHaveBeenCalledWith(
+        'org-1',
+        DRAFT_WEEKDAYS_ONLY.departureDate,
+        DRAFT_WEEKDAYS_ONLY.returnDate
+      )
     })
   })
 })

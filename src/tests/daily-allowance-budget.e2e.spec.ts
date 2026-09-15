@@ -80,10 +80,14 @@ function draftPayload(options: DraftOptions) {
     beneficiaryName: options.beneficiaryName ?? 'joão da silva',
     destination: 'Brasília/DF',
     purpose: 'Reunião no ministério para tratar do convênio',
+    // Padrão (10 a 12/set/2026) cruza sábado — por isso a justificativa
+    // abaixo (Épico 8, FR-021/FR-022), sempre presente aqui porque este
+    // arquivo testa o motor orçamentário, não a regra de fim de semana.
     departureDate: options.departureDate ?? '2026-09-10',
     returnDate: options.returnDate ?? '2026-09-12',
     dailyRate: options.dailyRate ?? 350,
     dayCount: options.dayCount ?? 2,
+    weekendHolidayJustification: 'Reunião extraordinária de última hora, autorizada pelo secretário.',
   }
 }
 
@@ -112,7 +116,7 @@ async function createAndIssue(
 
 describe('Motor orçamentário (integração)', () => {
   describe('snapshot da dotação', () => {
-    test('a emissão carimba ficha, fonte e natureza no registro e no PDF', async () => {
+    test('a emissão carimba ficha, fonte e natureza no registro; ficha e fonte também no PDF', async () => {
       const { session, department, qddItem } = await setupScenario({ valorOrcado: 100000 })
 
       const issued = await createAndIssue(session, {
@@ -122,6 +126,9 @@ describe('Motor orçamentário (integração)', () => {
 
       expect(issued.qddFichaSnapshot).toBe('0042')
       expect(issued.qddFonteSnapshot).toBe('1500')
+      // Natureza da despesa é gravada para a prestação de contas e a auditoria,
+      // mas NÃO é um dos 20 campos numerados do formulário físico — o Anexo I
+      // não a imprime. Ficha e Fonte são os campos 3 e 4 do papel, esses sim.
       expect(issued.qddNaturezaSnapshot).toBe('3.3.90.14')
 
       const pdf = await getApp().inject({
@@ -132,7 +139,9 @@ describe('Motor orçamentário (integração)', () => {
 
       const text = await extractPdfText(pdf.rawPayload)
       expect(text).toContain('0042')
-      expect(text).toContain('3.3.90.14')
+      expect(text).toContain('1500')
+      expect(text).toContain('FICHA')
+      expect(text).toContain('FONTE')
     })
 
     test('alterar o QDD depois NÃO reescreve o documento já emitido', async () => {

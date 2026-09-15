@@ -24,6 +24,12 @@ export async function qddItemRoutes(app: FastifyInstance) {
     qddItemController.getById
   )
 
+  app.get(
+    '/:id/history',
+    { preHandler: [requireAnyPermission(['departments:read', 'departments:write'])] },
+    qddItemController.getHistory
+  )
+
   app.post(
     '/',
     { preHandler: [requireAnyPermission(['departments:write'])] },

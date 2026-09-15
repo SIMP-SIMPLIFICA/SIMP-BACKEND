@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma.js'
 import { departmentExistsInOrganization } from '@/utils/department-scope.util.js'
+import { budgetService } from '@/services/budget.service.js'
 
 /**
  * QDD — Quadro de Detalhamento da Despesa (Épico 4, Fase 2).
@@ -19,7 +20,13 @@ import { departmentExistsInOrganization } from '@/utils/department-scope.util.js
 
 export class QddItemError extends Error {
   constructor(
-    readonly code: 'NOT_FOUND' | 'NO_ORGANIZATION' | 'DUPLICATE_FICHA' | 'IN_USE' | 'INVALID_DEPARTMENT',
+    readonly code:
+      | 'NOT_FOUND'
+      | 'NO_ORGANIZATION'
+      | 'DUPLICATE_FICHA'
+      | 'IN_USE'
+      | 'INVALID_DEPARTMENT'
+      | 'REASON_REQUIRED',
     message: string
   ) {
     super(message)
@@ -44,7 +51,14 @@ export interface CreateQddItemInput {
   valorOrcado: number
 }
 
-export type UpdateQddItemInput = Partial<Omit<CreateQddItemInput, 'departmentId'>>
+export type UpdateQddItemInput = Partial<Omit<CreateQddItemInput, 'departmentId'>> & {
+  /**
+   * Motivo da alteração — obrigatório SOMENTE quando `valorOrcado` muda
+   * (Épico 8, FR-013). Editar ficha/fonte/natureza sem mexer no valor não
+   * exige motivo: não é suplementação, é correção de cadastro.
+   */
+  reason?: string
+}
 
 export interface ListQddItemFilter {
   departmentId?: string
@@ -61,7 +75,7 @@ export const qddItemService = {
    * a tela é uma tabela editável onde paginar atrapalharia mais que ajudaria.
    */
   async list(filter: ListQddItemFilter, scope: RequestScope) {
-    return prisma.qddItem.findMany({
+    const items = await prisma.qddItem.findMany({
       where: {
         organizationId: scope.organizationId,
         ...(filter.departmentId ? { departmentId: filter.departmentId } : {}),
@@ -70,6 +84,21 @@ export const qddItemService = {
       orderBy: [{ year: 'desc' }, { ficha: 'asc' }],
       include: { department: { select: { id: true, name: true, code: true } } },
     })
+
+    // "Valor Utilizado"/"Saldo Restante" calculados NA LEITURA (Épico 8,
+    // FR-008), em lote para não disparar duas agregações por ficha exibida.
+    const balances = await budgetService.getBalancesForItems(
+      items.map(item => item.id),
+      scope.organizationId
+    )
+
+    return items.map(item => ({
+      ...item,
+      ...(balances.get(item.id) ?? {
+        valorUtilizado: new Prisma.Decimal(0),
+        saldoRestante: item.valorOrcado,
+      }),
+    }))
   },
 
   async getById(id: string, scope: RequestScope) {
@@ -79,7 +108,21 @@ export const qddItemService = {
     })
 
     if (!record) throw new QddItemError('NOT_FOUND', 'Dotação não encontrada.')
-    return record
+
+    const balance = await budgetService.getQddItemBalance(id, scope.organizationId)
+    return { ...record, ...balance }
+  },
+
+  /** Histórico de suplementação/redução do valor orçado, mais recente primeiro. */
+  async getHistory(id: string, scope: RequestScope) {
+    // Garante escopo + existência antes de expor histórico de outra organização.
+    await this.getById(id, scope)
+
+    return prisma.budgetHistory.findMany({
+      where: { qddItemId: id, organizationId: scope.organizationId },
+      orderBy: { createdAt: 'desc' },
+      include: { changedBy: { select: { id: true, firstName: true, lastName: true } } },
+    })
   },
 
   async create(input: CreateQddItemInput, scope: RequestScope) {
@@ -106,27 +149,73 @@ export const qddItemService = {
 
   async update(id: string, input: UpdateQddItemInput, scope: RequestScope) {
     // Confere o escopo ANTES de atualizar: `update` por id puro alcançaria a
-    // dotação de outra organização.
-    await this.getById(id, scope)
+    // dotação de outra organização. `current` também dá o valor ANTERIOR, para
+    // o histórico de suplementação abaixo.
+    const current = await this.getById(id, scope)
+
+    const isChangingValue =
+      input.valorOrcado !== undefined &&
+      !new Prisma.Decimal(input.valorOrcado).equals(current.valorOrcado)
+
+    // Motivo obrigatório SÓ quando o valor muda de fato (Épico 8, FR-013) —
+    // reenviar o mesmo valor, ou editar só ficha/fonte/natureza, não é
+    // suplementação e não deveria exigir justificativa.
+    if (isChangingValue && !input.reason?.trim()) {
+      throw new QddItemError(
+        'REASON_REQUIRED',
+        'Informe o motivo da alteração do valor orçado — toda suplementação ou redução precisa ficar registrada.'
+      )
+    }
 
     try {
-      return await prisma.qddItem.update({
-        where: { id },
-        data: {
-          ...(input.year !== undefined ? { year: input.year } : {}),
-          ...(input.ficha !== undefined ? { ficha: input.ficha } : {}),
-          ...(input.fonte !== undefined ? { fonte: input.fonte } : {}),
-          ...(input.projetoAtividade !== undefined
-            ? { projetoAtividade: input.projetoAtividade }
-            : {}),
-          ...(input.naturezaDespesa !== undefined
-            ? { naturezaDespesa: input.naturezaDespesa }
-            : {}),
-          ...(input.valorOrcado !== undefined
-            ? { valorOrcado: new Prisma.Decimal(input.valorOrcado) }
-            : {}),
-        },
-        include: { department: { select: { id: true, name: true, code: true } } },
+      return await prisma.$transaction(async tx => {
+        const updated = await tx.qddItem.update({
+          where: { id },
+          data: {
+            ...(input.year !== undefined ? { year: input.year } : {}),
+            ...(input.ficha !== undefined ? { ficha: input.ficha } : {}),
+            ...(input.fonte !== undefined ? { fonte: input.fonte } : {}),
+            ...(input.projetoAtividade !== undefined
+              ? { projetoAtividade: input.projetoAtividade }
+              : {}),
+            ...(input.naturezaDespesa !== undefined
+              ? { naturezaDespesa: input.naturezaDespesa }
+              : {}),
+            ...(input.valorOrcado !== undefined
+              ? { valorOrcado: new Prisma.Decimal(input.valorOrcado) }
+              : {}),
+          },
+          include: { department: { select: { id: true, name: true, code: true } } },
+        })
+
+        // Rastro de suplementação (Épico 8, FR-013), gravado na MESMA
+        // transação que o novo valor: um valor alterado sem histórico, ou um
+        // histórico sem a alteração correspondente, são os dois lados da
+        // mesma inconsistência que o Princípio VIII não admite em nenhum
+        // domínio deste sistema.
+        if (isChangingValue) {
+          const previousValue = current.valorOrcado
+          const newValue = updated.valorOrcado
+          // Nulo quando a dotação partia de zero: percentual sobre base zero
+          // não tem significado (nem "infinito" nem "0%" descrevem o fato).
+          const changePercent = previousValue.isZero()
+            ? null
+            : newValue.minus(previousValue).dividedBy(previousValue).times(100)
+
+          await tx.budgetHistory.create({
+            data: {
+              organizationId: scope.organizationId,
+              qddItemId: id,
+              previousValue,
+              newValue,
+              changePercent,
+              reason: input.reason.trim(),
+              changedById: scope.userId,
+            },
+          })
+        }
+
+        return updated
       })
     } catch (error) {
       throw translateDuplicate(error, input.ficha, input.year)
@@ -134,28 +223,43 @@ export const qddItemService = {
   },
 
   /**
-   * Exclui a ficha, desde que nenhuma diária EMITIDA a tenha usado.
+   * Exclui a ficha, desde que nenhuma diária EMITIDA nem processo vinculado a
+   * tenha usado (Épico 8, FR-012 — mesma regra de `DailyAllowance`, estendida
+   * a `VirtualProcess`).
    *
    * A checagem é explícita em vez de esperar o `Restrict` do banco: o erro de
    * chave estrangeira do Postgres não diz ao usuário o que fazer, e aqui a
    * mensagem explica que existe despesa documentada lastreada nessa dotação.
    *
-   * Rascunhos NÃO impedem: eles ainda podem trocar de ficha, e travar a
-   * exclusão por causa de um rascunho esquecido seria arbitrário. O
+   * Diária rascunho (`PENDING`) NÃO impede: ela ainda pode trocar de ficha, e
+   * travar a exclusão por causa de um rascunho esquecido seria arbitrário. Já
+   * um `VirtualProcess` vinculado impede sempre — não existe, para processo,
+   * um estado de rascunho equivalente (o vínculo em si já é o consumo). O
    * `onDelete: Restrict` do schema continua sendo a rede de segurança final.
    */
   async remove(id: string, scope: RequestScope) {
     await this.getById(id, scope)
 
-    const issuedCount = await prisma.dailyAllowance.count({
-      where: { qddItemId: id, status: { in: ['ISSUED', 'ACCOUNTED'] } },
-    })
+    const [issuedDailyAllowanceCount, linkedProcessCount] = await Promise.all([
+      prisma.dailyAllowance.count({
+        where: { qddItemId: id, status: { in: ['ISSUED', 'ACCOUNTED'] } },
+      }),
+      prisma.virtualProcess.count({ where: { qddItemId: id } }),
+    ])
 
-    if (issuedCount > 0) {
+    if (issuedDailyAllowanceCount > 0) {
       throw new QddItemError(
         'IN_USE',
-        `Esta dotação lastreia ${issuedCount} diária(s) já emitida(s) e não pode ser excluída. ` +
+        `Esta dotação lastreia ${issuedDailyAllowanceCount} diária(s) já emitida(s) e não pode ser excluída. ` +
           'O vínculo faz parte da prestação de contas.'
+      )
+    }
+
+    if (linkedProcessCount > 0) {
+      throw new QddItemError(
+        'IN_USE',
+        `Esta dotação lastreia ${linkedProcessCount} processo(s) vinculado(s) e não pode ser excluída. ` +
+          'O vínculo faz parte do controle orçamentário do processo.'
       )
     }
 

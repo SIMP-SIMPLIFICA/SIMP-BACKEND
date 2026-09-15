@@ -495,6 +495,17 @@ export const departmentController = {
         })
       }
 
+      // Épico 8 (FR-018): BankAccount.departmentId é obrigatório — diferente de
+      // Covenant/VirtualProcess (SetNull), uma conta bancária não pode ficar
+      // órfã, então o departamento não pode desaparecer por baixo dela.
+      const bankAccountCount = await prisma.bankAccount.count({ where: { departmentId: id } })
+      if (bankAccountCount > 0) {
+        return reply.code(409).send({
+          error:   'Conflict',
+          message: `Este departamento possui ${bankAccountCount} conta(s) bancária(s) vinculada(s). Transfira-as para outro departamento antes de excluir.`,
+        })
+      }
+
       await prisma.department.delete({ where: { id } })
       return reply.send({ message: 'Departamento excluído com sucesso.' })
     } catch (err: unknown) {

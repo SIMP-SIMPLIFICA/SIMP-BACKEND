@@ -5,9 +5,10 @@ import { prisma } from '@/lib/prisma.js'
 import { logger } from '@/utils/logger.js'
 import { departmentExistsInOrganization } from '@/utils/department-scope.util.js'
 import { z } from 'zod'
-import { createVirtualProcessSchema, updateCompanyInfoSchema, updateValiditySchema, uploadDocumentSchema } from '@/schemas/virtual-process.schemas.js'
+import { createVirtualProcessSchema, updateBudgetSchema, updateCompanyInfoSchema, updateValiditySchema, uploadDocumentSchema } from '@/schemas/virtual-process.schemas.js'
 import { deleteFile, getFileUrl, saveFile } from '@/services/storage.service.js'
 import { UPLOAD_POLICIES, assertAllowedFile } from '@/services/file-validation.service.js'
+import { BudgetError, budgetService } from '@/services/budget.service.js'
 
 export class VirtualProcessController {
   async listProcesses(request: FastifyRequest, reply: FastifyReply) {
@@ -209,28 +210,68 @@ export class VirtualProcessController {
         })
       }
 
-      const process = await prisma.virtualProcess.create({
-        data: {
-          organizationId,
-          departmentId: data.departmentId ?? null,
-          processNumber: data.processNumber,
-          secretaria: data.secretaria,
-          source: data.source,
-          sourceDetail: data.sourceDetail,
-          bankAccount: data.bankAccount,
-          agency: data.agency,
-          bankName: data.bankName,
-          companyCnpj: data.companyCnpj,
-          companyName: data.companyName,
-          startDate: data.startDate,
-          endDate: data.endDate,
-          validityDate: data.validityDate,
-          totalValue: data.totalValue,
-          subject: data.subject,
-          category: data.category,
-          createdById: userId,
-          status: data.status || 'Tramitando'
+      // Dotação do QDD que lastreia o processo (Épico 8, FR-011) — mesmo
+      // padrão de DailyAllowance: valida o vínculo E tira uma cópia TEXTUAL
+      // da ficha, para que o processo não mude de dotação retroativamente só
+      // porque o cadastro do QDD mudou depois.
+      let qddSnapshot: {
+        qddFichaSnapshot: string
+        qddFonteSnapshot: string
+        qddNaturezaSnapshot: string
+      } | null = null
+
+      if (data.qddItemId) {
+        await budgetService.assertQddItemBelongsToOrganization(data.qddItemId, organizationId)
+        const qddItem = await prisma.qddItem.findUniqueOrThrow({ where: { id: data.qddItemId } })
+        qddSnapshot = {
+          qddFichaSnapshot: qddItem.ficha,
+          qddFonteSnapshot: qddItem.fonte,
+          qddNaturezaSnapshot: qddItem.naturezaDespesa,
         }
+      }
+
+      const process = await prisma.$transaction(async tx => {
+        const created = await tx.virtualProcess.create({
+          data: {
+            organizationId,
+            departmentId: data.departmentId ?? null,
+            processNumber: data.processNumber,
+            secretaria: data.secretaria,
+            source: data.source,
+            sourceDetail: data.sourceDetail,
+            bankAccount: data.bankAccount,
+            agency: data.agency,
+            bankName: data.bankName,
+            companyCnpj: data.companyCnpj,
+            companyName: data.companyName,
+            startDate: data.startDate,
+            endDate: data.endDate,
+            validityDate: data.validityDate,
+            totalValue: data.totalValue,
+            subject: data.subject,
+            category: data.category,
+            createdById: userId,
+            status: data.status || 'Tramitando',
+            qddItemId: data.qddItemId ?? null,
+            ...qddSnapshot,
+            // Fase oficial da despesa (Épico 8, FR-019) — dimensão adicional
+            // ao `status` textual acima, aceita já na autuação.
+            expensePhase: data.expensePhase ?? null,
+          }
+        })
+
+        // Estouro de dotação (Épico 8, FR-011): calculado DEPOIS de gravar,
+        // dentro da mesma transação, para que a soma já inclua este processo.
+        // Não bloqueia — só registra para auditoria, mesma regra de
+        // DailyAllowance.budgetOverrun.
+        if (data.qddItemId) {
+          const overrun = await budgetService.detectOverrun(tx, data.qddItemId)
+          if (overrun) {
+            return tx.virtualProcess.update({ where: { id: created.id }, data: { budgetOverrun: true } })
+          }
+        }
+
+        return created
       })
 
       await auditLedgerService.record({
@@ -249,6 +290,11 @@ export class VirtualProcessController {
       logger.error(error, 'Failed to create virtual process')
       if (error instanceof z.ZodError) {
         return reply.code(400).send({ error: 'Validation Error', details: error.errors })
+      }
+      // Dotação do QDD inexistente ou de outra organização (Épico 8) — erro de
+      // domínio, não falha interna.
+      if (error instanceof BudgetError) {
+        return reply.code(400).send({ error: error.code, message: error.message })
       }
       return reply.code(500).send({ error: 'Process Creation Failed', message: error.message })
     }
@@ -379,6 +425,98 @@ export class VirtualProcessController {
         return reply.code(400).send({ error: 'Validation Error', details: error.errors })
       }
       return reply.code(500).send({ error: 'Validity Update Failed', message: error.message })
+    }
+  }
+
+  /**
+   * PATCH /:id/budget — vincula/desvincula o processo de uma ficha do QDD e/ou
+   * atualiza sua fase da despesa (Épico 8, FR-011/FR-019). Um único endpoint
+   * estreito para as duas dimensões orçamentárias do processo: `qddItemId` e
+   * `expensePhase` são independentes — `undefined` não mexe no campo, `null`
+   * limpa, um valor define.
+   */
+  async updateBudget(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { id } = request.params as { id: string }
+      const data = updateBudgetSchema.parse(request.body)
+      const userId = (request as any).user?.id as string
+      const organizationId = (request as any).user?.organizationId as string
+
+      const process = await prisma.virtualProcess.findUnique({ where: { id } })
+      if (!process) return reply.code(404).send({ error: 'Not Found', message: 'Processo não encontrado' })
+
+      if (!(request as any).user?.isSuperAdmin && process.organizationId !== organizationId) {
+        return reply.code(404).send({ error: 'Not Found', message: 'Processo não encontrado' })
+      }
+
+      const isChangingQddItem = data.qddItemId !== undefined
+      let qddSnapshot: {
+        qddFichaSnapshot: string | null
+        qddFonteSnapshot: string | null
+        qddNaturezaSnapshot: string | null
+      } = { qddFichaSnapshot: null, qddFonteSnapshot: null, qddNaturezaSnapshot: null }
+
+      if (isChangingQddItem && data.qddItemId) {
+        await budgetService.assertQddItemBelongsToOrganization(data.qddItemId, process.organizationId)
+        const qddItem = await prisma.qddItem.findUniqueOrThrow({ where: { id: data.qddItemId } })
+        qddSnapshot = {
+          qddFichaSnapshot: qddItem.ficha,
+          qddFonteSnapshot: qddItem.fonte,
+          qddNaturezaSnapshot: qddItem.naturezaDespesa,
+        }
+      }
+
+      const updatedProcess = await prisma.$transaction(async tx => {
+        const updated = await tx.virtualProcess.update({
+          where: { id },
+          data: {
+            ...(isChangingQddItem
+              ? {
+                  qddItemId: data.qddItemId,
+                  ...qddSnapshot,
+                  // Desvincular zera a flag: sem ficha, não há saldo contra o
+                  // qual estourar. Vincular recalcula abaixo, na mesma transação.
+                  budgetOverrun: false,
+                }
+              : {}),
+            ...(data.expensePhase !== undefined ? { expensePhase: data.expensePhase } : {}),
+          },
+        })
+
+        if (isChangingQddItem && data.qddItemId) {
+          const overrun = await budgetService.detectOverrun(tx, data.qddItemId)
+          if (overrun) {
+            return tx.virtualProcess.update({ where: { id }, data: { budgetOverrun: true } })
+          }
+        }
+
+        return updated
+      })
+
+      await auditLedgerService.record({
+        userId,
+        action: 'ATUALIZOU_ORCAMENTO',
+        resource: 'VIRTUAL_PROCESS',
+        resourceId: id,
+        organizationId: (request as any).user?.organizationId ?? null,
+        ip: request.ip,
+        success: true,
+        details: {
+          oldData: { qddItemId: process.qddItemId, expensePhase: process.expensePhase },
+          newData: { qddItemId: updatedProcess.qddItemId, expensePhase: updatedProcess.expensePhase },
+        },
+      })
+
+      return reply.send(updatedProcess)
+    } catch (error: any) {
+      logger.error(error, 'Failed to update virtual process budget link')
+      if (error instanceof z.ZodError) {
+        return reply.code(400).send({ error: 'Validation Error', details: error.errors })
+      }
+      if (error instanceof BudgetError) {
+        return reply.code(400).send({ error: error.code, message: error.message })
+      }
+      return reply.code(500).send({ error: 'Budget Update Failed', message: error.message })
     }
   }
 

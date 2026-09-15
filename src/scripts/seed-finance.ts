@@ -33,6 +33,28 @@ const CATEGORIAS = [
     { name: 'Assistência Social',        description: 'Programas sociais, CRAS, CREAS' },
 ];
 
+// Contas bancárias — prefeituras segregam por fonte de recurso (regra federal
+// de que verba carimbada não pode transitar pela conta corrente comum).
+const CONTAS = [
+    { key: 'PRINCIPAL',  name: 'Conta Corrente Principal - Banco do Brasil',        agency: '1234-5', accountNumber: '45678-9', initialBalanceCents: 420000000 },
+    { key: 'FUNDEB',     name: 'Conta FUNDEB - Banco do Brasil',                    agency: '1234-5', accountNumber: '45679-0', initialBalanceCents: 185000000 },
+    { key: 'SAUDE',      name: 'Conta Saúde (Bloco de Custeio SUS) - Banco do Brasil', agency: '1234-5', accountNumber: '45680-1', initialBalanceCents: 95000000  },
+    { key: 'CONVENIOS',  name: 'Conta Convênios e Repasses Federais - Caixa',       agency: '0089-1', accountNumber: '00123456-7', initialBalanceCents: 260000000 },
+];
+
+// Categoria → conta: reflete a segregação real (FUNDEB só paga Educação,
+// bloco de custeio SUS só paga Saúde, repasses federais entram/saem pela
+// conta de convênios, o resto transita pela conta corrente comum)
+const CATEGORIA_PARA_CONTA: Record<string, string> = {
+    'Receitas Federais':        'CONVENIOS',
+    'Tributos Municipais':      'PRINCIPAL',
+    'Saúde':                    'SAUDE',
+    'Educação':                 'FUNDEB',
+    'Infraestrutura e Obras':   'PRINCIPAL',
+    'Despesas Administrativas': 'PRINCIPAL',
+    'Assistência Social':       'CONVENIOS',
+};
+
 // Templates por categoria (amountCents em centavos = R$ x 100)
 const TEMPLATES = {
     'Receitas Federais': [
@@ -123,9 +145,44 @@ async function main() {
     const UID = adminUser.id;
 
     // Limpar dados financeiros anteriores de Itapevi
-    console.log('🧹 Limpando lançamentos e categorias anteriores de Itapevi...');
+    // Ordem importa: FinanceEntry.account é onDelete Restrict, então as contas
+    // só podem ser apagadas depois que os lançamentos que apontam pra elas sumirem.
+    console.log('🧹 Limpando lançamentos, categorias e contas anteriores de Itapevi...');
     await prisma.financeEntry.deleteMany({ where: { organizationId: OID } });
     await prisma.financeCategory.deleteMany({ where: { organizationId: OID } });
+    await prisma.bankAccount.deleteMany({ where: { organizationId: OID } });
+
+    // Épico 8 (FR-015): BankAccount.departmentId passou a ser obrigatório.
+    // Sem departamento próprio na seed de contas, todas caem no primeiro
+    // departamento cadastrado da organização — suficiente para dados de
+    // desenvolvimento; a seed de departamentos roda antes desta.
+    const defaultDepartment = await prisma.department.findFirst({
+        where: { organizationId: OID },
+        orderBy: { code: 'asc' },
+    });
+    if (!defaultDepartment) {
+        console.error('❌ Nenhum departamento encontrado para Itapevi. Rode o seed de departamentos primeiro.');
+        process.exit(1);
+    }
+
+    // Criar contas bancárias
+    console.log('🏦 Criando contas bancárias...');
+    const accountMap = new Map<string, string>();
+    for (const conta of CONTAS) {
+        const created = await prisma.bankAccount.create({
+            data: {
+                organizationId: OID,
+                name: conta.name,
+                agency: conta.agency,
+                accountNumber: conta.accountNumber,
+                departmentId: defaultDepartment.id,
+                // initialBalanceCents NÃO é mais aceito por escrita direta
+                // (Épico 8, FR-016) — fica no padrão 0 do schema mesmo na seed.
+            }
+        });
+        accountMap.set(conta.key, created.id);
+        console.log(`  ✅ Conta: ${conta.name}`);
+    }
 
     // Criar categorias
     console.log('📁 Criando categorias...');
@@ -148,6 +205,7 @@ async function main() {
         for (const [catName, dist] of Object.entries(DISTRIBUICAO_MENSAL)) {
             const templates = TEMPLATES[catName as keyof typeof TEMPLATES];
             const categoryId = catMap.get(catName);
+            const accountId = accountMap.get(CATEGORIA_PARA_CONTA[catName]);
 
             // Receitas
             for (let i = 0; i < dist.income; i++) {
@@ -159,6 +217,7 @@ async function main() {
                     amountCents: Math.round(rand(tmpl.min, tmpl.max) * fator),
                     type: 'INCOME',
                     categoryId,
+                    accountId,
                     createdById: UID,
                     attachmentsStatus: 'none',
                 });
@@ -176,6 +235,7 @@ async function main() {
                     amountCents: Math.round(rand(tmpl.min, tmpl.max) * fator * extraPressao),
                     type: 'EXPENSE',
                     categoryId,
+                    accountId,
                     createdById: UID,
                     attachmentsStatus: pick(['none', 'none', 'none', 'pending']), // 25% pendentes
                 });
@@ -186,8 +246,10 @@ async function main() {
     await prisma.financeEntry.createMany({ data: entries });
 
     console.log(`\n✅ Seed concluído! ${entries.length} lançamentos criados para Itapevi.`);
-    console.log(`   Receitas: ${entries.filter(e => e.type === 'INCOME').length}`);
-    console.log(`   Despesas: ${entries.filter(e => e.type === 'EXPENSE').length}`);
+    console.log(`   Contas:    ${CONTAS.length}`);
+    console.log(`   Categorias: ${CATEGORIAS.length}`);
+    console.log(`   Receitas:  ${entries.filter(e => e.type === 'INCOME').length}`);
+    console.log(`   Despesas:  ${entries.filter(e => e.type === 'EXPENSE').length}`);
     console.log(`   Pendentes: ${entries.filter(e => e.attachmentsStatus === 'pending').length}`);
 }
 

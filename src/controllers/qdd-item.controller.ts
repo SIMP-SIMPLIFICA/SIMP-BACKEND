@@ -43,7 +43,12 @@ const createSchema = z.object({
 
 /** O departamento não muda no update: mover a ficha de setor reescreveria o
  *  lastro de despesas já imputadas. Para trocar, exclua e recadastre. */
-const updateSchema = createSchema.omit({ departmentId: true }).partial()
+const updateSchema = createSchema.omit({ departmentId: true }).partial().extend({
+  // Obrigatório apenas quando `valorOrcado` muda de fato — o serviço decide
+  // isso comparando com o valor atual; o schema só garante o formato do texto
+  // quando o campo vier preenchido (Épico 8, FR-013).
+  reason: z.string().trim().min(3, 'Descreva o motivo em pelo menos 3 caracteres.').max(500).optional(),
+})
 
 const listSchema = z.object({
   departmentId: z.string().min(1).optional(),
@@ -72,6 +77,7 @@ const STATUS_BY_CODE: Record<QddItemError['code'], number> = {
   DUPLICATE_FICHA: 409,
   IN_USE: 409,
   INVALID_DEPARTMENT: 400,
+  REASON_REQUIRED: 400,
 }
 
 function handleError(error: unknown, request: FastifyRequest, reply: FastifyReply) {
@@ -144,6 +150,17 @@ export const qddItemController = {
       const { id } = paramsSchema.parse(request.params)
       await qddItemService.remove(id, scope)
       return reply.code(204).send()
+    } catch (error) {
+      return handleError(error, request, reply)
+    }
+  },
+
+  /** GET /:id/history — histórico de suplementação/redução do valor orçado. */
+  async getHistory(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const scope = getScope(request)
+      const { id } = paramsSchema.parse(request.params)
+      return reply.send(await qddItemService.getHistory(id, scope))
     } catch (error) {
       return handleError(error, request, reply)
     }

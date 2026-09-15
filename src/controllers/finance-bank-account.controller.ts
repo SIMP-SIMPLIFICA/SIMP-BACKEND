@@ -2,12 +2,20 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { prisma } from '../lib/prisma.js';
 import { z } from 'zod';
 import { HARD_QUERY_CAP } from '@/constants/pagination.js'
+import { departmentExistsInOrganization } from '@/utils/department-scope.util.js'
 
+// NOTA (Épico 8, FR-015/FR-016 — fixação mínima nesta rodada): `departmentId`
+// passou a ser obrigatório no schema e `initialBalanceCents` deixou de poder
+// ser gravado por valor do cliente aqui — só o necessário para o backend
+// continuar compilando e a regra de negócio central (nenhuma conta sem setor,
+// nenhum saldo inicial vindo da API) já valer. O Select na tela, o tooltip e a
+// checagem de departamento com conta vinculada na exclusão ficam para a
+// próxima rodada (T031-T034, frente de Contas Bancárias).
 const createSchema = z.object({
     name: z.string().min(1).max(100),
     agency: z.string().max(20).optional().nullable(),
     accountNumber: z.string().max(30).optional().nullable(),
-    initialBalanceCents: z.number().int().default(0),
+    departmentId: z.string().min(1, 'Selecione o departamento.'),
 }).strip();
 
 const updateSchema = createSchema.partial();
@@ -20,13 +28,21 @@ export class FinanceBankAccountController {
             return reply.status(403).send({ message: 'Usuário sem organização' })
         }
         const data = createSchema.parse(request.body);
+
+        if (!(await departmentExistsInOrganization(data.departmentId, organizationId))) {
+            return reply.status(400).send({ message: 'O departamento informado não existe nesta organização.' })
+        }
+
         const account = await prisma.bankAccount.create({
             data: {
                 organizationId: organizationId,
                 name: data.name,
                 agency: data.agency ?? null,
                 accountNumber: data.accountNumber ?? null,
-                initialBalanceCents: data.initialBalanceCents ?? 0,
+                departmentId: data.departmentId,
+                // initialBalanceCents NÃO é aceito aqui de propósito (Épico 8,
+                // FR-016): fica no padrão 0 do schema até a integração bancária
+                // futura populá-lo. Nenhum valor do cliente chega a esta linha.
             }
         });
         return reply.status(201).send(account);
@@ -53,6 +69,10 @@ export class FinanceBankAccountController {
         // O isolamento por organização é garantido pela checagem explícita abaixo.
         if (!request.user.isSuperAdmin && account.organizationId !== request.user.organizationId) {
             return reply.status(404).send({ message: 'Conta não encontrada' });
+        }
+
+        if (data.departmentId && !(await departmentExistsInOrganization(data.departmentId, account.organizationId))) {
+            return reply.status(400).send({ message: 'O departamento informado não existe nesta organização.' })
         }
 
         const updated = await prisma.bankAccount.update({ where: { id }, data });

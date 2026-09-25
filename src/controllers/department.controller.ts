@@ -294,6 +294,11 @@ export const departmentController = {
           companyName: true,
           startDate: true,
           endDate: true,
+          // Colunas "Assunto" e "Valor" da aba Processos no detalhe do setor
+          // (Fase 2, 2026-09-24) — a tela já sabe qual é o setor (é a própria
+          // página), então trocou "Secretaria" por estes dois campos.
+          subject: true,
+          totalValue: true,
         },
         orderBy: { createdAt: 'desc' },
       })

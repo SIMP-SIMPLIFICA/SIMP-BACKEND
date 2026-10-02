@@ -164,6 +164,17 @@ export async function checkPermission(
     })
   }
 
+  // Bypass do Dono do Sistema — mesma flag que `requireModule` e o kill switch
+  // de suspensão acima já isentam. Achado do Painel de Auditoria (2026-09-22):
+  // faltava aqui. Um Super Admin não necessariamente tem NENHUM `UserRole`
+  // (é o caso do usuário seed `admin@gmail.com`: 0 vínculos) — sem este
+  // bypass, `userPermissions` ficava vazio e QUALQUER rota atrás de
+  // `requireAnyPermission`/`requirePermission` devolvia 403 pra ele, mesmo
+  // sendo o próprio Dono do Sistema. O bypass por `system:admin` logo abaixo
+  // não cobre esse caso: é uma PERMISSÃO de role (que também pode faltar),
+  // não a flag `isSuperAdmin` do usuário.
+  if (userWithRoles.isSuperAdmin) return
+
   const userPermissions = new Set<string>()
   for (const userRole of userWithRoles.roles) {
     if (userRole.role.isActive) {
@@ -174,7 +185,9 @@ export async function checkPermission(
     }
   }
 
-  // Bypass para Administrador do Sistema
+  // Bypass por permissão de role — distinto do bypass por `isSuperAdmin`
+  // acima. Mantido: cobre quem tem `system:admin` atribuído via role sem
+  // necessariamente ser um Super Admin "nativo" (User.isSuperAdmin=false).
   if (userPermissions.has('system:admin')) return
 
   const hasPermission = requiredPermissions.some(p => userPermissions.has(p))

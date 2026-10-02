@@ -9,6 +9,7 @@ import { ALL_MODULES, DEFAULT_MODULES, ModuleKey } from '../constants/modules.js
 import { invalidateModuleCache, invalidateOrgStatusCache } from '../middleware/auth.middleware.js'
 import { calculateRequestFingerprint } from '../services/fingerprint.service.js'
 import { ensureAdminRole } from '../services/rbac.service.js'
+import { db } from '../utils/database.js'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -346,12 +347,24 @@ export class AdminController {
       return reply.code(404).send({ error: 'Not Found', message: 'Nenhum admin ativo encontrado nesta organização.' })
     }
 
+    // Permissões REAIS do admin impersonado — nunca hardcoded. Achado do
+    // Painel de Auditoria (2026-09-22): isto aqui dizia `['system:admin']`
+    // fixo, a mesma string que `DEFAULT_ADMIN_PERMISSIONS` exclui de propósito
+    // por ser exclusiva de Super Admin (rbac.service.ts). `checkPermission`
+    // não confia neste claim (reconsulta o banco a cada requisição — Zero
+    // Trust), então isto não abria brecha ali; mas `protocol.controller.ts`
+    // (`list`/`report`/`update`) confia direto em `request.user.permissions`
+    // do token, então um admin impersonado com `protocols:admin` de verdade
+    // no banco ainda assim falhava essa checagem — permissão real, negada
+    // por um claim fixo que nunca correspondeu a ela.
+    const impersonatedPermissions = await db.getUserPermissions(adminUser.id)
+
     // Fingerprint da requisição do super admin: o token de impersonação é usado
     // pelo MESMO navegador que o solicitou, então precisa carregar o mesmo
     // fingerprint — sem isso o middleware o rejeitaria na primeira requisição.
     const accessToken = await authService.generateAccessToken(
       adminUser.id,
-      ['system:admin'],
+      impersonatedPermissions,
       orgId,
       false,
       calculateRequestFingerprint(request)

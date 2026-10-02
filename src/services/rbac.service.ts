@@ -10,7 +10,15 @@ import { DEFAULT_ADMIN_PERMISSIONS } from '@/constants/permissions.js'
 export async function ensureAdminRole(tx: Prisma.TransactionClient): Promise<{ id: string }> {
   return tx.role.upsert({
     where: { name: 'admin' },
-    update: {},
+    // Ressincroniza SEMPRE com o catálogo atual — não `{}`. A role já existir
+    // não pode significar "não mexe mais": ela é global (uma só para TODAS as
+    // organizações) e "self-healing" (docstring acima) só é verdade se toda
+    // chamada também curar uma role antiga. Sem isto, qualquer permissão nova
+    // adicionada a AVAILABLE_PERMISSIONS depois do primeiro seed nunca chega
+    // a nenhum admin de organização já existente — foi o que bloqueou
+    // "Admin Local" em audit:read/audit:export mesmo com as duas já no
+    // catálogo (achado do Painel de Auditoria, 2026-09-22).
+    update: { permissions: DEFAULT_ADMIN_PERMISSIONS },
     create: {
       name: 'admin',
       displayName: 'Administrador',

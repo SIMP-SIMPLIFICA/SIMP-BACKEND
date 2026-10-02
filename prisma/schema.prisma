@@ -956,7 +956,23 @@ model Covenant {
   concedenteId String? @map("concedente_id")
 
   processObject   String  @map("process_object") @db.Text
+  /// Texto livre legado — mantido como está (Fase 3, 2026-09-24). A partir
+  /// desta fase, o vínculo orçamentário DE VERDADE passa a ser `qddItemId`
+  /// abaixo; este campo continua existindo só para não invalidar convênios
+  /// já cadastrados antes dele existir.
   budgetaryAction String? @map("budgetary_action")
+
+  /// Dotação orçamentária (ficha do QDD) que lastreia o convênio — mesmo
+  /// padrão já usado em VirtualProcess.qddItemId e DailyAllowance.qddItemId
+  /// (Épico 8, FR-011).
+  qddItemId String? @map("qdd_item_id")
+
+  /// CÓPIA TEXTUAL da dotação no instante do vínculo — mesmo motivo de
+  /// VirtualProcess.qddFichaSnapshot: o convênio não pode mudar de dotação
+  /// retroativamente só porque o cadastro do QDD mudou depois.
+  qddFichaSnapshot    String? @map("qdd_ficha_snapshot")
+  qddFonteSnapshot    String? @map("qdd_fonte_snapshot")
+  qddNaturezaSnapshot String? @map("qdd_natureza_snapshot")
 
   executionStartDate DateTime? @map("execution_start_date")
   validityStartDate  DateTime? @map("validity_start_date")
@@ -985,10 +1001,14 @@ model Covenant {
   concedente       Concedente?            @relation(fields: [concedenteId], references: [id], onDelete: SetNull)
   virtualProcesses VirtualProcess[]
   libraryDocuments LibraryDocument[]
+  /// Restrict: apagar uma dotação usada por convênio vinculado apagaria o
+  /// lastro de uma transferência já documentada (mesma regra de VirtualProcess).
+  qddItem          QddItem?               @relation(fields: [qddItemId], references: [id], onDelete: Restrict)
 
   @@unique([organizationId, number])
   @@index([organizationId, status])
   @@index([organizationId, typeId])
+  @@index([qddItemId])
   @@map("covenants")
 }
 
@@ -1835,6 +1855,7 @@ model QddItem {
   department       Department       @relation(fields: [departmentId], references: [id], onDelete: Cascade)
   dailyAllowances  DailyAllowance[]
   virtualProcesses VirtualProcess[]
+  covenants        Covenant[]
   /// Rastro de suplementação/redução de `valorOrcado` — nunca editado nem
   /// apagado, só acrescido (Épico 8, FR-013).
   history          BudgetHistory[]

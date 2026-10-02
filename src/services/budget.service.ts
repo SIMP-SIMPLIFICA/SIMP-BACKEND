@@ -62,7 +62,7 @@ export const budgetService = {
   ): Promise<Map<string, QddItemBalance>> {
     if (qddItemIds.length === 0) return new Map()
 
-    const [items, dailyAllowanceSums, virtualProcessSums] = await Promise.all([
+    const [items, dailyAllowanceSums, virtualProcessSums, covenantSums] = await Promise.all([
       prisma.qddItem.findMany({
         where: { id: { in: qddItemIds }, organizationId },
         select: { id: true, valorOrcado: true },
@@ -86,6 +86,15 @@ export const budgetService = {
         orderBy: { qddItemId: 'asc' },
         _sum: { totalValue: true },
       }),
+      // Convênios (Fase 3, 2026-09-24): mesma ideia de VirtualProcess — o
+      // valor de transferência já vinculado a uma ficha É o consumo, sem
+      // distinção de fase/status do convênio.
+      prisma.covenant.groupBy({
+        by: ['qddItemId'],
+        where: { organizationId, qddItemId: { in: qddItemIds } },
+        orderBy: { qddItemId: 'asc' },
+        _sum: { transferValue: true },
+      }),
     ])
 
     const usedByItem = new Map<string, Prisma.Decimal>()
@@ -95,6 +104,7 @@ export const budgetService = {
     }
     for (const row of dailyAllowanceSums) add(row.qddItemId, row._sum.totalAmount)
     for (const row of virtualProcessSums) add(row.qddItemId, row._sum.totalValue)
+    for (const row of covenantSums) add(row.qddItemId, row._sum.transferValue)
 
     const result = new Map<string, QddItemBalance>()
     for (const item of items) {
@@ -118,7 +128,7 @@ export const budgetService = {
    * no ponto flutuante decidiria errado se houve estouro.
    */
   async detectOverrun(tx: Prisma.TransactionClient, qddItemId: string): Promise<boolean> {
-    const [qddItem, dailySum, processSum] = await Promise.all([
+    const [qddItem, dailySum, processSum, covenantSum] = await Promise.all([
       tx.qddItem.findUnique({ where: { id: qddItemId }, select: { valorOrcado: true } }),
       tx.dailyAllowance.aggregate({
         where: { qddItemId, status: { in: COMMITTED_DAILY_ALLOWANCE_STATUSES } },
@@ -128,11 +138,18 @@ export const budgetService = {
         where: { qddItemId },
         _sum: { totalValue: true },
       }),
+      // Convênios (Fase 3, 2026-09-24) — mesmo tratamento de VirtualProcess.
+      tx.covenant.aggregate({
+        where: { qddItemId },
+        _sum: { transferValue: true },
+      }),
     ])
 
     if (!qddItem) return false
 
-    const total = (dailySum._sum.totalAmount ?? ZERO).plus(processSum._sum.totalValue ?? ZERO)
+    const total = (dailySum._sum.totalAmount ?? ZERO)
+      .plus(processSum._sum.totalValue ?? ZERO)
+      .plus(covenantSum._sum.transferValue ?? ZERO)
     return total.greaterThan(qddItem.valorOrcado)
   },
 

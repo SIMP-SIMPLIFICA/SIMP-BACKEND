@@ -21,6 +21,8 @@ const qddFindFirstMock = vi.fn()
 const qddFindUniqueMock = vi.fn()
 const virtualProcessAggregateMock = vi.fn()
 const virtualProcessGroupByMock = vi.fn()
+const covenantAggregateMock = vi.fn()
+const covenantGroupByMock = vi.fn()
 const holidaysInRangeMock = vi.fn()
 const deleteMock = vi.fn()
 const orgFindUniqueMock = vi.fn()
@@ -57,18 +59,26 @@ vi.mock('@/lib/prisma.js', () => {
     aggregate: (...a: unknown[]) => virtualProcessAggregateMock(...a),
     groupBy: (...a: unknown[]) => virtualProcessGroupByMock(...a),
   }
+  // Fase 3 (Convênios, 2026-10-02): `budgetService` passou a somar também
+  // `Covenant.transferValue` vinculado à ficha — mesmo espião que `virtualProcess`,
+  // pelo mesmo motivo (nenhum teste desta suíte cadastra convênio algum).
+  const covenant = {
+    aggregate: (...a: unknown[]) => covenantAggregateMock(...a),
+    groupBy: (...a: unknown[]) => covenantGroupByMock(...a),
+  }
 
   return {
     prisma: {
       dailyAllowance,
       qddItem,
       virtualProcess,
+      covenant,
       beneficiary: { findFirst: vi.fn().mockResolvedValue(null) },
       organization: { findUnique: (...a: unknown[]) => orgFindUniqueMock(...a) },
       // `$transaction` interativo: executa a função recebida na hora. Não
       // simula rollback — o que se testa aqui são as regras, e a atomicidade de
       // verdade é exercida contra o Postgres na suíte E2E.
-      $transaction: (fn: (tx: unknown) => unknown) => fn({ dailyAllowance, qddItem, virtualProcess }),
+      $transaction: (fn: (tx: unknown) => unknown) => fn({ dailyAllowance, qddItem, virtualProcess, covenant }),
     },
   }
 })
@@ -156,7 +166,8 @@ describe('Diárias de servidor (Task 3.1)', () => {
     for (const m of [
       findFirstMock, findManyMock, countMock, createMock, updateMock, updateManyMock,
       findUniqueOrThrowMock, aggregateMock, qddFindFirstMock, qddFindUniqueMock,
-      virtualProcessAggregateMock, virtualProcessGroupByMock, holidaysInRangeMock,
+      virtualProcessAggregateMock, virtualProcessGroupByMock,
+      covenantAggregateMock, covenantGroupByMock, holidaysInRangeMock,
       deleteMock, orgFindUniqueMock, saveFileMock, createPdfMock, createFormPdfMock,
       auditRecordMock, registerExportMock,
     ]) m.mockReset()
@@ -174,6 +185,8 @@ describe('Diárias de servidor (Task 3.1)', () => {
     aggregateMock.mockResolvedValue({ _sum: { totalAmount: null }, _max: { sequenceNumber: null } })
     virtualProcessAggregateMock.mockResolvedValue({ _sum: { totalValue: null } })
     virtualProcessGroupByMock.mockResolvedValue([])
+    covenantAggregateMock.mockResolvedValue({ _sum: { transferValue: null } })
+    covenantGroupByMock.mockResolvedValue([])
     // Sem feriado cadastrado por padrão — só o fim de semana entra na conta,
     // a menos que um teste específico sobrescreva.
     holidaysInRangeMock.mockResolvedValue([])

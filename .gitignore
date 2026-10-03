@@ -54,3 +54,4 @@ vitest.config.*.timestamp*
 
 # Uploads locais (substituem o R2 — nunca versionar arquivos enviados)
 uploads/
+.claude/settings.local.json

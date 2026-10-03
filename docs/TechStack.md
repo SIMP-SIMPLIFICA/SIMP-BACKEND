@@ -33,8 +33,8 @@ SIMP-FRONTEND  — React 19 + Vite SPA, deployed to Vercel, talks to the API via
 | Object storage | **Disco local** — pasta `uploads/` na raiz do backend, servida em `/uploads/` via `@fastify/static` | `src/services/storage.service.ts`. Substituiu o Cloudflare R2 em 2026-08-08 (Princípio I: zero credenciais de nuvem); o `@aws-sdk/*` foi removido do projeto. Ver o alerta de segurança em §11. |
 | Email | `nodemailer` | Ethereal (fake inbox) or MailHog in dev, Brevo in production. |
 | 2FA | `speakeasy` (TOTP) | Feature-flagged via `ENABLE_2FA`. |
-| Digital signatures | Gov.br OAuth2 + signature API, with `USE_MOCK_GOVBR` mock mode for local dev | Used by the Councils module (`AppFeatures.md` §4.9). |
-| Documents/PDF | `pdf-lib`, `pdf-parse`, `docxtemplater` + `pizzip`, `node-signpdf`, `node-forge`, `handlebars`, `archiver`, `qrcode` | |
+| Digital signatures | **Removido em 2026-10-03** (decisão D9 em `docs/frotas/decisoes.md`): a integração gov.br nunca funcionou contra a API do ITI e foi retirada. Documentos são autenticados por PDF + `sha256Hash` + QR de validação. As tabelas `signature_requests`/`govbr_oauth_states` saem numa migration futura (`docs/issues/govbr-schema-pendente.md`). | |
+| Documents/PDF | `pdf-lib`, `pdf-parse`, `docxtemplater` + `pizzip`, `node-forge`, `handlebars`, `archiver`, `qrcode` | |
 | Logging | `pino`/`pino-pretty`, optional Betterstack (`@logtail/*`) shipping | |
 | Error tracking | `@sentry/node` 10 | Conditionally no-ops when `SENTRY_DSN` is blank; a same-hostname-checked Sentry tunnel proxy exists at `POST /api/sentry-tunnel` to route around ad-blockers for frontend error reports too. |
 | Testing | Vitest 4 | Coverage thresholds are currently zeroed in `vitest.config.ts` with an explicit comment acknowledging this is temporary — only 2 spec files exist for 28 controllers / 32 Prisma models today; raising this is tracked as P1. |
@@ -87,7 +87,7 @@ npm run dev                # Vite dev server, talks to :3000 via VITE_API_URL
 
 Two fixes land alongside this wiring (tracked in §11 as P0):
 - `docker/postgres/init.sql` is currently an **empty directory** on disk rather than a `.sql` file, so its bind-mount silently no-ops instead of running init SQL. It becomes a real file containing `CREATE EXTENSION IF NOT EXISTS unaccent;` — defense-in-depth, since the Prisma `20260408032157_init` migration already creates this extension via `postgresqlExtensions`, but a stray empty directory should never sit in the repo pretending to be a script.
-- `.env.example` is rewritten to describe **only** this local profile (local Postgres URL, local Redis URL matching the compose password, MailHog, `USE_MOCK_GOVBR=true`) — no Supabase section at all. **Update (2026-08-08)**: as variáveis `R2_*` foram removidas por completo — o armazenamento de arquivos agora é local em disco (`uploads/`), sem nenhuma credencial de nuvem; a URL pública dos arquivos é derivada de `APP_URL`.
+- `.env.example` is rewritten to describe **only** this local profile (local Postgres URL, local Redis URL matching the compose password, MailHog) — no Supabase section at all. **Update (2026-08-08)**: as variáveis `R2_*` foram removidas por completo — o armazenamento de arquivos agora é local em disco (`uploads/`), sem nenhuma credencial de nuvem; a URL pública dos arquivos é derivada de `APP_URL`.
 
 ## 6. Environment Topology / Deploy Targets
 
@@ -145,7 +145,7 @@ Living index into the full audit — see `ProjectGoals.md` §3 for narrative con
 - Declare `fastify` as an explicit direct dependency.
 - Stop returning the admin-created temp password in the API response body — email-only.
 - Stop leaking raw `details: err` in the 401 handler's JSON response.
-- Complete the Zod env schema: `GOVBR_*`, `USE_MOCK_GOVBR`, `DATABASE_MIGRATION_URL`, `DATABASE_REPLICA_URL` are currently read via raw `process.env`, bypassing fail-fast validation. (As `R2_*` saíram desta lista em 2026-08-08 — foram removidas junto com o R2.)
+- Complete the Zod env schema: `DATABASE_MIGRATION_URL`, `DATABASE_REPLICA_URL` are currently read via raw `process.env`, bypassing fail-fast validation. (As `GOVBR_*`/`USE_MOCK_GOVBR` saíram em 2026-10-03, com o gov.br. As `R2_*` saíram desta lista em 2026-08-08 — foram removidas junto com o R2.)
 - Reconnect the frontend Sidebar's mobile drawer: add a `useMediaQuery`/`matchMedia` hook, lift `mobileOpen` state into `AppLayout.tsx`, add a hamburger trigger in `Topbar.tsx` (`lg:hidden`), auto-close on route change.
 - Add pgAdmin4 and remove Adminer from `docker-compose.yml`.
 

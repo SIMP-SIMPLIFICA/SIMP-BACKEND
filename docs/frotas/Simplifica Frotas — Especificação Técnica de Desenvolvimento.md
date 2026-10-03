@@ -4,7 +4,7 @@ Oct 2, 2026 · @Carlos Magno · base: documentação técnica do SIMP (branch `d
 
 ## Sumário e decisões
 
-O SIMP já tem quase toda a infraestrutura que o Frotas precisa — inclusive um esboço do próprio módulo (`fleetFuelings`, modelo `FleetFueling`). O Frotas deve **substituir esse esboço**, como domínio novo dentro do `SIMP-BACKEND`/`SIMP-FRONTEND`, sem serviço separado, sem banco separado e sem reimplementar autenticação, hash, PDF, auditoria, notificação ou assinatura.
+O SIMP já tem quase toda a infraestrutura que o Frotas precisa — inclusive um esboço do próprio módulo (`fleetFuelings`, modelo `FleetFueling`). O Frotas deve **substituir esse esboço**, como domínio novo dentro do `SIMP-BACKEND`/`SIMP-FRONTEND`, sem serviço separado, sem banco separado e sem reimplementar autenticação, hash, PDF, auditoria, notificação nem o documento autenticado por PDF + sha256Hash + QR de validação (D9).
 
 A leitura do código muda seis pontos da especificação funcional anterior:
 
@@ -43,7 +43,7 @@ O QDD é o orçamento detalhado da prefeitura em fichas (fonte + natureza de des
 | `publicId` separado da PK + `ExportedDocument` + `/api/v1/public/validate/:uuid` sem PII | Portal Público | QR pequeno de validação |
 | Numeração sequencial em transação Serializable com retry (`SequenceControl`) | Protocolos | Nº de autorização, OS, viagem |
 | Motor de relatório compartilhado (dossiê; seção não pedida é omitida) | Departamentos | Relatórios do Frotas e aba no dossiê |
-| Assinatura gov.br (`SignatureRequest`, landing de retorno) | Conselhos | Assinatura de relatórios e diário de bordo |
+| Documento autenticado por PDF + sha256Hash + QR de validação (D9) | Diárias / Portal Público | Relatórios e diário de bordo |
 | `AuditLog` via `LedgerAdapter` (`record`/`query`) + trigger que bloqueia UPDATE/DELETE | Auditoria | Toda ação do Frotas |
 | Notificações SSE com fallback de polling | Shell | Aviso de cupom para conferir, bloqueio, vencimentos |
 | BullMQ (email, document) + node-cron | Jobs | Expiração de autorizações, alertas de CNH/CRLV, sincronização SERPRO |
@@ -78,7 +78,7 @@ flowchart LR
     P["/api/v1/public/fleet/redeem/:token<br/>rate limit · placa · uso único"]
     V["/api/v1/public/validate/:uuid<br/>(existente)"]
     S["Serviços do Frotas<br/>authorization · trip · vehicle · service-order · report"]
-    SH["Serviços do SIMP reutilizados<br/>budgetService · SequenceControl · PDF + sha256<br/>LedgerAdapter · notificações SSE · gov.br"]
+    SH["Serviços do SIMP reutilizados<br/>budgetService · SequenceControl · PDF + sha256<br/>LedgerAdapter · notificações SSE"]
   end
   DB[("PostgreSQL<br/>+ RLS nas tabelas fleet")]
   RQ[("Redis · BullMQ<br/>expiração · imagens · SERPRO")]
@@ -172,7 +172,7 @@ O esboço atual sai inteiro; o nome `FleetFueling` e a chave de módulo `fleetFu
 | `fleet:trip_drive` | Registrar saída, retorno e checklist (motorista) |
 | `fleet:maintenance` | Abrir, aprovar e fechar OS |
 | `fleet:release_block` | Liberar bloqueios (tanque, intervalo, duplicidade) com justificativa |
-| `fleet:reports` | Gerar e assinar relatórios |
+| `fleet:reports` | Gerar relatórios (documento autenticado por PDF + sha256Hash + QR de validação (D9)) |
 | `fleet:all_departments` | Ver todos os departamentos; sem ela o escopo é o próprio departamento |
 
 ### Papéis sugeridos (roles da organização)

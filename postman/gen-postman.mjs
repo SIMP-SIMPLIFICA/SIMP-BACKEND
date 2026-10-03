@@ -705,15 +705,6 @@ const councilFolder = folder('8. Conselhos Municipais', [
       }),
       req('Baixar documento', 'GET', `/councils/${EX.councilId}/meetings/${EX.meetingId}/documents/${EX.docId}/download`, {}),
       req('Excluir documento', 'DELETE', `/councils/${EX.councilId}/meetings/${EX.meetingId}/documents/${EX.docId}`, {}),
-      req('Iniciar assinatura Gov.br', 'POST', '/councils/sign/initiate', {
-        body: J({ documentId: EX.docId }),
-      }),
-      req('Consultar status da assinatura', 'GET', '/councils/sign/{{signatureRequestId}}/status', {}),
-      req('Callback OAuth2 Gov.br (uso interno, não chamar manualmente)', 'GET', '/councils/sign/callback', {
-        auth: 'noauth',
-        description: 'Rota pública de callback do fluxo OAuth2. O navegador é redirecionado para cá pelo Gov.br — não é para ser chamada diretamente.',
-        query: Q({ code: '{{govBrCode}}', state: '{{govBrState}}' }),
-      }),
     ]),
   ]),
 ])
@@ -1198,9 +1189,6 @@ const environment = {
     { key: 'outroMembershipId', value: '', type: 'default', enabled: true },
     { key: 'agendaItemId', value: '', type: 'default', enabled: true },
     { key: 'documentId', value: '', type: 'default', enabled: true },
-    { key: 'signatureRequestId', value: '', type: 'default', enabled: true },
-    { key: 'govBrCode', value: '', type: 'default', enabled: true },
-    { key: 'govBrState', value: '', type: 'default', enabled: true },
     { key: 'covenantId', value: '', type: 'default', enabled: true },
     { key: 'covenantTypeId', value: '', type: 'default', enabled: true },
     { key: 'convenenteId', value: '', type: 'default', enabled: true },

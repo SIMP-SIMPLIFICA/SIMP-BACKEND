@@ -168,8 +168,7 @@ export const meetingController = {
           agendaItems: { orderBy: { order: 'asc' } },
           documents:   {
             include: {
-              uploadedBy:       { select: { id: true, firstName: true, lastName: true } },
-              signatureRequests: { select: { id: true, status: true, signedAt: true, requestedById: true } },
+              uploadedBy: { select: { id: true, firstName: true, lastName: true } },
             },
           },
         },

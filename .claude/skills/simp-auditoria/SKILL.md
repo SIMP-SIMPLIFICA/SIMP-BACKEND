@@ -7,20 +7,24 @@ description: Use ao gravar trilha de auditoria no backend do SIMP — toda escri
 
 A trilha é `AuditLog`, gravada pela interface `LedgerAdapter` (`src/services/audit-ledger.service.ts`), que só expõe `record`/`query`. Um trigger de banco (`prisma/sql/002-immutable-audit.sql`) bloqueia UPDATE/DELETE. O ponto de entrada é `auditLedgerService.record(...)` — nunca `prisma.auditLog.create` direto.
 
-## Estado atual × alvo (decisão D3)
+## Comportamento de `record(data, tx?)` (decisões D3 e D8)
 
-| | Hoje | Alvo (pré-requisito da TASK 1) |
+Implementado no pré-requisito da TASK 1. `tx` é opcional e as chamadas sem ele não mudaram.
+
+| | Sem `tx` (módulos existentes) | Com `tx` (Frotas: sempre) |
 | --- | --- | --- |
-| Assinatura | `record(data)` | `record(data, tx?)` — `tx` opcional, chamadas atuais continuam valendo |
-| Transação | grava com o `prisma` global, fora de qualquer transação | com `tx`, grava em `tx.auditLog.create` dentro da transação do chamador |
-| Falha | engolida e logada | sem `tx`: igual a hoje; **com `tx`: lança e derruba a operação** |
-| `ENABLE_AUDIT_LOGS=false` | desliga tudo | mantido para os módulos antigos; decidir na TASK 1 se vale para o Frotas |
+| Onde grava | `prisma` global, fora de transação | `tx.auditLog.create`, dentro da transação do chamador |
+| Se a gravação falha | erro engolido e logado | **erro propagado**: o `$transaction` desfaz a operação inteira |
+| `ENABLE_AUDIT_LOGS` desligado (D8) | não grava, em silêncio | não grava, a operação segue **e** sai `logger.warn` + evento `warning` no Sentry só com `action` e `resource` |
+| Driver `qldb` | falha logada, não propagada | recusa `tx` com erro explícito (QLDB não participa de transação do Postgres) |
 
-Enquanto o alvo não existir, **não** escrever código do Frotas que audita fora da transação "por enquanto". Implementar o alvo primeiro.
+A D8 explica por que o kill switch prevalece sobre a D3: **falha** de auditoria derruba a operação, mas **desligar a trilha de propósito** não derruba. Atenção: hoje `ENABLE_AUDIT_LOGS=false` não desliga nada por causa do `z.coerce.boolean()` (ver `docs/issues/config-boolean-flags.md`).
+
+Testes de referência: `src/test/audit-ledger.service.spec.ts` (unitário) e `src/tests/audit-ledger-transaction.e2e.spec.ts` (rollback contra Postgres real, com a falha provocada por chave estrangeira inválida).
 
 ## Passos
 
-1. **Implementar o alvo** (uma vez, na TASK 1): `LedgerAdapter.record(data, tx?)`; o `localAdapter` usa `(tx ?? prisma).auditLog.create`; o `qldbAdapter` lança se receber `tx` (QLDB não participa da transação do Postgres). Teste unitário cobrindo os dois caminhos.
+1. **Não grave auditoria do Frotas sem `tx`**, nem "por enquanto". Também não chame `prisma.auditLog.create` direto: o caminho sem `tx` engole erros e não serve como prova.
 2. **Chamar dentro da transação**, depois da escrita, com o estado relevante:
    ```ts
    await prisma.$transaction(async tx => {
@@ -46,7 +50,7 @@ Enquanto o alvo não existir, **não** escrever código do Frotas que audita for
 
 ## Checklist
 
-- [ ] `record(data, tx?)` implementado e testado antes do primeiro uso no Frotas
+- [ ] Nenhuma auditoria do Frotas sem `tx` nem por `prisma.auditLog.create` direto
 - [ ] Toda escrita do Frotas chama `record(..., tx)` dentro da mesma `$transaction`
 - [ ] Ação e resource em `UPPER_SNAKE` com prefixo `FLEET_`
 - [ ] CPF/CNH mascarados; token do QR ausente; foto só como hash

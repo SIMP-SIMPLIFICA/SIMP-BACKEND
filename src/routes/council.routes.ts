@@ -3,7 +3,6 @@ import { councilController } from '@/controllers/council.controller.js'
 import { councilCalendarController } from '@/controllers/council-calendar.controller.js'
 import { meetingController } from '@/controllers/council-meeting.controller.js'
 import { documentController } from '@/controllers/council-document.controller.js'
-import { signingController } from '@/controllers/govbr-signing.controller.js'
 import { authMiddleware, requireAnyPermission, requireModule } from '@/middleware/auth.middleware.js'
 
 const READ  = ['councils:read', 'councils:write', 'councils:admin']
@@ -169,22 +168,4 @@ export async function councilRoutes(app: FastifyInstance) {
     { preHandler: [requireAnyPermission(ADMIN)] },
     documentController.remove,
   )
-
-  // ─── Assinatura Gov.br (protegidas) ─────────────────────────────────────────
-
-  app.post('/sign/initiate',
-    { preHandler: [requireAnyPermission(['councils:sign', 'councils:admin'])] },
-    signingController.initiate,
-  )
-
-  app.get('/sign/:requestId/status',
-    { preHandler: [requireAnyPermission([...READ, 'councils:sign'])] },
-    signingController.status,
-  )
-}
-
-// Rota pública — sem authMiddleware, sem requireModule.
-// O callback do OAuth2 é autenticado pela validação do state (CSRF one-time token).
-export async function councilPublicRoutes(app: FastifyInstance) {
-  app.get('/sign/callback', signingController.callback)
 }

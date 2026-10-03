@@ -9,7 +9,6 @@ import { AppServer } from '@/types/server'
 import { buildApp } from './app.js'
 import { startExpireTasksJob } from './jobs/expire-tasks.job.js'
 import { startClearNotificationsJob } from './jobs/clear-notifications.job.js'
-import { startCleanupGovBrStatesJob } from './jobs/cleanup-govbr-states.job.js'
 import { startCovenantExpiryAlertJob } from './jobs/covenant-expiry-alert.job.js'
 import { createEmailNotificationWorker } from './lib/email-queue.js'
 import { createDocumentOcrWorker } from './lib/document-queue.js'
@@ -43,7 +42,6 @@ async function start() {
 
     startExpireTasksJob()
     startClearNotificationsJob()
-    startCleanupGovBrStatesJob()
     startCovenantExpiryAlertJob()
 
     const emailWorker = createEmailNotificationWorker()

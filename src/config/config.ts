@@ -150,15 +150,6 @@ const configSchema = z.object({
   // Armazenamento de arquivos: local em disco (pasta `uploads/`), servido em
   // /uploads/ via @fastify/static. Zero credenciais de nuvem — ver
   // src/services/storage.service.ts e a Constituição (Princípio I).
-
-  // Gov.br OAuth2 + assinatura digital — USE_MOCK_GOVBR=true (padrão local)
-  // simula o fluxo de assinatura sem exigir credenciais reais do gov.br.
-  GOVBR_CLIENT_ID: z.string().optional(),
-  GOVBR_CLIENT_SECRET: z.string().optional(),
-  GOVBR_REDIRECT_URI: z.string().url().optional(),
-  GOVBR_AUTH_URL: z.string().url().default('https://sso.staging.acesso.gov.br'),
-  GOVBR_SIGN_API_URL: z.string().url().default('https://assinatura-api.staging.iti.br'),
-  USE_MOCK_GOVBR: z.coerce.boolean().default(true)
 })
 
 const parsedEnv = configSchema.safeParse(process.env)
@@ -300,16 +291,6 @@ export const config = {
     sentryDsn: env.SENTRY_DSN,
     betterstackToken: env.BETTERSTACK_SOURCE_TOKEN
   },
-
-  // Gov.br OAuth2 + assinatura digital
-  govbr: {
-    clientId: env.GOVBR_CLIENT_ID,
-    clientSecret: env.GOVBR_CLIENT_SECRET,
-    redirectUri: env.GOVBR_REDIRECT_URI,
-    authUrl: env.GOVBR_AUTH_URL,
-    signApiUrl: env.GOVBR_SIGN_API_URL,
-    useMock: env.USE_MOCK_GOVBR
-  }
 } as const
 
 /**

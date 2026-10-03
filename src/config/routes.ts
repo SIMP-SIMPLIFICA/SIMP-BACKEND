@@ -28,7 +28,7 @@ import { departmentRoutes } from '@/routes/department.routes.js'
 import { qddItemRoutes } from '@/routes/qdd-item.routes.js'
 import { holidayRoutes } from '@/routes/holiday.routes.js'
 import { budgetLawRoutes } from '@/routes/budget-law.routes.js'
-import { councilPublicRoutes, councilRoutes } from '@/routes/council.routes.js'
+import { councilRoutes } from '@/routes/council.routes.js'
 import { supportRoutes } from '@/routes/support.routes.js'
 import { errorHandler } from '@/utils/error-handler.js'
 import { safeFetch } from '@/utils/url-security.js'
@@ -195,7 +195,6 @@ export async function registerRoutes(server: AppServer) {
   // Leis Orçamentárias — LOA, PPA e LDO (Épico 4).
   await server.register(budgetLawRoutes, { prefix: '/budget-laws', logLevel: 'info' })
   await server.register(councilRoutes, { prefix: '/councils', logLevel: 'info' })
-  await server.register(councilPublicRoutes, { prefix: '/councils', logLevel: 'info' })
   await server.register(supportRoutes, { prefix: '/support', logLevel: 'info' })
 
   // --- TEST ENDPOINT ---

@@ -139,10 +139,10 @@ These are not gated by `OrganizationModule` — every organization has them.
 - **Gating note:** not enabled by default.
 
 ### 4.9 Conselhos Municipais (Councils)
-- **Purpose:** The newest module — municipal council management: councils, memberships, meetings, agenda items, attendance, council documents, and Gov.br-integrated digital signature requests.
-- **Routes:** `/councils/*` (two separate registrations — `council.controller.ts` 316 lines + `council-meeting.controller.ts` 376 lines for authenticated routes, plus `councilPublicRoutes` for public/signature-callback routes), `council-document.controller.ts`, `govbr-signing.controller.ts` (270 lines).
+- **Purpose:** The newest module — municipal council management: councils, memberships, meetings, agenda items, attendance, council documents (the Gov.br signature flow was removed on 2026-10-03 — decision D9; council documents are authenticated by PDF + `sha256Hash` + QR, like the rest of the system).
+- **Routes:** `/councils/*` (`council.controller.ts`, `council-meeting.controller.ts`, `council-document.controller.ts`, `council-calendar.controller.ts`), all authenticated.
 - **Frontend:** `src/pages/councils/{CouncilsPage,CouncilDetailPage,MeetingDetailPage,CouncilSignReturnPage}.tsx`.
-- **Data model:** `Council`, `CouncilMembership`, `CouncilMeeting`, `MeetingAgendaItem`, `MeetingAttendance`, `CouncilDocument`, `SignatureRequest`, `GovBrOAuthState`.
+- **Data model:** `Council`, `CouncilMembership`, `CouncilMeeting`, `MeetingAgendaItem`, `MeetingAttendance`, `CouncilDocument`. `SignatureRequest` and `GovBrOAuthState` remain in the schema without any code using them, pending removal in the first migration after the baseline (`docs/issues/govbr-schema-pendente.md`).
 - **Gating note:** not enabled by default; requires manual activation.
 
 #### 4.9.1 Trava de compliance de 72h (Épico 3, 2026-08-09)

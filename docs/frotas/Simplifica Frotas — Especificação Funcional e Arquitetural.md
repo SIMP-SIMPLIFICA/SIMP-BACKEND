@@ -37,7 +37,7 @@ O MVP é o que a prefeitura precisa para responder ao controle interno "quem uso
 | Requisição, saída e retorno de viagem (diário de bordo) | Crítico (MVP) | Comprova finalidade pública do uso; alimenta km rodado e ociosidade |
 | Abastecimento com validações (hodômetro, tanque, intervalo, preço) | Crítico (MVP) | Maior fonte de desvio em frota municipal |
 | Ordem de serviço de manutenção com itens e garantia | Crítico (MVP) | Peças e valores unitários exigidos na prestação de contas |
-| Relatórios unitário e consolidado em PDF com assinatura | Crítico (MVP) | Exigência explícita do briefing |
+| Relatórios unitário e consolidado em PDF, documento autenticado por PDF + sha256Hash + QR de validação (D9) | Crítico (MVP) | Exigência explícita do briefing |
 | Vínculo com empenho/QDD do SIMP | Crítico no modo integrado | Diferencial de venda junto ao SIMP |
 | Dashboard de indicadores (subconjunto do GFI) | Fase 2 | Depende de 2–3 meses de dados |
 | Consulta SERPRO/DETRAN (veículo, restrições, infrações, CNH) | Fase 2–3 | Depende de contrato e credencial; iniciar a contratação já |
@@ -233,7 +233,7 @@ Cada fluxo grava em uma única transação o registro, o hodômetro do veículo 
 2. Chefia da secretaria autoriza; o sistema sugere veículo livre e motorista apto.
 3. Na saída: checklist do condutor (óleo, água, pneus, freios, luzes), hodômetro inicial e hora.
 4. No retorno: hodômetro final, hora, ocorrências e fotos; cálculo de km, duração e velocidade média com alertas do GFI.
-5. Viagem concluída fica disponível para assinatura do motorista e do responsável.
+5. Viagem concluída gera o documento com os responsáveis impressos no documento (nome, cargo), sem assinatura eletrônica: o motorista e o responsável.
 
 ### Abastecimento
 
@@ -423,7 +423,7 @@ Com frota de 80 veículos e 60 motoristas, isso dá cerca de 800 consultas por m
 
 ### Fluxo de multa → condutor
 
-Cada nova infração é cruzada com as viagens do veículo pela data e hora da infração. Havendo viagem, o sistema sugere o motorista e o prazo ("Autuação Data Limite Defesa") e gera o formulário de identificação do condutor infrator para assinatura. Sem viagem no horário, a infração vira alerta de uso não registrado — um achado de controle interno.
+Cada nova infração é cruzada com as viagens do veículo pela data e hora da infração. Havendo viagem, o sistema sugere o motorista e o prazo ("Autuação Data Limite Defesa") e gera o formulário de identificação do condutor infrator, com os responsáveis impressos no documento (nome, cargo), sem assinatura eletrônica. Sem viagem no horário, a infração vira alerta de uso não registrado — um achado de controle interno.
 
 ## Integração com o SIMP
 
@@ -458,13 +458,13 @@ Permissões seguem o padrão do SIMP (`fleet.vehicle.read`, `fleet.fueling.relea
 
 Toda escrita gera um `AuditEvent` na mesma transação: ator, ação, entidade, estado antes/depois (JSON), IP, motivo. Os eventos encadeiam o hash do anterior por organização, o que torna adulteração detectável; o controle interno consegue provar que o hodômetro de março não foi editado em junho.
 
-## Relatórios, dashboard e assinatura digital
+## Relatórios, dashboard e documento autenticado por PDF + sha256Hash + QR de validação (D9)
 
-Todo relatório é gerado como PDF/A imutável, com os filtros aplicados impressos no cabeçalho e um bloco de assinaturas no rodapé; editar o dado depois gera nova versão, nunca altera o documento assinado.
+Todo relatório é gerado como PDF/A imutável, com os filtros aplicados impressos no cabeçalho e os responsáveis impressos no documento (nome, cargo), sem assinatura eletrônica, no rodapé; editar o dado depois gera nova versão, nunca altera o documento autenticado por PDF + sha256Hash + QR de validação (D9).
 
 ### Catálogo de relatórios
 
-| Relatório | Tipo | Filtros | Signatários sugeridos |
+| Relatório | Tipo | Filtros | Responsáveis impressos no documento (nome, cargo), sem assinatura eletrônica |
 | --- | --- | --- | --- |
 | Ficha do veículo (cadastro, situação DETRAN, histórico) | Unitário | veículo, período | Gestor de frota |
 | Diário de bordo / viagens do veículo | Unitário | veículo, motorista, período, tipo de serviço | Motorista, gestor da secretaria |
@@ -483,19 +483,16 @@ Filtros comuns a todos: veículo, motorista, data, tipo de serviço, oficina, co
 1. Cabeçalho: brasão, nome e CNPJ da entidade, secretaria, título, período e filtros aplicados.
 2. Corpo: tabela com totais por grupo; gráfico opcional na primeira página do consolidado.
 3. Rodapé de cada página: "Gerado em dd/mm/aaaa hh:mm por \<usuário>", página x de y, código de verificação.
-4. Última página: bloco de assinaturas (nome, cargo, CPF mascarado, data) e QR code para a página pública de verificação.
+4. Última página: responsáveis impressos no documento (nome, cargo), sem assinatura eletrônica, e QR code para a página pública de verificação.
 
 ### Dashboard
 
 Cartões no topo: frota ativa (próprios / locados / cedidos), km rodado no mês, custo total e custo por km, manutenções abertas e preventivas vencidas, infrações pendentes com prazo, CNHs vencendo em 30 dias. Abaixo: custo mensal por secretaria, km/L por veículo contra a referência, ociosidade e a lista de alertas de qualidade. Clicar em um elemento filtra o painel inteiro, como no GFI.
 
-### Assinatura digital
+### Autenticação dos documentos
 
-- **Assinatura eletrônica avançada gov.br** (Lei 14.063/2020) para atos internos do dia a dia: diário de bordo, checklist, relatórios de controle.
-- **Assinatura qualificada ICP-Brasil (A1/A3)** para documentos que instruem processo de pagamento ou prestação de contas.
-- Formato PAdES, múltiplos signatários em ordem definida, hash SHA-256 do PDF guardado em `SignedDocument`.
-- Fluxo: gerar → enviar para assinatura → cada signatário assina → documento selado; recusa exige motivo.
-- No modo integrado, reutiliza o serviço de assinatura dos processos virtuais do SIMP pela `SignaturePort`.
+- Diário de bordo, checklist, relatórios de controle e documentos que instruem processo de pagamento ou prestação de contas: documento autenticado por PDF + sha256Hash + QR de validação (D9).
+- Relatórios e formulários: responsáveis impressos no documento (nome, cargo), sem assinatura eletrônica.
 
 ## Componentes de interface e API
 
@@ -513,9 +510,8 @@ Os componentes seguem o desenho de `CategoryCombobox`, `BankAccountCombobox` e `
 | `PlateInput`, `RenavamInput`, `ChassisInput`, `CpfInput`, `NfeKeyInput` | input com máscara | Máscara e dígito verificador no cliente, repetidos no servidor |
 | `OdometerInput` | input numérico | Mostra o último hodômetro e avisa salto acima de 2.000 km |
 | `FuelingFormDialog`, `TripStartDialog`, `TripEndDialog`, `ServiceOrderDialog` | SimpleFormDialog | Formulários com alertas de qualidade inline e campo de justificativa quando há bloqueio |
-| `QualityFlagBadge`, `DetranStatusBadge`, `SignatureStatusBadge` | badge shadcn | Estado visível em listas e fichas |
+| `QualityFlagBadge`, `DetranStatusBadge` | badge shadcn | Estado visível em listas e fichas |
 | `FleetFilterBar` | novo | Filtros comuns de relatório e dashboard, serializados na URL |
-| `SignDocumentDialog` | SimpleFormDialog | Escolhe signatários, ordem e tipo de assinatura |
 
 ### Endpoints principais
 
@@ -531,7 +527,6 @@ Os componentes seguem o desenho de `CategoryCombobox`, `BankAccountCombobox` e `
 | `GET /fleet/infractions`, `POST /fleet/infractions/:id/identify-driver` | Multas e identificação de condutor |
 | `GET /fleet/dashboard?from&to&departmentId` | Indicadores |
 | `POST /fleet/reports/:type` (assíncrono) → `GET /fleet/reports/jobs/:id` | Geração de PDF |
-| `POST /documents/:id/signatures` | Assinatura (serviço do SIMP) |
 
 ### Portas internas (o que muda entre modo integrado e autônomo)
 
@@ -540,7 +535,7 @@ Os componentes seguem o desenho de `CategoryCombobox`, `BankAccountCombobox` e `
 | `IdentityPort` | Autenticação e RBAC do SIMP | Mesmo serviço do SIMP, com tenant sem os módulos financeiros |
 | `OrgPort` | Departamentos, credores e servidores do SIMP | Cadastro simplificado próprio |
 | `FinancePort` | Reserva e liquidação no QDD | Registro de despesa sem contabilidade + exportação CSV/XLSX para o ERP da prefeitura |
-| `SignaturePort` | Assinatura dos processos virtuais | Mesmo serviço, cobrado à parte |
+| Autenticação de documentos | Documento autenticado por PDF + sha256Hash + QR de validação (D9) | Igual |
 | `AuditPort` | Trilha do SIMP | Mesma trilha |
 | `DetranPort` | Adaptador WSDenatran | Igual |
 
@@ -553,7 +548,7 @@ O isolamento entre prefeituras tem duas camadas independentes: o filtro por `org
 - **Concorrência:** campo `version` para impedir que dois usuários fechem a mesma OS ou viagem.
 - **LGPD:** a prefeitura é controladora e a CM Conecta operadora (cláusula no contrato SaaS). Base legal: execução de políticas públicas e cumprimento de obrigação legal. Dados de CNH e infrações visíveis só ao gestor de frota e ao próprio motorista; CPF mascarado em relatórios; retenção alinhada à tabela de temporalidade documental do município.
 - **Credenciais externas:** certificado do SERPRO em cofre com chave por organização; rotação e alerta de vencimento 30 dias antes.
-- **Evidência para auditoria:** trilha encadeada por hash, documentos assinados com hash guardado, snapshots DETRAN imutáveis.
+- **Evidência para auditoria:** trilha encadeada por hash, documento autenticado por PDF + sha256Hash + QR de validação (D9), snapshots DETRAN imutáveis.
 - **Conformidade administrativa:** finalidade obrigatória em toda viagem, vedação de uso fora do horário configurável com justificativa, e relatório de veículos usados sem viagem registrada (cruzamento com abastecimentos e multas).
 
 ## Análise arquitetural: Opções A, B e C
@@ -587,7 +582,7 @@ O caminho crítico não é código: é o contrato com o SERPRO e o termo da SENA
 ### Fases
 
 1. **Fase 0 — Fundações.** Pacote `fleet` no monorepo do SIMP, portas definidas, `OwnerEntity`, RLS, licenciamento de módulo por organização. Em paralelo: pedido de autorização à SENATRAN e proposta do SERPRO. *Gate:* teste de isolamento entre duas organizações passando.
-2. **Fase 1 — MVP operacional.** Veículos, motoristas, viagens, abastecimento e OS com as validações bloqueantes; relatórios unitário e consolidado com assinatura. *Gate:* uma prefeitura piloto registrando um mês inteiro.
+2. **Fase 1 — MVP operacional.** Veículos, motoristas, viagens, abastecimento e OS com as validações bloqueantes; relatórios unitário e consolidado, documento autenticado por PDF + sha256Hash + QR de validação (D9). *Gate:* uma prefeitura piloto registrando um mês inteiro.
 3. **Fase 2 — Financeiro e indicadores.** Reserva de empenho, conciliação de NF e liquidação no QDD; dashboard com os indicadores de fase 2. *Gate:* primeira competência liquidada pelo módulo.
 4. **Fase 3 — DETRAN e inteligência.** Adaptador WSDenatran, fluxo multa → condutor, preço ANP, plano preventivo, PWA do motorista. *Gate:* credencial SERPRO em produção.
 5. **Fase 4 — Venda autônoma.** Adaptador financeiro de exportação para outros ERPs e onboarding sem SIMP financeiro.
@@ -609,7 +604,7 @@ O caminho crítico não é código: é o contrato com o SERPRO e o termo da SENA
 ### Perguntas em aberto
 
 - [ ] Quem contrata o SERPRO: cada prefeitura ou a CM Conecta em nome delas?
-- [ ] O SIMP já tem serviço de assinatura ICP-Brasil nos processos virtuais, ou só gov.br?
+- [x] Autenticação de documentos: resolvida pela D9 — documento autenticado por PDF + sha256Hash + QR de validação (D9).
 - [ ] Qual o nível de subelemento exigido pelo TCE-TO para combustível, peças e serviços de veículos?
 - [ ] Existe integração disponível com o Detran-TO para licenciamento e IPVA?
 - [ ] Qual prefeitura será piloto e qual o tamanho da sua frota?

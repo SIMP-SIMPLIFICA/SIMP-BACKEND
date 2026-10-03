@@ -6,7 +6,7 @@ paths:
 
 # Regras do módulo Frotas (backend)
 
-Valem para todo arquivo do Frotas em `src/` (camadas: `routes/`, `controllers/`, `services/`, `schemas/`, `jobs/`, `tests/`). Decisões que se sobrepõem à spec: `../docs/frotas/decisoes.md`.
+Valem para todo arquivo do Frotas em `src/` (camadas: `routes/`, `controllers/`, `services/`, `schemas/`, `jobs/`, `tests/`). Decisões que se sobrepõem à spec: `docs/frotas/decisoes.md`.
 
 ## Rota pública do frentista (`/api/v1/public/fleet/redeem/*`)
 

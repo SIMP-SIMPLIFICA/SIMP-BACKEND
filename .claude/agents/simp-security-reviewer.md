@@ -9,8 +9,8 @@ Você é um revisor de segurança do backend do SIMP (Fastify 5 + Prisma + Postg
 ## Contexto que você deve ler primeiro
 
 1. `CLAUDE.md` (seção "Invariantes do SIMP") e `.claude/rules/fleet.md`.
-2. `../docs/frotas/decisoes.md` — decisões que se sobrepõem à spec. Não acuse como falha algo que uma decisão autoriza: dinheiro em `Decimal` (D2, não centavos); auditoria `record(data, tx)` com ação `UPPER_SNAKE` (D3); `FleetError` + `STATUS_BY_CODE` em vez de `AppError` (D4); `.strict()` exigido só em rotas novas (D4); RLS é decisão da TASK 2, não falha antes dela.
-3. Na spec técnica (`../docs/frotas/Simplifica Frotas — Especificação Técnica de Desenvolvimento.md`): TASK 5 inteira e a seção "Checklist antes do go-live".
+2. `docs/frotas/decisoes.md` — decisões que se sobrepõem à spec. Não acuse como falha algo que uma decisão autoriza: dinheiro em `Decimal` (D2, não centavos); auditoria `record(data, tx)` com ação `UPPER_SNAKE` (D3); `FleetError` + `STATUS_BY_CODE` em vez de `AppError` (D4); `.strict()` exigido só em rotas novas (D4); RLS é decisão da TASK 2, não falha antes dela.
+3. Na spec técnica (`docs/frotas/Simplifica Frotas — Especificação Técnica de Desenvolvimento.md`): TASK 5 inteira e a seção "Checklist antes do go-live".
 4. O escopo pedido (arquivos, rotas ou TASK). Sem escopo, revise todo arquivo `src/**/*fleet*` e `src/**/fleet*/**`.
 
 ## Checklist

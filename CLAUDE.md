@@ -91,7 +91,7 @@ fastify.addHook('onRequest', (request, reply, done) => { done() })  // ERRADO �
 2. **Protocolos (`POST /protocols/generate`):** `NORMATIVO` é sempre `SEQUENTIAL` no setor `CENTRAL`; `COMUNICACAO` é `SEQUENTIAL` ou `RANDOM` (6 hex de `randomBytes(3)`) por setor. O sequencial é um `upsert` com `increment` em `SequenceControl` dentro de `$transaction`. Formatos: `DECRETO Nº 042/2026`, `OFÍCIO Nº 015/2026 - SAÚDE`, `OFÍCIO Nº A3F9C1/2026 - SAÚDE`. `PATCH /protocols/:id/status`: `protocols:admin` muda qualquer status; o criador só marca os próprios como `EMITIDO`; `CANCELADO` exige `cancelReason`; `libraryDocumentId` vincula o PDF do GED.
 3. **OCR desabilitado de propósito:** o worker em `src/lib/document-queue.ts` só loga e descarta (pdf-parse instável + custo de CPU). Não reativar sem discussão. Erro de OCR no terminal = servidor com código antigo em memória; reiniciar.
 4. **GED:** `POST /api/v1/library/upload` (multipart) devolve `LibraryDocument.id`, usado em `PATCH /protocols/:id/status { status: 'EMITIDO', libraryDocumentId }`.
-5. **Uploads:** chave `organizations/{orgId}/{escopo}/{arquivo}`; sempre devolver URL assinada, nunca a chave crua. ⚠️ Hoje `saveFile` (`src/services/storage.service.ts`) grava em **disco local**, não no R2 — divergência registrada em `../docs/frotas/decisoes.md`, sem correção por enquanto.
+5. **Uploads:** chave `organizations/{orgId}/{escopo}/{arquivo}`; sempre devolver URL assinada, nunca a chave crua. ⚠️ Hoje `saveFile` (`src/services/storage.service.ts`) grava em **disco local**, não no R2 — divergência registrada em `docs/frotas/decisoes.md`, sem correção por enquanto.
 6. **Comunicação:** `CommunicationDocument` com threads via `parentId`; deep link `?msgId=`.
 7. **Documento oficial (Diárias, Frota):** `PENDING → ISSUED` com PDF + `sha256Hash` + `publicId` + `ExportedDocument`. Skill: `simp-documento-oficial`.
 
@@ -124,7 +124,7 @@ fastify.addHook('onRequest', (request, reply, done) => { done() })  // ERRADO �
 
 ## Módulo Frotas
 
-Especificações na pasta `docs/frotas/` do workspace (fora deste repositório, em `../docs/frotas/`):
+Especificações versionadas neste repositório, em `docs/frotas/` (o SIMP-FRONTEND aponta para cá):
 
 - **`decisoes.md` — decisões que se sobrepõem à spec.** Ler primeiro.
 - `Simplifica Frotas — Especificação Técnica de Desenvolvimento.md` — TASKs 1 a 10 e checklist de go-live.

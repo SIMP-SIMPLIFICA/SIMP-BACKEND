@@ -41,9 +41,14 @@ ESCOPO DO CARLOS (desenvolvedor colaborador):
 → Workspaces, Comunicação, Processos Virtuais, Biblioteca
 → Se ele tocar em auth, financeiro ou RBAC sem mencionar — confirme o escopo.'
 
-printf '%s' "$CONTEXT" | jq -Rs '{
-  hookSpecificOutput: {
-    hookEventName: "UserPromptSubmit",
-    additionalContext: .
-  }
-}'
+# Serializa com Node (e não jq) porque Node já é dependência do projeto em
+# qualquer máquina — macOS, Linux ou Windows/Git Bash. Saída idêntica à versão jq.
+printf '%s' "$CONTEXT" | node -e '
+let s = ""
+process.stdin.setEncoding("utf8")
+process.stdin.on("data", d => { s += d })
+process.stdin.on("end", () => {
+  process.stdout.write(JSON.stringify({
+    hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: s },
+  }))
+})'

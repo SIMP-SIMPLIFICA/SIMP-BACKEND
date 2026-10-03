@@ -1,6 +1,6 @@
 # CLAUDE.md — SIMP Backend
 
-Guia de contexto absoluto para o Claude Code trabalhar neste repositório. Leia integralmente antes de qualquer tarefa.
+Guia de contexto absoluto para o Claude Code trabalhar neste repositório. Leia integralmente antes de qualquer tarefa. O passo a passo detalhado de tarefas recorrentes está nas skills em `.claude/skills/`.
 
 ---
 
@@ -10,336 +10,140 @@ Backend do **SIMP — Sistema Integrado de Modernização e Processos**. SaaS B2
 
 **Colaboradores:**
 - **Marllon** — auth, financeiro, RBAC, organizações
-- **Carlos** — workspaces, comunicação, processos virtuais, convênios, protocolos, GED/biblioteca
+- **Carlos** — workspaces, comunicação, processos virtuais, convênios, protocolos, GED/biblioteca, Frotas
 
----
-
-## Tech Stack
-
-| Camada | Tecnologia |
-|--------|-----------|
-| Runtime | Node.js 22 (LTS) |
-| Linguagem | TypeScript (CommonJS) |
-| Framework HTTP | Fastify 5 |
-| ORM | Prisma + PostgreSQL |
-| Validação | Zod (via `fastify-type-provider-zod`) |
-| Filas | BullMQ + Redis |
-| Storage | Cloudflare R2 (via `@aws-sdk/client-s3`) |
-| Auth | JWT (`@fastify/jwt`) + Argon2 (`@node-rs/argon2`) |
-| Email | Nodemailer + templates Handlebars |
-| Logs | Pino + Logtail |
-| Monitoramento | Sentry |
-| Documentos | pdf-lib, docxtemplater, pizzip, node-signpdf |
+**Stack:** Node.js 22 · TypeScript (CommonJS) · Fastify 5 · Prisma + PostgreSQL · Zod (`fastify-type-provider-zod`) · BullMQ + Redis · JWT (`@fastify/jwt`) + Argon2 · Nodemailer + Handlebars · Pino + Logtail · Sentry · pdf-lib, docxtemplater, pizzip, node-signpdf.
 
 ---
 
 ## Comandos
 
 ```bash
-# Desenvolvimento
 npm run dev              # tsx watch (hot reload)
 
 # Banco de dados
 npm run db:generate      # prisma generate — OBRIGATÓRIO após mudar schema.prisma
-npm run db:push          # prisma db push — dev (sem migration)
-npm run db:migrate       # prisma migrate dev — criar migration nomeada
+npm run db:migrate       # prisma migrate dev — criar migration nomeada (ver TASK 0 abaixo)
 npm run db:studio        # Prisma Studio (GUI)
-npm run db:seed          # seed principal
+npm run db:seed          # seed principal (bootstrap mínimo: zera tudo, cria um Super Admin)
+# db:push e db:reset existem, mas são NEGADOS ao Claude (.claude/settings.json) — só humanos rodam
 
 # Build / Produção
 npm run build            # tsc + tsc-alias
 npm run start            # node dist/src/index.js
 
 # Qualidade
-npx tsc -b               # type check REAL (tsc --noEmit NÃO funciona aqui)
+npm run type-check       # tsc --noEmit — type check real deste repo
 npm run lint             # eslint src
-npm run test             # vitest
+npm test                 # vitest — unitários (src/**/*.spec.ts, exclui *.e2e.spec.ts)
+npm run test:e2e         # integração: Fastify real + Postgres real (banco <nome>_e2e)
+npx vitest run src/services/foo.spec.ts                                   # um arquivo
+npx vitest run -t "nome do teste"                                         # um teste pelo nome
+npx vitest run -c vitest.config.e2e.ts src/tests/daily-allowance.e2e.spec.ts  # um e2e
 ```
 
-> **ATENÇÃO — TypeScript:** `tsc --noEmit` não verifica nada neste projeto por causa da configuração do tsconfig. O check real é `npx tsc -b`.
+> **TypeScript:** aqui `tsc --noEmit` funciona (o tsconfig não usa project references), mas `strict: false` e o tsconfig **exclui `*.spec.ts`** — erro de tipo em teste não aparece no type-check. **Não use `npx tsc -b` para checar**: neste repo ele compila e escreve em `dist/`.
 >
-> **ATENÇÃO — CommonJS:** Este projeto usa CommonJS. Nunca mudar `"module"` para `ESM`. Nunca usar `import.meta.url`. Usar `__dirname` nativamente.
+> **CommonJS:** nunca mudar `"module"` para ESM. Nunca usar `import.meta.url`; usar `__dirname`.
+>
+> **E2E:** truncam tabelas. Rodam num banco separado derivado de `DATABASE_URL` com sufixo `_e2e` (ou `E2E_DATABASE_URL`), com trava em 3 camadas em `src/tests/e2e-database.ts` — nunca contornar. O schema do banco de teste é criado por `prisma db push` em `src/tests/global-setup-e2e.ts`. Skill: `simp-teste-e2e`.
 
 ---
 
 ## Arquitetura
 
-### Multi-Tenant — Isolamento por Organização
+Camadas, sem pasta por módulo: `src/routes/` (registro + guards) → `src/controllers/` (HTTP, Zod, mapa de erro) → `src/services/` (regra de negócio, Prisma). Também: `src/config/` (`config.ts` com env validada por Zod, `routes.ts`, `plugins.ts`), `src/middleware/` (`auth.middleware.ts`: `authenticate`, `requirePermission`, `requireModule`), `src/constants/` (`modules.ts`, `permissions.ts`), `src/lib/` (`prisma`, `email-queue`, `document-queue`), `src/jobs/` (node-cron), `src/utils/` (`error-handler`, `serializable-retry.util`…), `src/tests/` (e2e + helpers).
 
-**Toda** query no banco deve filtrar por `organizationId`. Nunca retornar dados de outra organização.
+### Multi-tenant — isolamento por organização
+
+**Toda** query filtra por `organizationId`, que vem do token. SuperAdmins (`isSuperAdmin: true`) não têm `organizationId` e veem tudo.
 
 ```typescript
-// Padrão obrigatório em TODOS os controllers
 const { organizationId, isSuperAdmin } = (request as unknown as RequestUser).user
 const orgFilter = isSuperAdmin ? {} : { organizationId }
-
-const items = await prisma.covenantType.findMany({ where: { ...orgFilter } })
 ```
 
-SuperAdmins (`isSuperAdmin: true`) não têm `organizationId` — podem ver todos os dados. Verificar sempre antes de aplicar o filtro.
+### RBAC
 
-### RBAC — Papéis e Permissões
+Permissões são strings `dominio:acao` em `Role.permissions: string[]`, catalogadas em `src/constants/permissions.ts` (`AVAILABLE_PERMISSIONS`). A role global `admin` se ressincroniza com o catálogo via `ensureAdminRole` (`src/services/rbac.service.ts`). `requirePermission([...])` (alias `requireAnyPermission`) reconsulta as roles no banco a cada requisição; `isSuperAdmin` e `system:admin` são bypass.
 
-Permissões são strings livres armazenadas em `Role.permissions: string[]`. Exemplos reais:
+### Módulos por organização
 
-```
-users:read, users:write, users:delete
-finance:read, finance:write
-covenants:read, covenants:write, covenants:delete
-protocols:admin
-virtual_processes:read, virtual_processes:write
-library:read, library:write
-```
+Definidos em `src/constants/modules.ts`: `tasks, finance, communication, virtual_processes, calendar, notes, departments, library, covenants, protocols, councils, support, dailyAllowances, fleetFuelings`.
 
-O middleware `auth.ts` hidrata `request.user.permissions[]` a partir das roles do usuário. Controllers verificam assim:
+- **Padrão** ao criar organização (`DEFAULT_MODULES`): `tasks, finance, communication, calendar, notes, departments, library, covenants, dailyAllowances, fleetFuelings`.
+- **Manuais** (super admin, por contrato): `virtual_processes, protocols, councils, support`.
 
-```typescript
-const hasAdmin = request.user.permissions?.includes('protocols:admin') || isSuperAdmin
-if (!hasAdmin) return reply.code(403).send({ error: 'Forbidden' })
-```
-
-### Sistema de Módulos
-
-Cada organização habilita/desabilita módulos. Definidos em `src/constants/modules.ts`:
-
-```typescript
-export const MODULES = {
-  TASKS, FINANCE, COMMUNICATION, VIRTUAL_PROCESSES,
-  CALENDAR, NOTES, DEPARTMENTS, LIBRARY, COVENANTS, PROTOCOLS
-}
-
-// Habilitados por padrão ao criar organização:
-export const DEFAULT_MODULES = [TASKS, FINANCE, COMMUNICATION, CALENDAR, NOTES, DEPARTMENTS, LIBRARY, COVENANTS]
-// VIRTUAL_PROCESSES e PROTOCOLS — habilitação MANUAL pelo super admin
-```
-
-O middleware verifica `OrganizationModule.isEnabled` antes de liberar rotas protegidas.
+`requireModule('chave')` confere `OrganizationModule.isEnabled` (cache 5 min) e responde `403 MODULE_DISABLED`. Skill: `simp-novo-modulo`.
 
 ### Fastify v5 — hooks SEMPRE async
 
 ```typescript
-// CORRETO
-fastify.addHook('onRequest', async (request) => { ... })
-
-// ERRADO — trava todas as requests silenciosamente
-fastify.addHook('onRequest', (request, reply, done) => { done() })
-```
-
-### Estrutura de Arquivos
-
-```
-src/
-├── controllers/     # Handlers HTTP (um por domínio)
-├── routes/          # Registro de rotas + middlewares por módulo
-├── middleware/       # auth, requirePermission, checkModule
-├── lib/             # prisma, r2, document-queue, email-queue
-├── constants/       # modules.ts
-├── schemas/         # Zod schemas compartilhados
-├── utils/           # logger, graceful-shutdown, database
-├── jobs/            # Jobs agendados (node-cron)
-├── services/        # Lógica de negócio reutilizável
-└── index.ts         # Bootstrap do servidor
+fastify.addHook('onRequest', async (request) => { ... })            // CORRETO
+fastify.addHook('onRequest', (request, reply, done) => { done() })  // ERRADO — trava requests
 ```
 
 ---
 
-## Regras de Negócio Críticas
+## Regras de negócio críticas
 
-### 1. Convênios e Processos Virtuais
-
-**Relacionamento N:M implícito** — um convênio pode estar vinculado a múltiplos processos e vice-versa. A tabela pivot `_CovenantToVirtualProcess` gerencia essa relação.
-
-**Link/Unlink via endpoints dedicados:**
-- `POST /covenants/:id/link-process { processId }`
-- `POST /covenants/:id/unlink-process { processId }`
-- O detalhe do processo virtual inclui convênios vinculados e vice-versa
-
-**One-Way Sync — Tipos de Convênio → Origens de Processo Virtual:**
-
-Ao criar um novo `CovenantType`, o sistema automaticamente cria uma `VirtualProcessSource` com o mesmo nome:
-
-```typescript
-// Em covenantTypeController.create():
-const type = await prisma.covenantType.create({ data: { organizationId, name } })
-
-// Sync unidirecional automático
-const existingSource = await prisma.virtualProcessSource.findFirst({ where: { organizationId, name } })
-if (!existingSource) {
-  await prisma.virtualProcessSource.create({ data: { organizationId, name } })
-}
-```
-
-**A sincronização é unidirecional.** Deletar um tipo de convênio **não** deleta a origem do processo virtual correspondente.
+1. **Convênios × Processos Virtuais:** N:M pela pivot `_CovenantToVirtualProcess`; vínculo por `POST /covenants/:id/link-process` e `/unlink-process`. Criar `CovenantType` cria a `VirtualProcessSource` de mesmo nome (sync **unidirecional**: apagar o tipo não apaga a origem).
+2. **Protocolos (`POST /protocols/generate`):** `NORMATIVO` é sempre `SEQUENTIAL` no setor `CENTRAL`; `COMUNICACAO` é `SEQUENTIAL` ou `RANDOM` (6 hex de `randomBytes(3)`) por setor. O sequencial é um `upsert` com `increment` em `SequenceControl` dentro de `$transaction`. Formatos: `DECRETO Nº 042/2026`, `OFÍCIO Nº 015/2026 - SAÚDE`, `OFÍCIO Nº A3F9C1/2026 - SAÚDE`. `PATCH /protocols/:id/status`: `protocols:admin` muda qualquer status; o criador só marca os próprios como `EMITIDO`; `CANCELADO` exige `cancelReason`; `libraryDocumentId` vincula o PDF do GED.
+3. **OCR desabilitado de propósito:** o worker em `src/lib/document-queue.ts` só loga e descarta (pdf-parse instável + custo de CPU). Não reativar sem discussão. Erro de OCR no terminal = servidor com código antigo em memória; reiniciar.
+4. **GED:** `POST /api/v1/library/upload` (multipart) devolve `LibraryDocument.id`, usado em `PATCH /protocols/:id/status { status: 'EMITIDO', libraryDocumentId }`.
+5. **Uploads:** chave `organizations/{orgId}/{escopo}/{arquivo}`; sempre devolver URL assinada, nunca a chave crua. ⚠️ Hoje `saveFile` (`src/services/storage.service.ts`) grava em **disco local**, não no R2 — divergência registrada em `../docs/frotas/decisoes.md`, sem correção por enquanto.
+6. **Comunicação:** `CommunicationDocument` com threads via `parentId`; deep link `?msgId=`.
+7. **Documento oficial (Diárias, Frota):** `PENDING → ISSUED` com PDF + `sha256Hash` + `publicId` + `ExportedDocument`. Skill: `simp-documento-oficial`.
 
 ---
 
-### 2. Protocolos — Numeração Oficial de Documentos
+## Padrões de código
 
-**Endpoint:** `POST /protocols/generate`
-
-**Categorias e regras de numeração:**
-
-| Categoria | Exemplos | Numeração | Sector |
-|-----------|----------|-----------|--------|
-| `NORMATIVO` | Lei, Decreto, Portaria, Edital | Sempre `SEQUENTIAL` centralizado | `CENTRAL` (forçado) |
-| `COMUNICACAO` | Ofício, Memorando, CI, Nota | `SEQUENTIAL` ou `RANDOM`, por setor | Livre |
-
-**Geração Sequencial — race condition protegida por transação Prisma:**
-
-```typescript
-const result = await prisma.$transaction(async (tx) => {
-  return tx.sequenceControl.upsert({
-    where: { organizationId_documentCategory_documentType_sector_year: { ... } },
-    create: { ..., currentNumber: 1 },
-    update: { currentNumber: { increment: 1 } },
-  })
-})
-sequenceNumber = result.currentNumber
-```
-
-**Geração Aleatória (RANDOM):**
-
-```typescript
-import { randomBytes } from 'node:crypto'
-const ref = randomBytes(3).toString('hex').toUpperCase()
-// 6 chars hex = 16M+ possibilidades
-```
-
-**Formato final dos números:**
-- Normativo: `DECRETO Nº 042/2026`
-- Comunicação sequencial por setor: `OFÍCIO Nº 015/2026 - SAÚDE`
-- Comunicação aleatória: `OFÍCIO Nº A3F9C1/2026 - SAÚDE`
-
-**Atualização de Status — `PATCH /protocols/:id/status`:**
-
-Aceita `{ status, cancelReason?, libraryDocumentId? }`.
-
-| Regra | Detalhe |
-|-------|---------|
-| Admin (`protocols:admin`) | Pode mudar qualquer status de qualquer documento |
-| Criador (sem permissão admin) | Pode marcar **apenas seus próprios** como `EMITIDO` |
-| `CANCELADO` | Exige `cancelReason` obrigatório |
-| `libraryDocumentId` | Se presente ao marcar EMITIDO, vincula o documento GED ao protocolo |
+- Controller: valida com Zod, chama o service com o escopo do token, traduz erros de domínio por um mapa `STATUS_BY_CODE` (ver `src/controllers/daily-allowance.controller.ts`). `ZodError` → 400 com `issues`; nunca usar `.message` do ZodError direto.
+- `authenticate` em toda rota com dado de usuário; `userId` sempre do JWT, nunca do body.
+- `select` explícito no Prisma — nunca retornar `password`, `refreshToken`, `resetToken`.
+- Sem `any` (`@typescript-eslint/no-explicit-any`): `unknown` + type guard.
+- Operações atômicas em `prisma.$transaction(async tx => ...)`; numeração concorrente em transação `Serializable` com `withSerializableRetry`.
+- Auditoria via `auditLedgerService.record` (`src/services/audit-ledger.service.ts`). Skill: `simp-auditoria`.
 
 ---
 
-### 3. OCR — DESABILITADO INTENCIONALMENTE
+## Invariantes do SIMP (nunca violar)
 
-O worker de OCR em `src/lib/document-queue.ts` está **deliberadamente desabilitado**.
-
-**Motivo:** `pdf-parse` tem problemas crônicos de importação CJS/ESM e o custo de CPU é alto para servidor único. OCR será reimplementado como microserviço separado no futuro.
-
-```typescript
-// Estado atual — NÃO reativar sem discussão
-export function createDocumentOcrWorker() {
-  const worker = new Worker<OcrJobData>('document-ocr', async (job) => {
-    logger.info({ jobId: job.id }, 'OCR disabled — job discarded')
-  }, { connection, concurrency: 1 })
-  return worker
-}
-```
-
-A fila BullMQ existe para manter compatibilidade com Redis — mas nenhum processamento real ocorre.
-
-> **Se o terminal mostrar erros de OCR:** o servidor ainda está rodando código antigo em memória. **Reiniciar o servidor** resolve.
+1. `organizationId` sempre vem de `request.user`, nunca do body, da query ou da URL. Em código novo, o service recebe `organizationId` como **primeiro parâmetro** e o aplica em toda query.
+2. `Department.id` é `nanoid`; o schema mistura `uuid`, `cuid` e `nanoid`. **Nunca** validar `departmentId` com `.uuid()` — usar `z.string().min(1)`.
+3. Documento `ISSUED` é imutável **no backend** (update/delete recusados, não só escondidos na UI); PDF e `sha256Hash` nunca são regenerados.
+4. Saldo QDD é calculado na leitura (`budgetService.getBalancesForItems`) e nunca persistido; estouro grava `budgetOverrun: true` e **não bloqueia**.
+5. Conferir o prefixo em `src/config/routes.ts` antes de assumir `/api/v1` — parte das rotas está na raiz (`/finance`, `/covenants`, `/protocols`, `/departments`…).
+6. Toda escrita do Frotas grava auditoria via `auditLedgerService.record(data, tx)` **na mesma transação**; se a auditoria falhar, a operação falha. Ações em `UPPER_SNAKE` (`FLEET_AUTHORIZATION_ISSUED`). Hoje `record` ainda não aceita `tx` — é pré-requisito da TASK 1.
+7. Dinheiro em `Decimal(15,2)`, litros em `Decimal(10,3)`, preço unitário em `Decimal(10,4)`. Nunca `Float`; nunca aritmética com `Number` — usar `Prisma.Decimal`. Centavos `Int` só onde já existem (`BankAccount`, `FinanceEntry`).
+8. Zod `.strict()` em toda rota **nova**. Erros de negócio por classe de domínio + `STATUS_BY_CODE` (no Frotas: `FleetError`), com mensagem que diz o que aconteceu, o dado concreto e o que fazer. Nunca expor nome de constraint, stack ou dado de outra organização.
+9. Tarefa só termina com `npm run lint`, `npm run type-check` e os testes (`npm test` e, se tocou rota, `npm run test:e2e`) passando.
 
 ---
 
-### 4. GED / Biblioteca
+## Módulo Frotas
 
-**Upload:** `POST /library/upload` (multipart)
-- Salva arquivo no Cloudflare R2
-- Retorna `LibraryDocument` com `.id` (UUID) — usado para vincular ao protocolo
-- OCR **não** é enfileirado
+Especificações na pasta `docs/frotas/` do workspace (fora deste repositório, em `../docs/frotas/`):
 
-**Fluxo de vinculação com Protocolo:**
-```
-Upload PDF → LibraryDocument.id → PATCH /protocols/:id/status
-  { status: 'EMITIDO', libraryDocumentId: <uuid> }
-```
+- **`decisoes.md` — decisões que se sobrepõem à spec.** Ler primeiro.
+- `Simplifica Frotas — Especificação Técnica de Desenvolvimento.md` — TASKs 1 a 10 e checklist de go-live.
+- `Simplifica Frotas — Especificação Funcional e Arquitetural.md` — domínio, regras GFI, fluxos.
+- `Documentação Técnica SIMP.md` — visão do SIMP como um todo.
 
----
-
-### 5. Uploads — Cloudflare R2
-
-**Nunca** salvar arquivos em disco local (Render usa filesystem efêmero).
-
-Padrão de chave R2:
-```
-organizations/{orgId}/tasks/{filename}
-organizations/{orgId}/library/{filename}
-organizations/{orgId}/logos/{filename}
-organizations/{orgId}/virtual-process/{filename}
-```
-
-Sempre retornar `signedUrl` gerada com `getSignedUrl`. Nunca retornar a chave R2 bruta como URL para o frontend.
-
----
-
-### 6. Comunicação
-
-- Documentos: `CommunicationDocument` com `type: OFICIO | MEMORANDO | CIRCULAR | ...`
-- Threads de resposta via `parentId` (referência ao documento pai)
-- Deep linking via `?msgId=` na URL para navegar direto a uma mensagem
-
----
-
-## Padrões de Código
-
-### Controller pattern padrão
-
-```typescript
-async myAction(request: FastifyRequest, reply: FastifyReply) {
-  try {
-    const { organizationId, isSuperAdmin } = (request as unknown as RequestUser).user
-    const body = createSchema.parse(request.body) // Zod valida
-
-    const result = await prisma.myModel.create({ data: { organizationId, ...body } })
-    return reply.code(201).send(result)
-  } catch (err: unknown) {
-    if (err instanceof z.ZodError)
-      return reply.code(400).send({ error: 'Validation Error', issues: err.issues })
-    return reply.code(500).send({ error: 'Failed', message: (err as Error).message })
-  }
-}
-```
-
-### Segurança obrigatória
-
-- `authenticate` middleware em **todas** as rotas que retornam dados de usuário
-- `userId` sempre do JWT — **nunca do body**
-- `select` explícito no Prisma — nunca retornar `password`, `refreshToken`, `resetToken`
-- Validação Zod em todos os endpoints antes de tocar no banco
-
-### Nunca usar `any` sem justificativa
-
-ESLint tem `@typescript-eslint/no-explicit-any`. Usar `unknown` + type guard, ou definir o tipo correto.
-
-### Prisma — transações para operações atômicas
-
-```typescript
-await prisma.$transaction(async (tx) => {
-  const a = await tx.modelA.create({ ... })
-  const b = await tx.modelB.update({ where: { id: a.relatedId }, data: { ... } })
-  return { a, b }
-})
-```
+Como trabalhamos:
+- **Uma TASK por sessão**, na ordem da spec técnica, precedida da **TASK 0** (migration de baseline, descrita em `decisoes.md`, D5).
+- O `FleetFueling` atual (model, service, controller, rotas, telas) **será apagado e recriado do zero** na TASK 1 como autorização de abastecimento; o nome do model e a chave de módulo `fleetFuelings` são mantidos.
+- Regras de código do Frotas: `.claude/rules/fleet.md` (carregadas ao tocar `src/**/*fleet*`).
+- Antes de concluir uma TASK, rodar o agente `simp-security-reviewer`.
 
 ---
 
 ## CI/CD e Deploy
 
-### Pipelines
-- `ci.yml` — lint + tsc + vitest + build
-- `security.yml` — npm audit + CodeQL + TruffleHog + Claude Security Review (PRs)
-- `failure-analyst.yml` — CI falha → Claude Haiku analisa → Issue + Discord
-
-### Deploy (Render — branch `develop`)
-- Build: `npm ci --include=dev && npx prisma generate && npm run build`
-- Start: `npx prisma migrate deploy && node dist/src/index.js`
-
-### Secrets GitHub
-`ANTHROPIC_API_KEY`, `RENDER_STAGING_DEPLOY_HOOK`, `RENDER_DEPLOY_HOOK`, `DISCORD_WEBHOOK_URL`
+- `ci.yml` — lint + tsc + vitest + build · `security.yml` — npm audit + CodeQL + TruffleHog + Claude Security Review (PRs) · `failure-analyst.yml` — CI falha → Claude Haiku → Issue + Discord.
+- Deploy no Render a partir de `develop`. Build: `npm ci --include=dev && npx prisma generate && npm run build`. Start: `npx prisma migrate deploy && node dist/src/index.js`.
+- Secrets GitHub: `ANTHROPIC_API_KEY`, `RENDER_STAGING_DEPLOY_HOOK`, `RENDER_DEPLOY_HOOK`, `DISCORD_WEBHOOK_URL`.
 
 ---
 
@@ -347,15 +151,10 @@ await prisma.$transaction(async (tx) => {
 
 | Módulo | Responsável | Status |
 |--------|-------------|--------|
-| Auth / JWT | Marllon | ✅ |
-| Users / Roles RBAC | Marllon | ✅ |
-| Financeiro | Marllon | ✅ |
-| Organizações / Admin | Marllon | ✅ |
-| Workspaces + Tasks | Carlos | ✅ |
-| Comunicação | Carlos | ✅ |
-| Processos Virtuais | Carlos | ✅ |
-| Convênios | Carlos | ✅ |
-| Protocolos (numeração oficial) | Carlos | ✅ |
+| Auth / JWT · Users / Roles RBAC · Financeiro · Organizações / Admin | Marllon | ✅ |
+| Workspaces + Tasks · Comunicação · Processos Virtuais · Convênios · Protocolos | Carlos | ✅ |
+| Notificações (SSE) · Calendar / Notes | Carlos | ✅ |
 | GED / Biblioteca | Carlos | 🔴 pendente refinamento |
-| Notificações (SSE) | Carlos | ✅ |
-| Calendar / Notes | Carlos | ✅ |
+| Frotas (substitui o `FleetFueling` atual) | Carlos | 🚧 em especificação |
+
+Também existem no código: Diárias, Conselhos, Suporte, Feriados, Leis Orçamentárias, QDD, Auditoria e o Portal Público de validação.

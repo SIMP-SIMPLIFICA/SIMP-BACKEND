@@ -71,10 +71,13 @@ export interface AuditQueryFilter {
  * Contrato do ledger. Note que existem apenas escrita e leitura:
  * a ausência de `update`/`delete` é intencional e é a primeira
  * camada da garantia de imutabilidade.
+ *
+ * `tx`, quando presente, é o cliente da transação Prisma do chamador: o
+ * registro passa a fazer parte da mesma unidade atômica da operação auditada.
  */
 interface LedgerAdapter {
   readonly name: 'local' | 'qldb'
-  record(data: AuditRecord): Promise<void>
+  record(data: AuditRecord, tx?: Prisma.TransactionClient): Promise<void>
   query(filter: AuditQueryFilter): Promise<{ records: unknown[]; total: number }>
 }
 
@@ -83,8 +86,8 @@ interface LedgerAdapter {
 const localAdapter: LedgerAdapter = {
   name: 'local',
 
-  async record(data) {
-    await prisma.auditLog.create({
+  async record(data, tx) {
+    await (tx ?? prisma).auditLog.create({
       data: {
         userId: data.userId ?? null,
         action: data.action,
@@ -150,7 +153,19 @@ const localAdapter: LedgerAdapter = {
 const qldbAdapter: LedgerAdapter = {
   name: 'qldb',
 
-  async record(data) {
+  async record(data, tx) {
+    // O QLDB é outro sistema: não participa de uma transação do PostgreSQL.
+    // Aceitar o `tx` daria uma atomicidade falsa — a operação no Postgres
+    // poderia ser desfeita depois de o QLDB já ter registrado a ação. Quando
+    // este adaptador for implementado, a auditoria transacional (Frotas)
+    // precisará de outra estratégia (ex.: outbox no Postgres).
+    if (tx) {
+      throw new Error(
+        `O adaptador QLDB não aceita registro dentro de uma transação do PostgreSQL. ` +
+        `Ação "${data.action}" NÃO foi registrada. Use LEDGER_DRIVER=local para auditoria transacional.`
+      )
+    }
+
     throw new Error(
       `Adaptador QLDB ainda não implementado (ledger "${config.audit.qldb.ledgerName}"). ` +
       `Ação "${data.action}" NÃO foi registrada. Use LEDGER_DRIVER=local até a migração para a AWS.`
@@ -182,18 +197,39 @@ export const auditLedgerService = {
   /**
    * Registra uma ação na trilha de auditoria.
    *
-   * Nunca lança para o chamador: auditoria é efeito colateral e uma falha ao
-   * registrar não pode derrubar a operação de negócio que o usuário pediu. A
-   * falha é logada em nível de erro para ser capturada pela observabilidade.
+   * SEM `tx` (módulos existentes): nunca lança para o chamador — auditoria é
+   * efeito colateral e uma falha ao registrar não pode derrubar a operação de
+   * negócio que o usuário pediu. A falha é logada em nível de erro para ser
+   * capturada pela observabilidade.
+   *
+   * COM `tx` (Frotas, decisão D3): o registro é gravado pelo cliente da
+   * transação do chamador e a falha É PROPAGADA, para que o `$transaction`
+   * desfaça a operação inteira. Ali a trilha é prova (o controle interno
+   * precisa provar quem fez o quê), então ação sem trilha não pode acontecer.
+   * Chame depois da escrita auditada, dentro do mesmo `$transaction`.
    *
    * `ENABLE_AUDIT_LOGS=false` desliga a trilha por inteiro — kill switch de
-   * operação, único e válido para QUALQUER chamador desta interface. Antes
-   * ele só valia para os escritores legados (`db.createAuditLog`); migrá-los
-   * para cá sem trazer o flag junto teria religado a trilha por engano em
-   * qualquer ambiente que a tivesse desativado de propósito.
+   * operação, único e válido para QUALQUER chamador desta interface, com ou
+   * sem `tx`. Antes ele só valia para os escritores legados
+   * (`db.createAuditLog`); migrá-los para cá sem trazer o flag junto teria
+   * religado a trilha por engano em qualquer ambiente que a tivesse
+   * desativado de propósito.
    */
-  async record(data: AuditRecord): Promise<void> {
+  async record(data: AuditRecord, tx?: Prisma.TransactionClient): Promise<void> {
     if (!config.features.auditLogs) return
+
+    if (tx) {
+      try {
+        await activeAdapter.record(data, tx)
+      } catch (error) {
+        logger.error(
+          { error, action: data.action, resource: data.resource, driver: activeAdapter.name },
+          'Falha ao registrar auditoria transacional — a operação será desfeita'
+        )
+        throw error
+      }
+      return
+    }
 
     try {
       await activeAdapter.record(data)

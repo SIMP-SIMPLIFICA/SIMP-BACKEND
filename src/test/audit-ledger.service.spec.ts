@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest'
+import type { Prisma } from '@prisma/client'
 
 /**
  * Serviço de Auditoria — Adapter de ledger (Épico 2, Task 2.1).
@@ -138,5 +139,126 @@ describe('Serviço de Auditoria — adapter de ledger', () => {
     await auditLedgerService.query({ page: 1, limit: 10, startDate, endDate })
 
     expect(findManyMock.mock.calls[0][0].where.createdAt).toEqual({ gte: startDate, lte: endDate })
+  })
+})
+
+/**
+ * `record(data, tx)` — auditoria DENTRO da transação do chamador (decisão D3
+ * do Frotas, pré-requisito da TASK 1).
+ *
+ * Com `tx`, a trilha é parte da operação: grava pelo cliente da transação e,
+ * se falhar, a falha sobe para o chamador e desfaz a operação inteira. Sem
+ * `tx`, nada muda — os testes do bloco acima continuam valendo como estão.
+ */
+describe('Serviço de Auditoria — record(data, tx) dentro da transação', () => {
+  const txCreateMock = vi.fn()
+  const tx = { auditLog: { create: (...a: unknown[]) => txCreateMock(...a) } } as unknown as Prisma.TransactionClient
+
+  beforeEach(() => {
+    createMock.mockReset().mockResolvedValue({})
+    txCreateMock.mockReset().mockResolvedValue({})
+  })
+
+  test('com tx, grava pelo cliente da transação e nunca pelo prisma global', async () => {
+    await auditLedgerService.record(
+      {
+        userId: 'u-1',
+        action: 'FLEET_AUTHORIZATION_ISSUED',
+        resource: 'FLEET_FUELING',
+        resourceId: 'ff-1',
+        ip: '203.0.113.10',
+        organizationId: 'org-1',
+        details: { number: '0001/2026' },
+      },
+      tx
+    )
+
+    expect(txCreateMock).toHaveBeenCalledTimes(1)
+    expect(createMock).not.toHaveBeenCalled()
+    // Mesmo mapeamento de campos do caminho sem transação.
+    expect(txCreateMock.mock.calls[0][0].data).toMatchObject({
+      userId: 'u-1',
+      action: 'FLEET_AUTHORIZATION_ISSUED',
+      resource: 'FLEET_FUELING',
+      resourceId: 'ff-1',
+      ipAddress: '203.0.113.10',
+      organizationId: 'org-1',
+      metadata: { number: '0001/2026' },
+      success: true,
+    })
+  })
+
+  test('com tx, a falha ao registrar PROPAGA para o chamador', async () => {
+    // Oposto deliberado do caminho sem tx: no Frotas, ação sem trilha não pode
+    // acontecer. A exceção precisa sair daqui para o $transaction desfazer tudo.
+    const failure = new Error('violação de chave estrangeira')
+    txCreateMock.mockRejectedValue(failure)
+
+    await expect(
+      auditLedgerService.record({ action: 'FLEET_PLATE_MISMATCH', resource: 'FLEET_FUELING' }, tx)
+    ).rejects.toBe(failure)
+  })
+
+  test('sem tx, a falha continua engolida — chamadas atuais não mudam', async () => {
+    createMock.mockRejectedValue(new Error('banco fora do ar'))
+
+    await expect(
+      auditLedgerService.record({ action: 'ANY', resource: 'TEST' }, undefined)
+    ).resolves.toBeUndefined()
+    expect(txCreateMock).not.toHaveBeenCalled()
+  })
+
+  test('o kill switch também vale com tx: nada é gravado', async () => {
+    vi.doMock('@/config/config.js', () => ({
+      config: {
+        features: { auditLogs: false },
+        audit: { driver: 'local', qldb: { ledgerName: 'test' } },
+      },
+    }))
+    vi.resetModules()
+
+    const { auditLedgerService: freshService } = await import('../services/audit-ledger.service.js')
+    await expect(freshService.record({ action: 'ANY', resource: 'TEST' }, tx)).resolves.toBeUndefined()
+
+    expect(txCreateMock).not.toHaveBeenCalled()
+    expect(createMock).not.toHaveBeenCalled()
+    vi.doUnmock('@/config/config.js')
+  })
+})
+
+describe('Serviço de Auditoria — adaptador QLDB', () => {
+  const tx = { auditLog: { create: vi.fn() } } as unknown as Prisma.TransactionClient
+
+  async function loadWithQldbDriver() {
+    vi.doMock('@/config/config.js', () => ({
+      config: {
+        features: { auditLogs: true },
+        audit: { driver: 'qldb', qldb: { ledgerName: 'ledger-teste' } },
+      },
+    }))
+    vi.resetModules()
+    const { auditLedgerService: qldbService } = await import('../services/audit-ledger.service.js')
+    vi.doUnmock('@/config/config.js')
+    return qldbService
+  }
+
+  test('recusa tx: o QLDB não participa de uma transação do PostgreSQL', async () => {
+    // Aceitar o tx em silêncio daria uma garantia falsa: a operação no Postgres
+    // poderia ser desfeita depois de o QLDB já ter registrado a ação (ou o
+    // contrário). Melhor uma recusa explícita do que um "atômico" que não é.
+    const qldbService = await loadWithQldbDriver()
+    expect(qldbService.driver).toBe('qldb')
+
+    await expect(
+      qldbService.record({ action: 'FLEET_AUTHORIZATION_ISSUED', resource: 'FLEET_FUELING' }, tx)
+    ).rejects.toThrow(/transação/)
+  })
+
+  test('sem tx, mantém o comportamento atual: falha logada, não propagada', async () => {
+    const qldbService = await loadWithQldbDriver()
+
+    await expect(
+      qldbService.record({ action: 'ORGANIZATION_SUSPENDED', resource: 'ORGANIZATION' })
+    ).resolves.toBeUndefined()
   })
 })

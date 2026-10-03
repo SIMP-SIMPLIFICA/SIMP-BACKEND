@@ -22,8 +22,15 @@ vi.mock('@/lib/prisma.js', () => ({
   },
 }))
 
+const loggerWarnMock = vi.fn()
+const captureMessageMock = vi.fn()
+
 vi.mock('@/utils/logger.js', () => ({
-  logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
+  logger: { error: vi.fn(), warn: (...a: unknown[]) => loggerWarnMock(...a), info: vi.fn() },
+}))
+
+vi.mock('@/config/sentry.js', () => ({
+  Sentry: { captureMessage: (...a: unknown[]) => captureMessageMock(...a) },
 }))
 
 const { auditLedgerService } = await import('../services/audit-ledger.service.js')
@@ -208,7 +215,8 @@ describe('Serviço de Auditoria — record(data, tx) dentro da transação', () 
     expect(txCreateMock).not.toHaveBeenCalled()
   })
 
-  test('o kill switch também vale com tx: nada é gravado', async () => {
+  /** Serviço recarregado com `ENABLE_AUDIT_LOGS` desligado. */
+  async function loadWithKillSwitchOff() {
     vi.doMock('@/config/config.js', () => ({
       config: {
         features: { auditLogs: false },
@@ -216,13 +224,69 @@ describe('Serviço de Auditoria — record(data, tx) dentro da transação', () 
       },
     }))
     vi.resetModules()
-
     const { auditLedgerService: freshService } = await import('../services/audit-ledger.service.js')
+    vi.doUnmock('@/config/config.js')
+    return freshService
+  }
+
+  test('o kill switch também vale com tx: nada é gravado (D8)', async () => {
+    const freshService = await loadWithKillSwitchOff()
     await expect(freshService.record({ action: 'ANY', resource: 'TEST' }, tx)).resolves.toBeUndefined()
 
     expect(txCreateMock).not.toHaveBeenCalled()
     expect(createMock).not.toHaveBeenCalled()
-    vi.doUnmock('@/config/config.js')
+  })
+
+  test('kill switch desligado + tx: avisa no log e no Sentry, só com ação e recurso (D8)', async () => {
+    // O kill switch prevalece, mas a operação do Frotas passaria SEM trilha —
+    // isso não pode acontecer em silêncio. Nenhum dado pessoal sai daqui:
+    // nem `details`, nem `userId`, nem `ip`, nem `organizationId`.
+    loggerWarnMock.mockReset()
+    captureMessageMock.mockReset()
+    const freshService = await loadWithKillSwitchOff()
+
+    await freshService.record(
+      {
+        userId: 'u-1',
+        action: 'FLEET_AUTHORIZATION_ISSUED',
+        resource: 'FLEET_FUELING',
+        resourceId: 'ff-1',
+        ip: '203.0.113.10',
+        organizationId: 'org-1',
+        details: { driverCpf: '***.456.789-**' },
+      },
+      tx
+    )
+
+    expect(loggerWarnMock).toHaveBeenCalledTimes(1)
+    const [logContext] = loggerWarnMock.mock.calls[0]
+    expect(logContext).toEqual({ action: 'FLEET_AUTHORIZATION_ISSUED', resource: 'FLEET_FUELING' })
+
+    expect(captureMessageMock).toHaveBeenCalledTimes(1)
+    const [message, context] = captureMessageMock.mock.calls[0]
+    expect(typeof message).toBe('string')
+    expect(context).toMatchObject({
+      level: 'warning',
+      tags: { action: 'FLEET_AUTHORIZATION_ISSUED', resource: 'FLEET_FUELING' },
+    })
+
+    const everythingSent = JSON.stringify(captureMessageMock.mock.calls) + JSON.stringify(loggerWarnMock.mock.calls)
+    for (const personal of ['u-1', 'ff-1', '203.0.113.10', 'org-1', 'driverCpf', '456.789']) {
+      expect(everythingSent).not.toContain(personal)
+    }
+  })
+
+  test('kill switch desligado SEM tx: continua silencioso, como hoje', async () => {
+    // Os módulos existentes desligam a trilha de propósito; avisar a cada
+    // chamada deles inundaria o log e o Sentry sem informação nova.
+    loggerWarnMock.mockReset()
+    captureMessageMock.mockReset()
+    const freshService = await loadWithKillSwitchOff()
+
+    await freshService.record({ action: 'users_listed', resource: 'USER' })
+
+    expect(loggerWarnMock).not.toHaveBeenCalled()
+    expect(captureMessageMock).not.toHaveBeenCalled()
   })
 })
 

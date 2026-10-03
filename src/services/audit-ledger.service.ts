@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma.js'
 import { config } from '@/config/config.js'
+import { Sentry } from '@/config/sentry.js'
 import { logger } from '@/utils/logger.js'
 import type { Prisma } from '@prisma/client'
 
@@ -188,6 +189,30 @@ const adapters: Record<'local' | 'qldb', LedgerAdapter> = {
 
 const activeAdapter = adapters[config.audit.driver]
 
+/**
+ * Decisão D8: com o kill switch desligado, uma operação que pediu auditoria
+ * transacional (Frotas) é confirmada SEM trilha. O kill switch prevalece, mas
+ * isso não pode passar despercebido — um operador que desligou a flag para
+ * outro fim estaria suspendendo a prova de auditoria do Frotas sem saber.
+ *
+ * Só ação e recurso saem daqui: nenhum `details`, `userId`, `ip`,
+ * `resourceId` ou `organizationId` vai para log ou Sentry (LGPD). O
+ * fingerprint agrupa os eventos por ação e recurso no Sentry, para que um
+ * ambiente com a flag desligada gere uma issue por tipo de ação, não uma
+ * por requisição.
+ */
+function warnTransactionalAuditSkipped(data: AuditRecord) {
+  const context = { action: data.action, resource: data.resource }
+
+  logger.warn(context, 'Auditoria transacional NÃO registrada: ENABLE_AUDIT_LOGS está desligado')
+
+  Sentry.captureMessage('Auditoria transacional não registrada: kill switch ENABLE_AUDIT_LOGS desligado', {
+    level: 'warning',
+    tags: context,
+    fingerprint: ['audit-kill-switch-transactional', data.action, data.resource],
+  })
+}
+
 export const auditLedgerService = {
   /** Driver em uso — exposto para diagnóstico e para os testes. */
   get driver() {
@@ -210,13 +235,18 @@ export const auditLedgerService = {
    *
    * `ENABLE_AUDIT_LOGS=false` desliga a trilha por inteiro — kill switch de
    * operação, único e válido para QUALQUER chamador desta interface, com ou
-   * sem `tx`. Antes ele só valia para os escritores legados
-   * (`db.createAuditLog`); migrá-los para cá sem trazer o flag junto teria
-   * religado a trilha por engano em qualquer ambiente que a tivesse
-   * desativado de propósito.
+   * sem `tx` (decisão D8: prevalece sobre a garantia transacional da D3).
+   * Antes ele só valia para os escritores legados (`db.createAuditLog`);
+   * migrá-los para cá sem trazer o flag junto teria religado a trilha por
+   * engano em qualquer ambiente que a tivesse desativado de propósito.
+   * Com `tx`, a operação segue sem trilha, mas nunca em silêncio: ver
+   * `warnTransactionalAuditSkipped`.
    */
   async record(data: AuditRecord, tx?: Prisma.TransactionClient): Promise<void> {
-    if (!config.features.auditLogs) return
+    if (!config.features.auditLogs) {
+      if (tx) warnTransactionalAuditSkipped(data)
+      return
+    }
 
     if (tx) {
       try {

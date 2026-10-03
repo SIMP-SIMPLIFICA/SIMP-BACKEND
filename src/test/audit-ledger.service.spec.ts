@@ -76,6 +76,30 @@ describe('Serviço de Auditoria — adapter de ledger', () => {
     expect(createMock.mock.calls[0][0].data.ipAddress).toBe('SYSTEM')
   })
 
+  test('o kill switch de auditoria desliga a escrita para QUALQUER chamador', async () => {
+    // Único e válido para todos: antes só valia para os escritores legados
+    // (db.createAuditLog). Migrá-los para este serviço sem trazer o flag
+    // junto teria religado a trilha por engano num ambiente que a desativou
+    // de propósito.
+    //
+    // Mockando `config` diretamente, não a env var: `ENABLE_AUDIT_LOGS=false`
+    // como STRING passa por `z.coerce.boolean()`, e `Boolean('false')` é
+    // `true` — um quirk conhecido do projeto, e testar via env cairia nele.
+    vi.doMock('@/config/config.js', () => ({
+      config: {
+        features: { auditLogs: false },
+        audit: { driver: 'local', qldb: { ledgerName: 'test' } },
+      },
+    }))
+    vi.resetModules()
+
+    const { auditLedgerService: freshService } = await import('../services/audit-ledger.service.js')
+    await freshService.record({ action: 'ANY', resource: 'TEST' })
+
+    expect(createMock).not.toHaveBeenCalled()
+    vi.doUnmock('@/config/config.js')
+  })
+
   test('falha ao registrar NÃO propaga para o chamador', async () => {
     // Auditoria é efeito colateral: se o registro falhar, a operação de negócio
     // que o usuário pediu não pode ser derrubada por causa disso.

@@ -19,6 +19,9 @@ import { getApp, prisma } from './setup-e2e.js'
 
 const VALIDATE_URL = '/api/v1/public/documents/validate'
 
+/** Nome de quem viajou. Dado pessoal — NÃO pode aparecer na resposta pública. */
+const BENEFICIARY_NAME = 'JOÃO DA SILVA'
+
 /** Cria organização, servidor e uma diária EMITIDA (com hash). */
 async function seedIssuedDailyAllowance() {
   const organization = await prisma.organization.create({
@@ -38,10 +41,16 @@ async function seedIssuedDailyAllowance() {
 
   const sha256Hash = 'a'.repeat(64)
 
+  // A diária exige setor desde o Épico 4.
+  const department = await prisma.department.create({
+    data: { organizationId: organization.id, name: 'Setor', code: `S${Date.now()}` },
+  })
+
   const allowance = await prisma.dailyAllowance.create({
     data: {
       organizationId: organization.id,
-      userId: user.id,
+      departmentId: department.id,
+      beneficiaryName: BENEFICIARY_NAME,
       createdById: user.id,
       destination: 'Brasília/DF',
       purpose: 'Reunião no ministério para tratar do convênio',
@@ -53,6 +62,11 @@ async function seedIssuedDailyAllowance() {
       sha256Hash,
       issuedAt: new Date('2026-09-09T13:00:00Z'),
       pdfFileKey: 'organizations/x/daily-allowances/teste.pdf',
+      // Épico 8 (FR-002): numeração passou a ser obrigatória mesmo criando o
+      // registro direto pelo Prisma, fora do serviço.
+      sequenceNumber: 1,
+      year: 2026,
+      formattedNumber: '0001/2026',
     },
   })
 
@@ -96,6 +110,8 @@ describe('GET /api/v1/public/documents/validate/:uuid (integração)', () => {
       const raw = response.body
 
       expect(raw).not.toContain(user.email)
+      // O nome de quem viajou é o dado pessoal central do documento.
+      expect(raw).not.toContain(BENEFICIARY_NAME)
       expect(raw).not.toContain('João')
       expect(raw).not.toContain('da Silva')
       expect(raw).not.toContain('Brasília/DF')

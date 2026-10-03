@@ -185,8 +185,16 @@ export const auditLedgerService = {
    * Nunca lança para o chamador: auditoria é efeito colateral e uma falha ao
    * registrar não pode derrubar a operação de negócio que o usuário pediu. A
    * falha é logada em nível de erro para ser capturada pela observabilidade.
+   *
+   * `ENABLE_AUDIT_LOGS=false` desliga a trilha por inteiro — kill switch de
+   * operação, único e válido para QUALQUER chamador desta interface. Antes
+   * ele só valia para os escritores legados (`db.createAuditLog`); migrá-los
+   * para cá sem trazer o flag junto teria religado a trilha por engano em
+   * qualquer ambiente que a tivesse desativado de propósito.
    */
   async record(data: AuditRecord): Promise<void> {
+    if (!config.features.auditLogs) return
+
     try {
       await activeAdapter.record(data)
     } catch (error) {

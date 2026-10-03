@@ -1,5 +1,4 @@
 import { Prisma, PrismaClient } from '@prisma/client'
-import { config } from '@/config/config.js'
 import { dbLogger, logger } from './logger.js'
 import { connectDatabase, disconnectDatabase, prisma } from '@/lib/prisma.js'
 
@@ -156,32 +155,10 @@ export const db = {
     })
   },
 
-  // Audit logging
-  createAuditLog: async (data: {
-    userId?: string
-    action: string
-    resource: string
-    resourceId?: string
-    method?: string
-    endpoint?: string
-    ipAddress: string
-    userAgent?: string
-    oldData?: any
-    newData?: any
-    success: boolean
-    errorMessage?: string
-    metadata?: Record<string, any>
-  }) => {
-    if (!config.features.auditLogs) return null
-
-    return prisma.auditLog.create({
-      data: {
-        ...data,
-        oldData: data.oldData ? JSON.stringify(data.oldData) : undefined,
-        newData: data.newData ? JSON.stringify(data.newData) : undefined
-      }
-    })
-  },
+  // Auditoria: REMOVIDO. Existiam dois escritores para a mesma tabela
+  // (`audit_logs`) — este e `auditLedgerService.record()` — e só o segundo
+  // gravava `organizationId`. Todo chamador migrou para lá; ver
+  // `services/audit-ledger.service.ts`.
 
   // Role and permission helpers
   getUserPermissions: async (userId: string): Promise<string[]> => {

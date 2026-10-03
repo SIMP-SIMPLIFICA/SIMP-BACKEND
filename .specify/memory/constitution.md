@@ -1,32 +1,31 @@
 <!--
 Sync Impact Report
 ===================
-Version change: [TEMPLATE] → 1.0.0 (initial ratification)
-Modified principles: N/A (first concrete version — all six principles are new)
+Version change: 1.0.0 → 1.1.0 (MINOR — two new principles, no redefinition)
+Modified principles: none redefined; I–VI unchanged in meaning and wording
 Added sections:
-  - Core Principles I–VI (Local-First & Zero Cloud Credentials; Supabase Prohibition;
-    Municipal Domain Integrity; Multi-Tenant & Module-Gated Architecture;
-    Spec-Driven Development; Environment & Security Baseline)
-  - Technology & Infrastructure Constraints (SECTION_2)
-  - Development Workflow & Quality Gates (SECTION_3)
-  - Governance (amendment procedure, versioning policy, compliance review)
-Removed sections: none (template placeholders only)
+  - Core Principle VII (Structured Observability & Layered Error Handling)
+  - Core Principle VIII (Domain Exceptions, File Safety & Transactional Integrity)
+Removed sections: none
 Templates requiring updates:
-  - .specify/templates/plan-template.md → ✅ compatible as-is; its "Constitution Check"
-    section is filled dynamically per-plan from this file, no structural edit needed.
-  - .specify/templates/spec-template.md → ✅ compatible as-is; no new mandatory spec
-    sections introduced by these principles beyond existing User Stories /
-    Functional Requirements / Success Criteria structure.
-  - .specify/templates/tasks-template.md → ✅ compatible as-is; "Foundational" phase
-    already accommodates Docker/Postgres/env-validation setup tasks.
-  - .github/agents/speckit.*.agent.md (10 files) → ✅ reviewed, no agent-specific
-    (CLAUDE-only, Copilot-only, etc.) references found that conflict with these
-    generic, project-level principles.
-  - SIMP-BACKEND/README.md → ⚠ PENDING (tracked as TechStack.md §11 P1 item;
-    README's quickstart and route table still describe the retired Supabase flow
-    and drifted route prefixes — must be corrected in a follow-up amendment/PR,
-    out of scope for this constitution update).
-Follow-up TODOs: none deferred within this file — all placeholders resolved.
+  - .specify/templates/plan-template.md → ✅ compatible as-is; the Constitution
+    Check section is filled per-plan from this file and needs no structural edit.
+  - .specify/templates/spec-template.md → ✅ compatible as-is; VII/VIII constrain
+    HOW code is written, not what a spec must declare.
+  - .specify/templates/tasks-template.md → ✅ compatible as-is.
+Known violations recorded at amendment time (tracked, not waived):
+  - Principle VIII (PDF single source of truth / LGPD): daily-allowance.service.ts
+    and fleet-fueling.service.ts still print the issuer's FULL name in the document
+    body ('Emitido por' / 'Registrado por') without passing it through
+    lgpd-anonymizer.util.ts, and neither passes exporterName to the universal
+    footer. SIMP-FRONTEND still generates the council calendar locally with jsPDF
+    (src/utils/councilCalendarPdf.ts), bypassing the engine and producing a PDF
+    with no QR Code and no ExportedDocument record.
+  - Principle IV (tenant scoping): Department.organizationId is OPTIONAL
+    (String?), unlike every other domain model. New relations pointing at
+    Department inherit that weaker isolation.
+Follow-up TODOs: the two violations above must be closed by the retrofit task
+that precedes Épico 4 implementation (see .specify/plans/epic4-budget-daily-allowances.md).
 -->
 
 # SIMP Simplifica Constitution
@@ -142,6 +141,92 @@ Local-First guarantee (Principle I) actually enforceable rather than aspirationa
 a config path that silently tolerates missing values can silently reintroduce
 a cloud dependency or a broken local environment.
 
+### VII. Structured Observability & Layered Error Handling
+**Logging.** Pino, via `src/utils/logger.ts`, is the only logging channel;
+`console.log`/`console.error` in application code is prohibited (scripts under
+`prisma/seeds/` and `scripts/` are exempt). Every entry MUST carry timestamp,
+level, message and a structured context object, and error entries MUST carry the
+stack. Levels are used with fixed meaning: **DEBUG** (local diagnosis, never
+enabled in production), **INFO** (business milestone worth auditing), **WARN**
+(degraded but recovered — the operation still succeeded), **ERROR** (the
+operation failed). Fastify's `requestId` MUST be present in request-scoped logs
+so a user-reported failure can be traced to a single request.
+**Secrets MUST NEVER be logged**: passwords and their hashes, JWTs, refresh
+tokens, seed credentials, Gov.br tokens, or a full CPF. Request bodies MUST be
+redacted field-by-field, never logged wholesale.
+
+**Layered handling.** Each layer has one job and MUST NOT do the next layer's:
+- the **data layer** converts technical exceptions into domain meaning (e.g.
+  Prisma `P2002` → "already registered"), never leaking Prisma error codes upward;
+- the **business layer** decides recovery — retry, documented fallback, or
+  propagate — and is the only layer allowed to make that call;
+- the **HTTP layer** maps a domain error to a status code plus a machine-readable
+  `error` code in English and a `message` in pt-BR;
+- the **UI** shows the pt-BR message and MUST offer to open a support ticket
+  (`SupportRequest`, `support` module) carrying the `requestId`, so a failure the
+  user cannot solve becomes a traceable request instead of an abandoned screen.
+  This is also the groundwork for the future public forum.
+
+**Empty catch is prohibited.** A `catch` MAY swallow an error only when it (a)
+logs it with context and (b) the swallowing is a documented resilience decision
+— the audit ledger, behavioral security alerts and tenant logo loading are the
+established cases, and they exist precisely so a side effect never breaks the
+business operation the user asked for. Swallowing silently, or swallowing a
+failure of the operation itself, is a violation.
+**Rationale**: in a system whose records carry legal weight, an error that
+vanishes is worse than an error that fails loudly — and a municipal servant with
+no path to report a failure is a servant who stops using the system.
+
+### VIII. Domain Exceptions, File Safety & Transactional Integrity
+**Domain exceptions.** Each domain declares its own error class extending the
+native `Error`, exposing a `code` union of meaningful names — the established
+pattern of `DailyAllowanceError`, `FleetFuelingError`, `BeneficiaryError`,
+`BrandingError` and `CouncilCalendarError`. The HTTP layer maps `code` → status.
+Exceptions MUST NOT be used for normal flow control (an empty result set is a
+value, not an exception).
+
+**File safety.** `src/services/storage.service.ts` is the only path to the
+filesystem: no module may call `fs` directly for stored content. Every resolved
+path MUST pass through `resolveSafePath` (path traversal), stored filenames MUST
+be system-generated (a client-supplied name never touches the filesystem), and
+uploads MUST be validated by real binary signature via `assertAllowedFile` —
+never by the declared MIME type, which the client controls.
+
+**Hash and signature integrity (NON-NEGOTIABLE).** A document already registered
+with a `sha256Hash` MUST NOT be re-generated, re-saved, recompressed or
+otherwise byte-altered. Any byte change invalidates the published hash and makes
+the Public Validation Portal accuse a legitimate document of tampering. When
+bundling such documents (ZIP, e-mail attachment, archive), the file MUST be
+stored verbatim; compression that rewrites the stream is prohibited for any
+document carrying a hash or a digital signature.
+
+**One PDF engine.** `src/services/document-pdf.service.ts` is the **single
+source of truth** for document generation. Creating an isolated PDF generator —
+in the backend or in the browser — is prohibited. Every exported document MUST
+pass through `applyUniversalValidationFooter` (discreet QR Code, `publicId`,
+issuer, date) and MUST be registered in `ExportedDocument` so it is verifiable in
+the Public Portal.
+
+**LGPD.** Any person's name that leaves the system inside an exported document or
+a public registry MUST pass through `src/utils/lgpd-anonymizer.util.ts` first,
+and the obfuscation MUST happen **before persistence**, never on read — a full
+name that never enters the database cannot leak from it. The single exception is
+the **signatory of an official act**, who signs publicly in the exercise of
+office and is therefore named in full.
+
+**Database and transactions.** Prisma manages connection pooling; no module may
+instantiate a second `PrismaClient` (`src/lib/prisma.ts` is the singleton). Every
+input MUST be validated with Zod before reaching a query, and queries MUST rely
+on Prisma's prepared statements — string-concatenated SQL is prohibited.
+`$executeRawUnsafe` is permitted only with values constructed in code (never from
+a request) and only where Prisma offers no typed alternative. Multiple dependent
+writes MUST run inside `$transaction` so the set is atomic; a partial write that
+leaves a document registered without its file, or a hash without its document, is
+the failure mode this rule exists to prevent.
+**Rationale**: these are the rules that keep the validation chain trustworthy.
+A hash that changed, a name that leaked, or a half-applied write each turn the
+Public Portal from a guarantee into a claim.
+
 ## Technology & Infrastructure Constraints
 
 **Local infrastructure (mandatory, via `SIMP-BACKEND/docker-compose.yml`)**:
@@ -234,4 +319,4 @@ Complexity Tracking table or the plan MUST be revised to comply. Reviewers on
 pull requests implementing a spec are expected to verify the delivered code
 matches what the plan's Constitution Check claimed, not just that tests pass.
 
-**Version**: 1.0.0 | **Ratified**: 2026-07-16 | **Last Amended**: 2026-07-16
+**Version**: 1.1.0 | **Ratified**: 2026-07-16 | **Last Amended**: 2026-09-13

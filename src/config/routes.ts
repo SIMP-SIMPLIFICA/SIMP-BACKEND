@@ -7,6 +7,7 @@ import { notificationRoutes } from '@/routes/notification.routes.js'
 import { communicationRoutes } from '@/routes/communication.routes.js'
 import { settingsRoutes } from '@/routes/settings.routes.js'
 import { dailyAllowanceRoutes } from '@/routes/daily-allowance.routes.js'
+import { beneficiaryRoutes } from '@/routes/beneficiary.routes.js'
 import { fleetFuelingRoutes } from '@/routes/fleet-fueling.routes.js'
 import { documentValidationRoutes } from '@/routes/document-validation.routes.js'
 import { auditRoutes } from '@/routes/audit.routes.js'
@@ -24,6 +25,9 @@ import { virtualProcessRoutes } from '@/routes/virtual-process.routes.js'
 import { covenantRoutes } from '@/routes/covenant.routes.js'
 import { protocolRoutes } from '@/routes/protocol.routes.js'
 import { departmentRoutes } from '@/routes/department.routes.js'
+import { qddItemRoutes } from '@/routes/qdd-item.routes.js'
+import { holidayRoutes } from '@/routes/holiday.routes.js'
+import { budgetLawRoutes } from '@/routes/budget-law.routes.js'
 import { councilPublicRoutes, councilRoutes } from '@/routes/council.routes.js'
 import { supportRoutes } from '@/routes/support.routes.js'
 import { errorHandler } from '@/utils/error-handler.js'
@@ -153,6 +157,8 @@ export async function registerRoutes(server: AppServer) {
       await server.register(auditRoutes, { prefix: '/audit', logLevel: 'info' })
       // Diárias de Servidor (Épico 3)
       await server.register(dailyAllowanceRoutes, { prefix: '/daily-allowances', logLevel: 'info' })
+      // Cadastro de beneficiários — alimenta o autocomplete das diárias.
+      await server.register(beneficiaryRoutes, { prefix: '/beneficiaries', logLevel: 'info' })
 
       // Abastecimento de Frota (Épico 3)
       await server.register(fleetFuelingRoutes, { prefix: '/fleet-fuelings', logLevel: 'info' })
@@ -182,6 +188,12 @@ export async function registerRoutes(server: AppServer) {
   await server.register(covenantRoutes, { prefix: '/covenants', logLevel: 'info' })
   await server.register(protocolRoutes, { prefix: '/protocols', logLevel: 'info' })
   await server.register(departmentRoutes, { prefix: '/departments', logLevel: 'info' })
+  // QDD — dotações orçamentárias do setor (Épico 4).
+  await server.register(qddItemRoutes, { prefix: '/qdd-items', logLevel: 'info' })
+  // Feriados — calendário para o alerta de fim de semana/feriado (Épico 8).
+  await server.register(holidayRoutes, { prefix: '/holidays', logLevel: 'info' })
+  // Leis Orçamentárias — LOA, PPA e LDO (Épico 4).
+  await server.register(budgetLawRoutes, { prefix: '/budget-laws', logLevel: 'info' })
   await server.register(councilRoutes, { prefix: '/councils', logLevel: 'info' })
   await server.register(councilPublicRoutes, { prefix: '/councils', logLevel: 'info' })
   await server.register(supportRoutes, { prefix: '/support', logLevel: 'info' })

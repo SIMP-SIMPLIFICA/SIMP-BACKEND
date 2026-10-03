@@ -17,6 +17,9 @@ import {
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
 const createSchema = z.object({
+  // Opcional: registros anteriores ao Épico 4 não têm setor, e exigi-lo aqui
+  // impediria de corrigir qualquer outro campo deles.
+  departmentId: z.string().min(1).nullable().optional(),
   // O formato é validado no serviço, junto da normalização, para que a regra
   // valha também para quem chamar o serviço sem passar por esta rota.
   licensePlate: z.string().min(7, 'Informe a placa do veículo.').max(10),
@@ -33,6 +36,7 @@ const updateSchema = createSchema.partial()
 const listSchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
+  departmentId: z.string().min(1).optional(),
   licensePlate: z.string().min(1).optional(),
   issued: z
     .enum(['true', 'false'])
@@ -109,6 +113,7 @@ export const fleetFuelingController = {
         {
           page: filter.page ?? 1,
           limit: filter.limit ?? 20,
+          departmentId: filter.departmentId,
           licensePlate: filter.licensePlate,
           issued: filter.issued,
           startDate: filter.startDate,

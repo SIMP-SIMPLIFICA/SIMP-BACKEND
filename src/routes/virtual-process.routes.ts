@@ -64,6 +64,12 @@ export async function virtualProcessRoutes(app: FastifyInstance) {
     virtualProcessController.updateValidity.bind(virtualProcessController)
   )
 
+  app.patch(
+    '/:id/budget',
+    { preHandler: [authMiddleware, requireAnyPermission(['processes:manage', 'processes:write'])] },
+    virtualProcessController.updateBudget.bind(virtualProcessController)
+  )
+
   app.delete(
     '/:id',
     { preHandler: [authMiddleware, requireAnyPermission(['processes:manage', 'processes:write'])] },

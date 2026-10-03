@@ -2,12 +2,17 @@ import { FastifyReply, FastifyRequest } from 'fastify'
 import { db } from '@/utils/database.js'
 import { prisma } from '@/lib/prisma.js'
 import { logger } from '@/utils/logger.js'
+import { departmentExistsInOrganization } from '@/utils/department-scope.util.js'
 import { z } from 'zod'
-import { CovenantStatus } from '@prisma/client'
+import { CovenantStatus, FinanceEntryType } from '@prisma/client'
+import { BudgetError, budgetService } from '@/services/budget.service.js'
 
 // ─── Zod schemas ──────────────────────────────────────────────────────────────
 
 const covenantCreateSchema = z.object({
+  // Setor responsável pelo convênio (Épico 4). Opcional para não invalidar os
+  // convênios já cadastrados sem setor; a tela é que exige na criação.
+  departmentId:    z.string().min(1).nullable().optional(),
   number:          z.string().min(1),
   typeId:          z.string().uuid().optional(),
   proponentId:     z.string().uuid().optional(),
@@ -16,6 +21,8 @@ const covenantCreateSchema = z.object({
   processObject:   z.string().min(1),
   status:          z.nativeEnum(CovenantStatus).default('EM_ANALISE'),
   budgetaryAction:    z.string().optional(),
+  /// Dotação orçamentária (Fase 3, 2026-09-24) — mesmo padrão de VirtualProcess.
+  qddItemId:          z.string().optional(),
   executionStartDate: z.coerce.date().optional(),
   validityStartDate:  z.coerce.date().optional(),
   validityEndDate:    z.coerce.date().optional(),
@@ -36,7 +43,7 @@ const entitySchema = z.object({
 
 const idParam = z.object({ id: z.string().uuid() })
 
-type RequestUser = { user: { organizationId: string; isSuperAdmin: boolean } }
+type RequestUser = { user: { id: string; organizationId: string; isSuperAdmin: boolean } }
 
 // ─── Covenant CRUD ────────────────────────────────────────────────────────────
 
@@ -101,6 +108,9 @@ export class CovenantController {
           proponent:    { select: { id: true, name: true, cnpj: true } },
           convenente:   { select: { id: true, name: true, cnpj: true } },
           concedente:   { select: { id: true, name: true, cnpj: true } },
+          qddItem: {
+            select: { id: true, ficha: true, fonte: true, naturezaDespesa: true, year: true, valorOrcado: true },
+          },
           virtualProcesses: {
             select: {
               // secretaria compõe o cabeçalho dos blocos da aba Documentos
@@ -137,36 +147,127 @@ export class CovenantController {
 
   async create(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { organizationId } = (request as unknown as RequestUser).user
+      const { organizationId, id: userId } = (request as unknown as RequestUser).user
       const data = covenantCreateSchema.parse(request.body)
 
-      const covenant = await prisma.covenant.create({
-        data: {
-          number:        data.number,
-          processObject: data.processObject,
-          status:        data.status,
-          organization:  { connect: { id: organizationId } },
-          ...(data.typeId       && { covenantType: { connect: { id: data.typeId } } }),
-          ...(data.proponentId  && { proponent:    { connect: { id: data.proponentId } } }),
-          ...(data.convenenteId && { convenente:   { connect: { id: data.convenenteId } } }),
-          ...(data.concedenteId && { concedente:   { connect: { id: data.concedenteId } } }),
-          budgetaryAction:    data.budgetaryAction,
-          executionStartDate: data.executionStartDate,
-          validityStartDate:  data.validityStartDate,
-          validityEndDate:    data.validityEndDate,
-          termDays:           data.termDays,
-          transferValue:      data.transferValue,
-          counterpartValue:   data.counterpartValue,
-          bankName:    data.bankName,
-          bankAgency:  data.bankAgency,
-          bankAccount: data.bankAccount,
-        },
+      if (data.departmentId && !(await departmentExistsInOrganization(data.departmentId, organizationId))) {
+        return reply.code(400).send({
+          error: 'Bad Request',
+          message: 'O departamento informado não existe nesta organização.',
+        })
+      }
+
+      // Dotação do QDD que lastreia o convênio (Fase 3, 2026-09-24) — mesmo
+      // padrão de VirtualProcess: valida o vínculo E tira uma cópia TEXTUAL da
+      // ficha, para o convênio não mudar de dotação retroativamente só porque
+      // o cadastro do QDD mudou depois.
+      let qddSnapshot: {
+        qddFichaSnapshot: string
+        qddFonteSnapshot: string
+        qddNaturezaSnapshot: string
+      } | null = null
+
+      if (data.qddItemId) {
+        await budgetService.assertQddItemBelongsToOrganization(data.qddItemId, organizationId)
+        const qddItem = await prisma.qddItem.findUniqueOrThrow({ where: { id: data.qddItemId } })
+        qddSnapshot = {
+          qddFichaSnapshot: qddItem.ficha,
+          qddFonteSnapshot: qddItem.fonte,
+          qddNaturezaSnapshot: qddItem.naturezaDespesa,
+        }
+      }
+
+      // Automação de Conta Bancária (Fase 3, CRÍTICO): "preencher a seção
+      // Dados Bancários" = informar QUALQUER um dos três campos. BankAccount
+      // exige departmentId (FR-015, não-nulo no schema) — sem setor, não há
+      // pra qual departamento criar a conta, então é erro de validação, não
+      // uma falha silenciosa que criasse o convênio sem a conta prometida.
+      const hasBankInfo = Boolean(data.bankName || data.bankAgency || data.bankAccount)
+      if (hasBankInfo && !data.departmentId) {
+        return reply.code(400).send({
+          error: 'Bad Request',
+          message: 'Informe a Secretaria/Departamento para gerar a conta bancária automaticamente com os Dados Bancários preenchidos.',
+        })
+      }
+
+      const covenant = await prisma.$transaction(async tx => {
+        const created = await tx.covenant.create({
+          data: {
+            // Forma de RELAÇÃO, não escalar: este `create` já usa `connect` para a
+            // organização, e o Prisma não aceita os dois estilos no mesmo objeto.
+            ...(data.departmentId && { department: { connect: { id: data.departmentId } } }),
+            number:        data.number,
+            processObject: data.processObject,
+            status:        data.status,
+            organization:  { connect: { id: organizationId } },
+            ...(data.typeId       && { covenantType: { connect: { id: data.typeId } } }),
+            ...(data.proponentId  && { proponent:    { connect: { id: data.proponentId } } }),
+            ...(data.convenenteId && { convenente:   { connect: { id: data.convenenteId } } }),
+            ...(data.concedenteId && { concedente:   { connect: { id: data.concedenteId } } }),
+            budgetaryAction:    data.budgetaryAction,
+            ...(data.qddItemId && { qddItem: { connect: { id: data.qddItemId } } }),
+            ...qddSnapshot,
+            executionStartDate: data.executionStartDate,
+            validityStartDate:  data.validityStartDate,
+            validityEndDate:    data.validityEndDate,
+            termDays:           data.termDays,
+            transferValue:      data.transferValue,
+            counterpartValue:   data.counterpartValue,
+            bankName:    data.bankName,
+            bankAgency:  data.bankAgency,
+            bankAccount: data.bankAccount,
+          },
+        })
+
+        // ── Automação de Conta Bancária + Lançamento inicial ──────────────────
+        //
+        // De/Para (Fase 3): departmentId do convênio → Conta; banco/agência/
+        // conta → campos respectivos; Número do Convênio → Nome da Conta.
+        //
+        // REGRA DO SALDO (FR-016, Épico 8): a conta SEMPRE nasce com saldo 0 —
+        // essa regra é travada no schema/no controller de contas e não é
+        // reaberta aqui. O "saldo inicial" pedido entra como um FinanceEntry
+        // de RECEITA, não como `initialBalanceCents` — mesmo extrato final,
+        // sem violar a garantia de que nenhum saldo inicial vem da API
+        // (reservado à futura integração bancária real).
+        if (hasBankInfo && data.departmentId) {
+          const bankAccount = await tx.bankAccount.create({
+            data: {
+              organizationId,
+              departmentId: data.departmentId,
+              name: data.number,
+              agency: data.bankAgency,
+              accountNumber: data.bankAccount,
+            },
+          })
+
+          if (data.transferValue && data.transferValue > 0) {
+            await tx.financeEntry.create({
+              data: {
+                organizationId,
+                accountId: bankAccount.id,
+                type: FinanceEntryType.INCOME,
+                amountCents: Math.round(data.transferValue * 100),
+                occurredAt: data.executionStartDate ?? new Date(),
+                description: `Recebimento inicial do Convênio nº ${data.number}`,
+                createdById: userId,
+              },
+            })
+          }
+        }
+
+        return created
       })
 
       return reply.code(201).send(covenant)
     } catch (error: unknown) {
       if (error instanceof z.ZodError) {
         return reply.code(400).send({ error: 'Validation Error', issues: error.issues })
+      }
+      // Dotação do QDD inexistente ou de outra organização (Épico 8) — erro de
+      // domínio, não falha interna.
+      if (error instanceof BudgetError) {
+        return reply.code(400).send({ error: error.code, message: error.message })
       }
       logger.error(error, 'Failed to create covenant')
       return reply.code(500).send({ error: 'Create Failed', message: (error as Error).message })
@@ -182,9 +283,44 @@ export class CovenantController {
       const existing = await prisma.covenant.findFirst({ where: { id, organizationId } })
       if (!existing) return reply.code(404).send({ error: 'Not Found', message: 'Convênio não encontrado' })
 
+      if (data.departmentId && !(await departmentExistsInOrganization(data.departmentId, organizationId))) {
+        return reply.code(400).send({
+          error: 'Bad Request',
+          message: 'O departamento informado não existe nesta organização.',
+        })
+      }
+
+      // Troca de dotação recalcula o snapshot; desvincular (`qddItemId: null`
+      // explícito) limpa o snapshot junto — mesmo padrão de
+      // VirtualProcess.updateBudget (Épico 8, FR-011).
+      const isChangingQddItem = data.qddItemId !== undefined
+      let qddSnapshot: {
+        qddFichaSnapshot: string | null
+        qddFonteSnapshot: string | null
+        qddNaturezaSnapshot: string | null
+      } | null = null
+
+      if (isChangingQddItem && data.qddItemId) {
+        await budgetService.assertQddItemBelongsToOrganization(data.qddItemId, organizationId)
+        const qddItem = await prisma.qddItem.findUniqueOrThrow({ where: { id: data.qddItemId } })
+        qddSnapshot = {
+          qddFichaSnapshot: qddItem.ficha,
+          qddFonteSnapshot: qddItem.fonte,
+          qddNaturezaSnapshot: qddItem.naturezaDespesa,
+        }
+      } else if (isChangingQddItem) {
+        qddSnapshot = { qddFichaSnapshot: null, qddFonteSnapshot: null, qddNaturezaSnapshot: null }
+      }
+
       const updated = await prisma.covenant.update({
         where: { id },
         data: {
+          // `null` explícito desvincula o setor; `undefined` não mexe no campo.
+          ...(data.departmentId !== undefined && {
+            department: data.departmentId
+              ? { connect: { id: data.departmentId } }
+              : { disconnect: true },
+          }),
           ...(data.number        !== undefined && { number: data.number }),
           ...(data.processObject !== undefined && { processObject: data.processObject }),
           ...(data.status        !== undefined && { status: data.status }),
@@ -201,6 +337,10 @@ export class CovenantController {
             concedente: data.concedenteId ? { connect: { id: data.concedenteId } } : { disconnect: true },
           }),
           budgetaryAction:    data.budgetaryAction,
+          ...(isChangingQddItem && {
+            qddItem: data.qddItemId ? { connect: { id: data.qddItemId } } : { disconnect: true },
+            ...qddSnapshot,
+          }),
           executionStartDate: data.executionStartDate,
           validityStartDate:  data.validityStartDate,
           validityEndDate:    data.validityEndDate,
@@ -217,6 +357,9 @@ export class CovenantController {
     } catch (error: unknown) {
       if (error instanceof z.ZodError) {
         return reply.code(400).send({ error: 'Validation Error', issues: error.issues })
+      }
+      if (error instanceof BudgetError) {
+        return reply.code(400).send({ error: error.code, message: error.message })
       }
       logger.error(error, 'Failed to update covenant')
       return reply.code(500).send({ error: 'Update Failed', message: (error as Error).message })

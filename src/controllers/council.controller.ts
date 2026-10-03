@@ -1,7 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { prisma } from '@/lib/prisma.js'
 import { z } from 'zod'
-import { CouncilMemberRole } from '@prisma/client'
+import { CouncilMemberRole, Prisma } from '@prisma/client'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -50,6 +50,8 @@ const updateMemberSchema = z.object({
 
 const idParamSchema         = z.object({ id: z.string().min(1) })
 const membershipParamSchema = z.object({ id: z.string().min(1), membershipId: z.string().min(1) })
+const departmentLinkParamSchema = z.object({ id: z.string().min(1), departmentId: z.string().min(1) })
+const linkDepartmentSchema = z.object({ departmentId: z.string().min(1, 'Selecione o departamento.') })
 
 // ─── Controller ───────────────────────────────────────────────────────────────
 
@@ -311,6 +313,97 @@ export const councilController = {
     } catch (err) {
       if (err instanceof z.ZodError) return reply.code(400).send({ error: 'Validation Error', issues: err.issues })
       return reply.code(500).send({ error: 'Remove Member Failed', message: (err as Error).message })
+    }
+  },
+
+  // ─── Departamentos vinculados ────────────────────────────────────────────────
+  //
+  // N:N livre (`CouncilDepartment`): um conselho pode representar vários
+  // setores, e um setor pode ter assento em vários conselhos. É o mesmo
+  // vínculo que `GET /departments/:id/councils` lê do outro lado.
+
+  /** GET /:id/departments — setores vinculados a este conselho. */
+  async listDepartments(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { organizationId, isSuperAdmin } = (request as unknown as RequestUser).user
+      const { id: councilId } = idParamSchema.parse(request.params)
+      const orgFilter = isSuperAdmin ? {} : { organizationId }
+
+      const council = await prisma.council.findFirst({ where: { id: councilId, ...orgFilter } })
+      if (!council) return reply.code(404).send({ error: 'Not Found', message: 'Conselho não encontrado.' })
+
+      const links = await prisma.councilDepartment.findMany({
+        where: { councilId },
+        select: { department: { select: { id: true, name: true, code: true, isActive: true } } },
+        orderBy: { department: { name: 'asc' } },
+      })
+
+      // Devolve o SETOR, não o registro de vínculo — o id da tabela de ligação
+      // não serve para navegar a lugar nenhum.
+      return reply.send(links.map(link => link.department))
+    } catch (err) {
+      if (err instanceof z.ZodError) return reply.code(400).send({ error: 'Validation Error', issues: err.issues })
+      return reply.code(500).send({ error: 'List Failed', message: (err as Error).message })
+    }
+  },
+
+  /** POST /:id/departments — vincula um setor existente a este conselho. */
+  async linkDepartment(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { organizationId, isSuperAdmin } = (request as unknown as RequestUser).user
+      const { id: councilId } = idParamSchema.parse(request.params)
+      const { departmentId } = linkDepartmentSchema.parse(request.body)
+      const orgFilter = isSuperAdmin ? {} : { organizationId }
+
+      const council = await prisma.council.findFirst({ where: { id: councilId, ...orgFilter } })
+      if (!council) return reply.code(404).send({ error: 'Not Found', message: 'Conselho não encontrado.' })
+
+      // O setor precisa ser da MESMA organização: a chave estrangeira aceitaria
+      // o id de outro tenant, porque ela não sabe nada sobre organizações.
+      const department = await prisma.department.findFirst({
+        where: { id: departmentId, organizationId: council.organizationId },
+      })
+      if (!department) {
+        return reply.code(400).send({ error: 'Bad Request', message: 'Departamento não encontrado nesta organização.' })
+      }
+
+      try {
+        await prisma.councilDepartment.create({
+          data: { organizationId: council.organizationId, councilId, departmentId },
+        })
+      } catch (err) {
+        // P2002: o vínculo já existe. Repetir o clique de "Vincular" não deve
+        // quebrar a tela — o resultado desejado (setor vinculado) já vale.
+        const isDuplicate =
+          err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002'
+        if (!isDuplicate) throw err
+      }
+
+      return reply.code(201).send(department)
+    } catch (err) {
+      if (err instanceof z.ZodError) return reply.code(400).send({ error: 'Validation Error', issues: err.issues })
+      return reply.code(500).send({ error: 'Link Failed', message: (err as Error).message })
+    }
+  },
+
+  /** DELETE /:id/departments/:departmentId — desfaz o vínculo. */
+  async unlinkDepartment(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { organizationId, isSuperAdmin } = (request as unknown as RequestUser).user
+      const { id: councilId, departmentId } = departmentLinkParamSchema.parse(request.params)
+      const orgFilter = isSuperAdmin ? {} : { organizationId }
+
+      const council = await prisma.council.findFirst({ where: { id: councilId, ...orgFilter } })
+      if (!council) return reply.code(404).send({ error: 'Not Found', message: 'Conselho não encontrado.' })
+
+      await prisma.councilDepartment.deleteMany({
+        where: { councilId, departmentId, organizationId: council.organizationId },
+      })
+
+      return reply.code(204).send()
+    } catch (err) {
+      if (err instanceof z.ZodError) return reply.code(400).send({ error: 'Validation Error', issues: err.issues })
+      return reply.code(500).send({ error: 'Unlink Failed', message: (err as Error).message })
     }
   },
 }

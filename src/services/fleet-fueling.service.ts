@@ -1,8 +1,11 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma.js'
 import { auditLedgerService } from '@/services/audit-ledger.service.js'
+import { exportedDocumentService } from '@/services/exported-document.service.js'
+import { EXPORTED_DOCUMENT_TYPES } from '@/constants/exported-document-types.js'
 import { createOfficialPdf } from '@/services/document-pdf.service.js'
 import { organizationBrandingService } from '@/services/organization-branding.service.js'
+import { anonymizeUserName } from '@/utils/lgpd-anonymizer.util.js'
 import { readFile, saveFile } from '@/services/storage.service.js'
 
 /**
@@ -40,6 +43,9 @@ export interface RequestScope {
 }
 
 export interface CreateFleetFuelingInput {
+  /** Setor ao qual a despesa é imputada. Opcional: registros anteriores ao
+   *  Épico 4 não têm setor, e exigi-lo invalidaria o histórico já prestado. */
+  departmentId?: string | null
   licensePlate: string
   odometer: number
   liters: number
@@ -52,6 +58,7 @@ export type UpdateFleetFuelingInput = Partial<CreateFleetFuelingInput>
 export interface ListFleetFuelingFilter {
   page: number
   limit: number
+  departmentId?: string
   licensePlate?: string
   issued?: boolean
   startDate?: Date
@@ -60,6 +67,7 @@ export interface ListFleetFuelingFilter {
 
 const LIST_INCLUDE = {
   createdBy: { select: { id: true, firstName: true, lastName: true } },
+  department: { select: { id: true, name: true, code: true } },
 } satisfies Prisma.FleetFuelingInclude
 
 // ─── Placa ────────────────────────────────────────────────────────────────────
@@ -118,6 +126,7 @@ export const fleetFuelingService = {
       data: {
         organizationId: scope.organizationId,
         createdById: scope.userId,
+        departmentId: input.departmentId ?? null,
         licensePlate: assertPlate(input.licensePlate),
         odometer: input.odometer,
         liters: new Prisma.Decimal(input.liters),
@@ -136,6 +145,7 @@ export const fleetFuelingService = {
     // A placa do filtro passa pela mesma normalização do registro; senão buscar
     // por "abc-1234" não encontraria nada.
     if (filter.licensePlate) where.licensePlate = normalizeLicensePlate(filter.licensePlate)
+    if (filter.departmentId) where.departmentId = filter.departmentId
     if (filter.issued === true) where.sha256Hash = { not: null }
     if (filter.issued === false) where.sha256Hash = null
 
@@ -236,9 +246,16 @@ export const fleetFuelingService = {
       select: { name: true },
     })
 
-    const registeredBy = [record.createdBy?.firstName, record.createdBy?.lastName]
+    // LGPD (Princípio VIII): nome ofuscado, no rodapé universal.
+    // O nome COMPLETO só existe em memória, para o registro ofuscá-lo na
+    // fronteira da persistência; o que entra no PDF é a forma já mascarada.
+    const registeredByFullName = [record.createdBy?.firstName, record.createdBy?.lastName]
       .filter(Boolean)
       .join(' ')
+    const exporterName = anonymizeUserName(
+      record.createdBy?.firstName,
+      record.createdBy?.lastName
+    )
 
     const liters = Number(record.liters)
     const totalValue = Number(record.totalValue)
@@ -253,6 +270,7 @@ export const fleetFuelingService = {
       logoPng,
       organizationName: organization?.name ?? 'Organização',
       publicId: record.publicId,
+      exporterName,
       sections: [
         {
           heading: 'Veículo',
@@ -273,11 +291,7 @@ export const fleetFuelingService = {
             { label: 'Valor total', value: formatCurrency(totalValue) },
           ],
         },
-        {
-          fields: [{ label: 'Registrado por', value: registeredBy || '-' }],
-        },
       ],
-      footNote: `Documento ${record.publicId}`,
     })
 
     const pdfFileKey = await saveFile(Buffer.from(bytes), {
@@ -290,6 +304,14 @@ export const fleetFuelingService = {
       where: { id },
       data: { sha256Hash, pdfFileKey, issuedAt: new Date() },
       include: LIST_INCLUDE,
+    })
+
+    await exportedDocumentService.register({
+      organizationId: scope.organizationId,
+      documentType: EXPORTED_DOCUMENT_TYPES.FLEET_FUELING,
+      publicId: record.publicId,
+      bytes,
+      exporterFullName: registeredByFullName || undefined,
     })
 
     await auditLedgerService.record({

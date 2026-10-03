@@ -25,8 +25,20 @@ export async function dailyAllowanceRoutes(app: FastifyInstance) {
     dailyAllowanceController.create
   )
 
-  // Sub-rotas antes de /:id genérico não é necessário aqui porque os caminhos
-  // são distintos, mas a ordem segue o padrão do projeto.
+  // Relatórios ANTES de `/:id`: registrada depois, `/report/pdf` seria capturada
+  // pela rota paramétrica e o `report` acabaria validado como UUID.
+  app.get(
+    '/report/pdf',
+    { preHandler: [requireAnyPermission(['dailyAllowances:read'])] },
+    dailyAllowanceController.reportPdf
+  )
+
+  app.get(
+    '/report/excel',
+    { preHandler: [requireAnyPermission(['dailyAllowances:read'])] },
+    dailyAllowanceController.reportExcel
+  )
+
   app.post(
     '/:id/issue',
     { preHandler: [requireAnyPermission(['dailyAllowances:issue'])] },
@@ -37,6 +49,20 @@ export async function dailyAllowanceRoutes(app: FastifyInstance) {
     '/:id/pdf',
     { preHandler: [requireAnyPermission(['dailyAllowances:read'])] },
     dailyAllowanceController.downloadPdf
+  )
+
+  // Prestar contas também emite documento oficial com hash público, então
+  // acompanha `issue` na permissão, não a de escrita de rascunho.
+  app.post(
+    '/:id/account-for',
+    { preHandler: [requireAnyPermission(['dailyAllowances:issue'])] },
+    dailyAllowanceController.accountFor
+  )
+
+  app.get(
+    '/:id/accountability/pdf',
+    { preHandler: [requireAnyPermission(['dailyAllowances:read'])] },
+    dailyAllowanceController.downloadAccountabilityPdf
   )
 
   app.get(

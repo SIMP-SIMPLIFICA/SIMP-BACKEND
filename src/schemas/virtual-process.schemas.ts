@@ -1,6 +1,11 @@
 import { z } from 'zod'
 
 export const createVirtualProcessSchema = z.object({
+  // Setor responsável (Épico 4). Opcional para não invalidar os processos já
+  // cadastrados sem setor; a tela é que exige na criação.
+  // Precisa estar declarado: o `.strip()` no fim descarta chave desconhecida em
+  // silêncio, e o campo chegaria sem erro nenhum e sem ser gravado.
+  departmentId: z.string().min(1).optional().nullable(),
   processNumber: z.string().regex(/^\d+\/\d{4}$/, 'O número deve estar no formato NUMERO/ANO (ex: 001/2026)'),
   secretaria: z.string().min(1),
   source: z.string().min(1),
@@ -17,7 +22,14 @@ export const createVirtualProcessSchema = z.object({
   totalValue: z.coerce.number().nonnegative().optional().nullable(),
   subject: z.string().min(1),
   category: z.string().min(1),
-  status: z.string().optional()
+  status: z.string().optional(),
+  // Dotação do QDD que lastreia o processo (Épico 8, FR-011) — mesmo papel do
+  // `qddItemId` de DailyAllowance. Opcional: nem todo processo vira despesa
+  // orçamentária identificada no momento da autuação.
+  qddItemId: z.string().uuid().optional().nullable(),
+  // Fase oficial da despesa pública (Épico 8, FR-019) — dimensão ADICIONAL ao
+  // `status` textual acima, nunca o substitui.
+  expensePhase: z.enum(['EMPENHO', 'LIQUIDACAO', 'PAGAMENTO']).optional().nullable(),
 }).strip().refine(
   (data) => !data.startDate || !data.endDate || data.startDate <= data.endDate,
   { message: 'A data de início não pode ser posterior à data de encerramento.', path: ['startDate'] }
@@ -40,6 +52,20 @@ export const updateValiditySchema = z.object({
 }).strip()
 
 export type UpdateValidityInput = z.infer<typeof updateValiditySchema>
+
+/**
+ * Vínculo com o QDD e fase da despesa de um processo já existente (Épico 8,
+ * FR-011/FR-019). Os dois campos são independentes e OPCIONAIS na entrada:
+ * `undefined` = não mexer, `null` = limpar (desvincular ficha / remover
+ * fase), um valor = definir. Um único endpoint estreito para as duas
+ * dimensões orçamentárias do processo, em vez de multiplicar rotas PATCH.
+ */
+export const updateBudgetSchema = z.object({
+  qddItemId: z.string().uuid().nullable().optional(),
+  expensePhase: z.enum(['EMPENHO', 'LIQUIDACAO', 'PAGAMENTO']).nullable().optional(),
+}).strip()
+
+export type UpdateBudgetInput = z.infer<typeof updateBudgetSchema>
 
 export const updateCompanyInfoSchema = z.object({
   companyName: z.string().optional().nullable(),

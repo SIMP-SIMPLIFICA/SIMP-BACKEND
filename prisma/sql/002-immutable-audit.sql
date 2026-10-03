@@ -14,7 +14,12 @@
 -- COMO REVERTER (exige acesso administrativo deliberado ao banco, que é o ponto):
 --   DROP TRIGGER trg_audit_immutable ON audit_logs;
 --
--- Aplicação:
+-- JÁ INCLUÍDO em prisma/migrations/0_baseline (TASK 0, decisão D10): todo banco
+-- criado por `prisma migrate deploy` recebe este trigger. Antes de aplicar à mão
+-- num banco marcado com `migrate resolve`, ler
+-- docs/issues/audit-trigger-bloqueia-exclusoes.md.
+--
+-- Aplicação manual (só nesses bancos):
 --   docker exec -i fastify-postgres psql -U postgres -d fastify_auth < prisma/sql/002-immutable-audit.sql
 
 -- Limpeza da nomenclatura anterior (pt-BR). Roda ANTES de criar a nova: sem

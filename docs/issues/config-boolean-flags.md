@@ -50,6 +50,6 @@ Além de corrigir `"false"`, isso **recusa o boot** com valores como `1`, `0`, `
 - [ ] Ler no painel do Render (staging e produção) o valor **exato** de cada uma das 7 variáveis, inclusive se está ausente ou vazio.
 - [ ] Qualquer valor diferente de `true`/`false` exatos (`1`, `True`, vazio…) vai derrubar o boot com o parser novo: normalizar no Render **antes** do deploy.
 - [ ] `USE_MOCK_GOVBR`: decidir com o Marllon o valor de produção. Antes, contar em produção os `SignatureRequest` com `pkcs7Data = 'MOCK_PKCS7_SIGNATURE_DATA'` e decidir o que fazer com eles. Se o destino é o gov.br real, validar as credenciais em homologação.
-- [ ] `ENABLE_AUDIT_LOGS`: se produção tem `false`, decidir se é intencional antes que a correção desligue a trilha (ver D8 em `docs/frotas/decisoes.md` do workspace).
+- [ ] `ENABLE_AUDIT_LOGS`: se produção tem `false`, decidir se é intencional antes que a correção desligue a trilha (ver D8 em `docs/frotas/decisoes.md`).
 - [ ] Remover ou implementar `ENABLE_2FA`, `ENABLE_EMAIL_VERIFICATION` e `ENABLE_PASSWORD_RESET` (flags sem leitor); limpar `render.yaml`, `ci.yml` e `.env.example` de acordo.
 - [ ] Teste unitário do helper: `"true"` → `true`, `"false"` → `false`, ausente → default, `"1"` → erro.

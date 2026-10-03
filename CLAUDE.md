@@ -139,6 +139,24 @@ Como trabalhamos:
 
 ---
 
+## Fluxo de Git
+
+- **Claude** cria a branch a partir do `develop` atualizado, faz os commits (mensagens no padrão do repo: `tipo(escopo): descrição` em português), faz o push e abre o PR com `gh`, sempre com **base `develop`**. O PR tem título claro e uma descrição com: o que mudou, por quê, como foi testado e o que o revisor deve olhar.
+- **O humano** faz o merge pelo GitHub. O Claude **nunca** faz merge, **nunca** faz push direto em `develop` ou `main` e **nunca** usa force push.
+- Uma branch e um PR por assunto. Se um PR depende de outro, a descrição diz qual.
+- Antes do push: `npm run lint`, `npm run type-check` e `npm test` passando.
+- **Push:** o `origin` é SSH e a chave pode não estar carregada. Não alterar o `origin`. Rodar `gh auth setup-git` e:
+  ```bash
+  REPO=https://github.com/SIMP-SIMPLIFICA/SIMP-BACKEND.git
+  git fetch $REPO '+refs/heads/*:refs/remotes/origin/*'   # antes de criar a branch: develop atualizado
+  git push $REPO <branch>
+  git fetch $REPO '+refs/heads/<branch>:refs/remotes/origin/<branch>'   # push pela URL não atualiza origin/<branch>
+  git branch --set-upstream-to=origin/<branch> <branch>
+  gh pr create --base develop --head <branch> --title "..." --body "..."
+  ```
+
+---
+
 ## CI/CD e Deploy
 
 - `ci.yml` — lint + tsc + vitest + build · `security.yml` — npm audit + CodeQL + TruffleHog + Claude Security Review (PRs) · `failure-analyst.yml` — CI falha → Claude Haiku → Issue + Discord.

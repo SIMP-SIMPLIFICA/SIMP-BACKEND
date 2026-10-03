@@ -16,11 +16,12 @@
 -- Por que SQL bruto e não @@unique no schema.prisma:
 --   O Prisma não expressa índices únicos parciais de forma declarativa.
 --
--- Este arquivo existe porque a migration history do projeto está com drift
--- (a migration 20260408032158 falha no shadow database), então o fluxo em uso é
--- `prisma db push` + SQL aplicado manualmente. Ver docs/TechStack.md §11.
+-- JÁ INCLUÍDO em prisma/migrations/0_baseline (TASK 0, decisão D10): todo banco
+-- criado por `prisma migrate deploy` recebe este índice. Este arquivo fica como
+-- referência e para bancos marcados com `migrate resolve` (ver
+-- docs/frotas/task0-baseline.md).
 --
--- Aplicação:
+-- Aplicação manual (só nesses bancos):
 --   docker exec -i fastify-postgres psql -U postgres -d fastify_auth < prisma/sql/001-unique-normativo-number.sql
 
 CREATE UNIQUE INDEX IF NOT EXISTS official_documents_normativo_number_unique

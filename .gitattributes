@@ -1,3 +1,7 @@
 *.sh text eol=lf
 *.mjs text eol=lf
 *.json text eol=lf
+# Migrations do Prisma: o checksum gravado em _prisma_migrations é calculado
+# sobre os bytes do arquivo. CRLF num checkout Windows mudaria o checksum e o
+# migrate dev acusaria "migration modificada" (TASK 0, D10).
+*.sql text eol=lf

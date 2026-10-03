@@ -23,7 +23,7 @@ npm run dev              # tsx watch (hot reload)
 
 # Banco de dados
 npm run db:generate      # prisma generate — OBRIGATÓRIO após mudar schema.prisma
-npm run db:migrate       # prisma migrate dev — criar migration nomeada (ver TASK 0 abaixo)
+npm run db:migrate       # prisma migrate dev — use `npx prisma migrate dev --create-only --name x` e revise o SQL antes de aplicar
 npm run db:studio        # Prisma Studio (GUI)
 npm run db:seed          # seed principal (bootstrap mínimo: zera tudo, cria um Super Admin)
 # db:push e db:reset existem, mas são NEGADOS ao Claude (.claude/settings.json) — só humanos rodam
@@ -46,7 +46,7 @@ npx vitest run -c vitest.config.e2e.ts src/tests/daily-allowance.e2e.spec.ts  # 
 >
 > **CommonJS:** nunca mudar `"module"` para ESM. Nunca usar `import.meta.url`; usar `__dirname`.
 >
-> **E2E:** truncam tabelas. Rodam num banco separado derivado de `DATABASE_URL` com sufixo `_e2e` (ou `E2E_DATABASE_URL`), com trava em 3 camadas em `src/tests/e2e-database.ts` — nunca contornar. O schema do banco de teste é criado por `prisma db push` em `src/tests/global-setup-e2e.ts`. Skill: `simp-teste-e2e`.
+> **E2E:** truncam tabelas. Rodam num banco separado derivado de `DATABASE_URL` com sufixo `_e2e` (ou `E2E_DATABASE_URL`), com trava em 3 camadas em `src/tests/e2e-database.ts` — nunca contornar. O schema do banco de teste é criado por `prisma migrate deploy` em `src/tests/global-setup-e2e.ts` (as migrations reais, desde a TASK 0 / D10). Skill: `simp-teste-e2e`.
 
 ---
 
@@ -132,7 +132,7 @@ Especificações versionadas neste repositório, em `docs/frotas/` (o SIMP-FRONT
 - `Documentação Técnica SIMP.md` — visão do SIMP como um todo.
 
 Como trabalhamos:
-- **Uma TASK por sessão**, na ordem da spec técnica, precedida da **TASK 0** (migration de baseline, descrita em `decisoes.md`, D5).
+- **Uma TASK por sessão**, na ordem da spec técnica. A TASK 0 (baseline de migrations, D10) está em `docs/frotas/task0-baseline.md`: o histórico é a `prisma/migrations/0_baseline` + migrations novas; nunca `db push`.
 - O `FleetFueling` atual (model, service, controller, rotas, telas) **será apagado e recriado do zero** na TASK 1 como autorização de abastecimento; o nome do model e a chave de módulo `fleetFuelings` são mantidos.
 - Regras de código do Frotas: `.claude/rules/fleet.md` (carregadas ao tocar `src/**/*fleet*`).
 - Antes de concluir uma TASK, rodar o agente `simp-security-reviewer`.

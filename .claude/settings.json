@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash /Users/marllonrodrigues/Code/Personal/SIMP-BACKEND/.claude/hooks/prompt-enhancer.sh",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/prompt-enhancer.sh\"",
             "timeout": 10
           }
         ]
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd /Users/marllonrodrigues/Code/Personal/simp-backend && /Users/marllonrodrigues/.nvm/versions/node/v22.21.0/bin/node node_modules/.bin/tsc --noEmit 2>&1 | head -20",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && node node_modules/typescript/bin/tsc --noEmit 2>&1 | head -20",
             "timeout": 30
           }
         ]

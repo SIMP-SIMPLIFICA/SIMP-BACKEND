@@ -16,7 +16,7 @@ O CLAUDE.md do repo tem as regras completas — leia-o se ainda não leu.
 
 REGRAS QUE NUNCA PODEM SER IGNORADAS:
 • Node: `nvm use 22` antes de qualquer comando. O projeto usa Node 22.
-• Branch: sempre `develop` — NUNCA commitar na `main`. Verifique com `git branch` antes de qualquer commit.
+• Branch: trabalhe em branch própria a partir do `develop` e entregue por PR com base `develop` (seção "Fluxo de Git" do CLAUDE.md). NUNCA commitar ou dar push direto em `develop`/`main`, nunca merge, nunca force push.
 • TypeScript: CommonJS obrigatório (module: commonjs, moduleResolution: node). Nunca ESM (import.meta, top-level await).
 • Fastify v5: hooks DEVEM ser async. Hook sem async e sem done() trava todos os requests silenciosamente.
 • Prisma: migrations via `prisma migrate dev` (nunca `db push` em produção). Gere migration antes de mudar schema.

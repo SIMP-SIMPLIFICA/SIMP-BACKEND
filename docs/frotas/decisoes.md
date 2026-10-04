@@ -160,6 +160,18 @@ O destino do código de assinatura existente nos Conselhos (remover ou corrigir)
 
 **Atenção:** perder ou trocar `FLEET_PII_MASTER_KEY` torna ilegíveis os CPFs/CNHs já gravados (o formato tem prefixo de versão `v1.` para permitir rotação no futuro). O e2e gera chaves aleatórias a cada execução.
 
+## D13 — "Frota geral" e proteção do CPF contra força bruta
+
+2026-10-04 · saiu da revisão de segurança da TASK 1 + 2
+
+**Decisão.**
+- **Frota geral.** Veículo ou motorista sem departamento é visível a todos com `fleet:read`, mas só quem tem `fleet:all_departments` cria, altera, exclui ou move registros de/para a frota geral. Usuário restrito cadastra sempre num departamento seu.
+- **CPF fora da URL.** Busca por CPF é `POST /api/v1/fleet/drivers/lookup` (CPF no corpo). A busca da listagem é só por nome e recusa dígitos (400); o frontend nunca envia texto com dígito para ela.
+- **Máscara curta.** `cpfMasked` mostra só os dígitos 4 a 6 (`***.982.***-**`).
+- **Lookup limitado e auditado.** 10 requisições por minuto por IP e um `FLEET_DRIVER_LOOKUP` na trilha a cada chamada (sem o CPF).
+
+**Motivo.** Sem isso: um usuário restrito publicaria para a organização inteira um motorista do seu setor (ou esconderia um da frota geral); um CPF digitado na busca, inteiro ou só o prefixo de 9 dígitos que já o determina, iria para o log de requisição; e a máscara antiga (dígitos 4 a 9) deixava só 1.000 candidatos, recuperáveis pelo lookup em minutos.
+
 ## Também decidido
 
 - **RLS:** ver D11.

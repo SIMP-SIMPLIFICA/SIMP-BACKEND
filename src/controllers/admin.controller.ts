@@ -140,6 +140,14 @@ export class AdminController {
       (ALL_MODULES as readonly string[]).includes(m)
     ) as ModuleKey[]
 
+    // Mesma dependência do toggleModule (Simplifica Frotas): `fleet` exige `fleetFuelings`.
+    if (validModules.includes(MODULES.FLEET) && !validModules.includes(MODULES.FLEET_FUELINGS)) {
+      return reply.code(400).send({
+        error: 'MODULE_DEPENDENCY',
+        message: 'O módulo "Frota" (fleet) exige "Frota — abastecimento" (fleetFuelings). Marque os dois ou nenhum.',
+      })
+    }
+
     const { org, adminUser } = await prisma.$transaction(async tx => {
       const org = await tx.organization.create({
         data: { name: data.orgName, slug: data.orgSlug, cnpj: data.orgCnpj ?? null, plan: data.plan },

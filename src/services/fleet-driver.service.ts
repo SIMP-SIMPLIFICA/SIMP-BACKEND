@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma.js'
 import { auditLedgerService } from '@/services/audit-ledger.service.js'
 import { FleetError } from '@/services/fleet-error.js'
 import { fleetPiiService } from '@/services/fleet-pii.service.js'
-import { type FleetScope, assertDepartmentAllowed, departmentWhere } from '@/services/fleet-scope.service.js'
+import { type FleetScope, assertCanModify, assertDepartmentAllowed, departmentWhere } from '@/services/fleet-scope.service.js'
 import type { CreateDriverBody, ListDriversQuery, UpdateDriverBody } from '@/schemas/fleet.schemas.js'
 import { isValidCnhNumber, isValidCpf, maskCnhNumber, maskCpf, onlyDigits } from '@/utils/fleet-validators.js'
 
@@ -154,16 +154,24 @@ export const fleetDriverService = {
   async lookupByCpf(scope: FleetScope, cpfInput: string) {
     fleetPiiService.assertConfigured()
     const cpf = parseCpf(cpfInput)
-    const rows = await prisma.fleetDriver.findMany({
-      where: {
-        organizationId: scope.organizationId,
-        deletedAt: null,
-        cpfBlindIndex: fleetPiiService.blindIndex(scope.organizationId, cpf),
-        ...departmentWhere(scope),
-      },
-      select: SELECT,
+    // Cada localização é auditada (sem o CPF): com a rota sob limite próprio de
+    // tentativas, a trilha é o que denuncia uma varredura de CPFs.
+    return prisma.$transaction(async tx => {
+      const rows = await tx.fleetDriver.findMany({
+        where: {
+          organizationId: scope.organizationId,
+          deletedAt: null,
+          cpfBlindIndex: fleetPiiService.blindIndex(scope.organizationId, cpf),
+          ...departmentWhere(scope),
+        },
+        select: SELECT,
+      })
+      await auditLedgerService.record(
+        { ...auditBase(scope), action: 'FLEET_DRIVER_LOOKUP', resourceId: rows[0]?.id ?? null, details: { found: rows.length } },
+        tx
+      )
+      return { data: rows.map(row => toPublic(scope, row)) }
     })
-    return { data: rows.map(row => toPublic(scope, row)) }
   },
 
   async getById(scope: FleetScope, id: string) {
@@ -226,7 +234,8 @@ export const fleetDriverService = {
   },
 
   async update(scope: FleetScope, id: string, input: UpdateDriverBody) {
-    await this.getById(scope, id)
+    const current = await this.getById(scope, id)
+    assertCanModify(scope, current.departmentId)
     if (input.departmentId !== undefined) await assertDepartmentAllowed(scope, input.departmentId)
     if (input.userId !== undefined) await assertUserAllowed(scope, input.userId)
 
@@ -252,7 +261,7 @@ export const fleetDriverService = {
         if (cpfBlindIndex) await assertCpfFree(tx, scope, cpfBlindIndex, id)
 
         const updated = await tx.fleetDriver.updateMany({
-          where: { id, organizationId: scope.organizationId, deletedAt: null },
+          where: { id, organizationId: scope.organizationId, deletedAt: null, ...departmentWhere(scope) },
           data,
         })
         if (updated.count === 0) throw new FleetError('NOT_FOUND', 'Motorista não encontrado.')
@@ -278,6 +287,7 @@ export const fleetDriverService = {
 
   async remove(scope: FleetScope, id: string) {
     const driver = await this.getById(scope, id)
+    assertCanModify(scope, driver.departmentId)
 
     await prisma.$transaction(async tx => {
       const [openAuthorizations, tripsInProgress] = await Promise.all([
@@ -295,7 +305,7 @@ export const fleetDriverService = {
       }
 
       const deleted = await tx.fleetDriver.updateMany({
-        where: { id, organizationId: scope.organizationId, deletedAt: null },
+        where: { id, organizationId: scope.organizationId, deletedAt: null, ...departmentWhere(scope) },
         data: { deletedAt: new Date(), active: false },
       })
       if (deleted.count === 0) throw new FleetError('NOT_FOUND', 'Motorista não encontrado.')

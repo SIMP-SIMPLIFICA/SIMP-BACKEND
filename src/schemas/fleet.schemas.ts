@@ -110,8 +110,13 @@ export const updateDriverBody = z.object(driverBase).partial().strict()
 export const listDriversQuery = z
   .object({
     ...pageQuery,
-    /** Só por nome. CPF é POST /drivers/lookup. */
-    search: z.string().trim().max(60).optional(),
+    /** Só por nome. CPF é POST /drivers/lookup — dígitos aqui são recusados (a URL vai para o log). */
+    search: z
+      .string()
+      .trim()
+      .max(60)
+      .refine(v => !/\d/.test(v),'A busca da lista é só por nome. Para localizar por CPF, digite o CPF completo.')
+      .optional(),
     active: z.enum(['true', 'false']).transform(v => v === 'true').optional(),
     departmentId: id.optional(),
   })

@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma.js'
 import { auditLedgerService } from '@/services/audit-ledger.service.js'
 import { FleetError } from '@/services/fleet-error.js'
-import { type FleetScope, assertDepartmentAllowed, departmentWhere } from '@/services/fleet-scope.service.js'
+import { type FleetScope, assertCanModify, assertDepartmentAllowed, departmentWhere } from '@/services/fleet-scope.service.js'
 import type { CreateVehicleBody, ListVehiclesQuery, UpdateVehicleBody } from '@/schemas/fleet.schemas.js'
 import { isValidChassis, isValidPlate, isValidRenavam, normalizePlate, onlyDigits } from '@/utils/fleet-validators.js'
 
@@ -234,6 +234,7 @@ export const fleetVehicleService = {
 
   async update(scope: FleetScope, id: string, input: UpdateVehicleBody) {
     const current = await this.getById(scope, id)
+    assertCanModify(scope, current.departmentId)
     const ids = normalizeIdentifiers(input)
     if (input.departmentId !== undefined) await assertDepartmentAllowed(scope, input.departmentId)
     if (input.ownerEntityId !== undefined) await assertOwnerEntityAllowed(scope, input.ownerEntityId)
@@ -276,7 +277,7 @@ export const fleetVehicleService = {
         // updateMany com organizationId no filtro: nunca altera registro de outra
         // organização, mesmo que o id venha de lá.
         const updated = await tx.fleetVehicle.updateMany({
-          where: { id, organizationId: scope.organizationId, deletedAt: null },
+          where: { id, organizationId: scope.organizationId, deletedAt: null, ...departmentWhere(scope) },
           data,
         })
         if (updated.count === 0) throw new FleetError('NOT_FOUND', 'Veículo não encontrado.')
@@ -301,6 +302,7 @@ export const fleetVehicleService = {
 
   async remove(scope: FleetScope, id: string) {
     const vehicle = await this.getById(scope, id)
+    assertCanModify(scope, vehicle.departmentId)
 
     await prisma.$transaction(async tx => {
       const [openAuthorizations, tripsInProgress] = await Promise.all([
@@ -318,7 +320,7 @@ export const fleetVehicleService = {
       }
 
       const deleted = await tx.fleetVehicle.updateMany({
-        where: { id, organizationId: scope.organizationId, deletedAt: null },
+        where: { id, organizationId: scope.organizationId, deletedAt: null, ...departmentWhere(scope) },
         data: { deletedAt: new Date() },
       })
       if (deleted.count === 0) throw new FleetError('NOT_FOUND', 'Veículo não encontrado.')

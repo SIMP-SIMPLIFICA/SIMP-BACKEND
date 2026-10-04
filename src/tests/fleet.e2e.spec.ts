@@ -164,7 +164,7 @@ describe('Frotas — motoristas', () => {
 
     expect(response.statusCode).toBe(201)
     const body = response.json()
-    expect(body.cpfMasked).toBe('***.982.247-**')
+    expect(body.cpfMasked).toBe('***.982.***-**')
     expect(body.cnhMasked).toBe('*******6461')
     expect(body).not.toHaveProperty('cpfEncrypted')
     expect(body).not.toHaveProperty('cpfBlindIndex')
@@ -197,9 +197,9 @@ describe('Frotas — motoristas', () => {
     expect(found.json().data).toHaveLength(1)
     expect(found.json().data[0].name).toBe('João Pereira')
 
-    // A busca da listagem (query string) é só por nome: CPF ali não encontra nada.
+    // A busca da listagem (query string) é só por nome: CPF ali é recusado.
     const viaUrl = await inject('GET', `${BASE}/drivers?search=52998224725`, session.headers)
-    expect(viaUrl.json().data).toEqual([])
+    expect(viaUrl.statusCode).toBe(400)
 
     const invalidLookup = await inject('POST', `${BASE}/drivers/lookup`, session.headers, { cpf: '12345678900' })
     expect(invalidLookup.statusCode).toBe(400)
@@ -211,7 +211,13 @@ describe('Frotas — motoristas', () => {
 
     await inject('POST', `${BASE}/drivers`, session.headers, driverPayload({ name: 'Maria Sigilosa', departmentId: department.id }))
 
-    const probe = await inject('POST', `${BASE}/drivers`, scoped.headers, driverPayload({ name: 'Tentativa' }))
+    // O usuário restrito cadastra dentro do SEU departamento (frota geral é só para quem vê todos).
+    const own = await prisma.department.create({
+      data: { organizationId: organization.id, name: 'Secretaria de Obras', code: `SO${Math.floor(Math.random() * 90000) + 10000}` },
+    })
+    await prisma.department.update({ where: { id: own.id }, data: { members: { connect: { id: scoped.user.id } } } })
+
+    const probe = await inject('POST', `${BASE}/drivers`, scoped.headers, driverPayload({ name: 'Tentativa', departmentId: own.id }))
     expect(probe.statusCode).toBe(409)
     expect(probe.json().error).toBe('CPF_ALREADY_REGISTERED')
     expect(probe.json().message).not.toContain('Maria Sigilosa')
@@ -234,6 +240,67 @@ describe('Frotas — motoristas', () => {
     expect((await inject('PATCH', `${BASE}/drivers/${created.id}`, b.session.headers, { name: 'Invadido' })).statusCode).toBe(404)
     expect((await inject('DELETE', `${BASE}/drivers/${created.id}`, b.session.headers)).statusCode).toBe(404)
     expect((await inject('GET', `${BASE}/drivers`, b.session.headers)).json().data).toEqual([])
+  })
+})
+
+describe('Frotas — localização por CPF e busca', () => {
+  test('lookup respeita organização e escopo, e é auditado sem o CPF', async () => {
+    const a = await scenario()
+    const b = await scenario()
+    await inject('POST', `${BASE}/drivers`, a.session.headers, driverPayload({ departmentId: a.department.id }))
+
+    const crossOrg = await inject('POST', `${BASE}/drivers/lookup`, b.session.headers, { cpf: CPF })
+    expect(crossOrg.statusCode).toBe(200)
+    expect(crossOrg.json().data).toEqual([])
+
+    const scoped = await createTestUserWithToken({ organizationId: a.organization.id, permissions: ['fleet:read'] })
+    const outOfScope = await inject('POST', `${BASE}/drivers/lookup`, scoped.headers, { cpf: CPF })
+    expect(outOfScope.json().data).toEqual([])
+
+    const audit = await prisma.auditLog.findMany({ where: { action: 'FLEET_DRIVER_LOOKUP', organizationId: a.organization.id } })
+    expect(audit.length).toBeGreaterThan(0)
+    expect(JSON.stringify(audit.map(r => r.metadata))).not.toContain('52998224725')
+  })
+
+  test('busca da listagem com dígitos é recusada (CPF nunca vai na URL)', async () => {
+    const { session } = await scenario()
+    const response = await inject('GET', `${BASE}/drivers?search=529982`, session.headers)
+    expect(response.statusCode).toBe(400)
+  })
+})
+
+describe('Frotas — frota geral e IDs de outra organização', () => {
+  test('usuário restrito não cria, não altera e não move para a frota geral', async () => {
+    const { organization, session, department } = await scenario()
+    const scoped = await createTestUserWithToken({ organizationId: organization.id, permissions: ['fleet:read', 'fleet:manage'] })
+    await prisma.department.update({ where: { id: department.id }, data: { members: { connect: { id: scoped.user.id } } } })
+
+    const noDepartment = await inject('POST', `${BASE}/vehicles`, scoped.headers, vehiclePayload())
+    expect(noDepartment.statusCode).toBe(403)
+    expect(noDepartment.json().error).toBe('DEPARTMENT_OUT_OF_SCOPE')
+
+    const general = (await inject('POST', `${BASE}/vehicles`, session.headers, vehiclePayload({ plate: 'GER1234', renavam: null }))).json()
+    const editGeneral = await inject('PATCH', `${BASE}/vehicles/${general.id}`, scoped.headers, { makeModel: 'Alterado' })
+    expect(editGeneral.statusCode).toBe(403)
+    expect((await inject('DELETE', `${BASE}/vehicles/${general.id}`, scoped.headers)).statusCode).toBe(403)
+
+    const own = (await inject('POST', `${BASE}/vehicles`, scoped.headers, vehiclePayload({ plate: 'OWN1234', renavam: null, departmentId: department.id }))).json()
+    const toGeneral = await inject('PATCH', `${BASE}/vehicles/${own.id}`, scoped.headers, { departmentId: null })
+    expect(toGeneral.statusCode).toBe(403)
+    expect((await prisma.fleetVehicle.findUniqueOrThrow({ where: { id: own.id } })).departmentId).toBe(department.id)
+  })
+
+  test('departmentId e userId de outra organização no corpo são recusados', async () => {
+    const a = await scenario()
+    const b = await scenario()
+
+    const foreignDepartment = await inject('POST', `${BASE}/vehicles`, a.session.headers, vehiclePayload({ departmentId: b.department.id }))
+    expect(foreignDepartment.statusCode).toBe(400)
+    expect(foreignDepartment.json().error).toBe('INVALID_DEPARTMENT')
+
+    const foreignUser = await inject('POST', `${BASE}/drivers`, a.session.headers, driverPayload({ userId: b.session.user.id }))
+    expect(foreignUser.statusCode).toBe(400)
+    expect(foreignUser.json().error).toBe('INVALID_USER')
   })
 })
 

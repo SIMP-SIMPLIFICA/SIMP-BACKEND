@@ -337,6 +337,11 @@ if (config.isProduction) {
       throw new Error(`${name} precisa ter 32 bytes em base64 em produção.`)
     }
   }
+  // D12: chaves separadas. A mesma chave nas duas variáveis anula a separação
+  // entre cifragem e blind index sem nenhum aviso.
+  if (config.fleet.piiMasterKey === config.fleet.piiBlindIndexKey) {
+    throw new Error('FLEET_PII_MASTER_KEY e FLEET_PII_BLIND_INDEX_KEY precisam ser chaves diferentes.')
+  }
 }
 
 // Type export for use in other files

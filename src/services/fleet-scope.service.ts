@@ -65,7 +65,18 @@ export function departmentWhere(scope: FleetScope) {
  * mesma resposta de "não existe" — nunca confirma a existência.
  */
 export async function assertDepartmentAllowed(scope: FleetScope, departmentId: string | null | undefined) {
-  if (!departmentId) return
+  // Sem departamento = "frota geral", visível à organização inteira. Só quem tem
+  // fleet:all_departments decide o que entra nela: senão um usuário restrito
+  // publicaria para todos um registro do seu setor (ou o contrário).
+  if (!departmentId) {
+    if (!scope.allDepartments) {
+      throw new FleetError(
+        'DEPARTMENT_OUT_OF_SCOPE',
+        'Escolha um dos seus departamentos. A frota geral (sem departamento) só é alterada por quem tem acesso a todos os departamentos.'
+      )
+    }
+    return
+  }
 
   const department = await prisma.department.findFirst({
     where: { id: departmentId, organizationId: scope.organizationId },
@@ -78,6 +89,19 @@ export async function assertDepartmentAllowed(scope: FleetScope, departmentId: s
     throw new FleetError(
       'DEPARTMENT_OUT_OF_SCOPE',
       'Você só pode cadastrar na frota dos departamentos de que faz parte. Peça ao gestor de frota a permissão para todos os departamentos.'
+    )
+  }
+}
+
+/**
+ * Um registro da "frota geral" (sem departamento) é visível a todos com
+ * fleet:read, mas só quem tem fleet:all_departments o altera ou exclui.
+ */
+export function assertCanModify(scope: FleetScope, currentDepartmentId: string | null) {
+  if (currentDepartmentId === null && !scope.allDepartments) {
+    throw new FleetError(
+      'DEPARTMENT_OUT_OF_SCOPE',
+      'Este registro é da frota geral da organização: só quem tem acesso a todos os departamentos pode alterá-lo ou excluí-lo.'
     )
   }
 }

@@ -24,7 +24,13 @@ export async function fleetRoutes(app: FastifyInstance) {
 
   app.get('/drivers', { preHandler: [requireAnyPermission(READ)] }, fleetController.listDrivers)
   // CPF no corpo, nunca na URL (a query string aparece no log de requisição).
-  app.post('/drivers/lookup', { preHandler: [requireAnyPermission(READ)] }, fleetController.lookupDriver)
+  // Limite próprio e baixo: a máscara + a localização formariam um oráculo de
+  // CPF por força bruta sem ele.
+  app.post(
+    '/drivers/lookup',
+    { config: { rateLimit: { max: 10, timeWindow: '1 minute' } }, preHandler: [requireAnyPermission(READ)] },
+    fleetController.lookupDriver
+  )
   app.get('/drivers/:id', { preHandler: [requireAnyPermission(READ)] }, fleetController.getDriver)
   app.post('/drivers', { preHandler: [requireAnyPermission(MANAGE)] }, fleetController.createDriver)
   app.patch('/drivers/:id', { preHandler: [requireAnyPermission(MANAGE)] }, fleetController.updateDriver)

@@ -54,7 +54,7 @@ describe('validadores de frota', () => {
     })
 
     test('máscara nunca expõe o CPF inteiro', () => {
-      expect(maskCpf('52998224725')).toBe('***.982.247-**')
+      expect(maskCpf('52998224725')).toBe('***.982.***-**')
     })
   })
 

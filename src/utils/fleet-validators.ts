@@ -60,9 +60,14 @@ export function isValidChassis(value: string): boolean {
   return /^[A-HJ-NPR-Z0-9]{17}$/.test(value)
 }
 
-/** CPF mascarado para exibição: "***.456.789-**". Nunca devolva o CPF inteiro. */
+/**
+ * CPF mascarado para exibição: "***.982.***-**" (só os dígitos 4 a 6).
+ * Mostrar mais (4 a 9) deixaria só os 3 primeiros dígitos desconhecidos — os
+ * dois últimos são DV calculável —, e 1.000 tentativas na localização por CPF
+ * recuperariam o número inteiro. Nunca devolva o CPF inteiro.
+ */
 export function maskCpf(digits: string): string {
-  return `***.${digits.slice(3, 6)}.${digits.slice(6, 9)}-**`
+  return `***.${digits.slice(3, 6)}.***-**`
 }
 
 /** Nº da CNH mascarado para exibição: "*******1234". */

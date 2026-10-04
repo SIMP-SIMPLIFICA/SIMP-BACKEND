@@ -13,6 +13,7 @@ import { startCovenantExpiryAlertJob } from './jobs/covenant-expiry-alert.job.js
 import { createEmailNotificationWorker } from './lib/email-queue.js'
 import { createDocumentOcrWorker } from './lib/document-queue.js'
 import { connectRedis } from './utils/redis.js'
+import { syncAdminRoleWithCatalog } from './services/rbac.service.js'
 
 let server: AppServer
 
@@ -29,6 +30,16 @@ async function start() {
     logger.info('🗄️ Connecting to database...')
     await db.connect()
     logger.info('✅ Database connected successfully')
+
+    // A role global `admin` recebe as permissões novas do catálogo (ex.: fleet:*)
+    // em todas as organizações existentes. Não é fatal: falhar aqui só adia a
+    // ressincronização para o próximo boot ou a próxima organização criada.
+    try {
+      await syncAdminRoleWithCatalog()
+      logger.info('✅ Role admin sincronizada com o catálogo de permissões')
+    } catch (err) {
+      logger.warn({ err }, '⚠️ Não foi possível sincronizar a role admin com o catálogo')
+    }
 
     // Redis alimenta o banimento de IP do honeypot (ip-ban.service.ts).
     // NÃO é fatal: sem Redis o ban vale só nesta instância, e é preferível o

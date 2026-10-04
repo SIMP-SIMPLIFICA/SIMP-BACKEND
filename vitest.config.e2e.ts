@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import { config as loadEnv } from 'dotenv'
 import { resolve } from 'path'
 import { defineConfig } from 'vitest/config'
@@ -39,6 +40,11 @@ export default defineConfig({
     env: {
       DATABASE_URL: testDatabaseUrl,
       NODE_ENV: 'test',
+      // Chaves de cifragem de CPF/CNH do Frotas geradas a cada execução: o banco
+      // de teste é recriado/limpo, então nenhum dado depende de chave fixa, e
+      // nenhuma chave real precisa existir no repositório.
+      FLEET_PII_MASTER_KEY: randomBytes(32).toString('base64'),
+      FLEET_PII_BLIND_INDEX_KEY: randomBytes(32).toString('base64'),
     },
 
     globalSetup: ['./src/tests/global-setup-e2e.ts'],

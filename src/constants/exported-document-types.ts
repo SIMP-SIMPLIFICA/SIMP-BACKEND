@@ -45,7 +45,7 @@ const LABELS: Record<string, string> = {
   [EXPORTED_DOCUMENT_TYPES.DEPARTMENT_DOSSIER]: 'Dossiê do Setor',
   [EXPORTED_DOCUMENT_TYPES.DAILY_ALLOWANCE_XLS_MANIFEST]:
     'Manifesto de Integridade de Planilha (Diárias)',
-  [EXPORTED_DOCUMENT_TYPES.FLEET_FUELING]: 'Relatório de Abastecimento',
+  [EXPORTED_DOCUMENT_TYPES.FLEET_FUELING]: 'Autorização de Abastecimento',
 }
 
 /** Rótulo em pt-BR do tipo, com fallback para tipo não catalogado. */

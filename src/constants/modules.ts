@@ -13,6 +13,8 @@ export const MODULES = {
   SUPPORT: 'support',
   DAILY_ALLOWANCES: 'dailyAllowances',
   FLEET_FUELINGS: 'fleetFuelings',
+  /** Simplifica Frotas: cadastros, viagens e manutenção. Exige `fleetFuelings` ligado. */
+  FLEET: 'fleet',
 } as const
 
 export type ModuleKey = typeof MODULES[keyof typeof MODULES]

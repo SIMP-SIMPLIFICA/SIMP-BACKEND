@@ -72,7 +72,17 @@ model Organization {
   signatureRequests        SignatureRequest[]
   supportRequests          SupportRequest[]
   dailyAllowances          DailyAllowance[]
+  fleetOwnerEntities       FleetOwnerEntity[]
+  fleetVehicles            FleetVehicle[]
+  fleetDrivers             FleetDriver[]
+  fleetContracts           FleetContract[]
   fleetFuelings            FleetFueling[]
+  fleetRedemptions         FleetFuelingRedemption[]
+  fleetReceiptImages       FleetReceiptImage[]
+  fleetTrips               FleetTrip[]
+  fleetServiceOrders       FleetServiceOrder[]
+  fleetServiceOrderItems   FleetServiceOrderItem[]
+  fleetQualityAlerts       FleetQualityAlert[]
   beneficiaries            Beneficiary[]
   exportedDocuments        ExportedDocument[]
   councilDepartments       CouncilDepartment[]
@@ -166,15 +176,26 @@ model User {
   uploadedLibraryDocs LibraryDocument[]  @relation("LibraryDocumentUploader")
   officialDocuments   OfficialDocument[]
 
-  councilMemberships     CouncilMembership[] @relation("CouncilMemberships")
-  councilMeetingsCreated CouncilMeeting[]    @relation("CouncilMeetingCreator")
-  uploadedCouncilDocs    CouncilDocument[]   @relation("CouncilDocumentUploader")
-  signatureRequests      SignatureRequest[]  @relation("SignatureRequester")
-  supportRequests        SupportRequest[]    @relation("SupportAuthor")
-  supportMessages        SupportMessage[]    @relation("SupportMessageSender")
-  issuedDailyAllowances  DailyAllowance[]    @relation("DailyAllowanceIssuer")
-  fleetFuelings          FleetFueling[]      @relation("FleetFuelingCreator")
-  budgetHistoryEdits     BudgetHistory[]
+  councilMemberships        CouncilMembership[]      @relation("CouncilMemberships")
+  councilMeetingsCreated    CouncilMeeting[]         @relation("CouncilMeetingCreator")
+  uploadedCouncilDocs       CouncilDocument[]        @relation("CouncilDocumentUploader")
+  signatureRequests         SignatureRequest[]       @relation("SignatureRequester")
+  supportRequests           SupportRequest[]         @relation("SupportAuthor")
+  supportMessages           SupportMessage[]         @relation("SupportMessageSender")
+  issuedDailyAllowances     DailyAllowance[]         @relation("DailyAllowanceIssuer")
+  fleetOwnerEntitiesCreated FleetOwnerEntity[]       @relation("FleetOwnerEntityCreator")
+  fleetVehiclesCreated      FleetVehicle[]           @relation("FleetVehicleCreator")
+  fleetDriverProfiles       FleetDriver[]            @relation("FleetDriverUser")
+  fleetDriversCreated       FleetDriver[]            @relation("FleetDriverCreator")
+  fleetContractsCreated     FleetContract[]          @relation("FleetContractCreator")
+  fleetFuelingsIssued       FleetFueling[]           @relation("FleetFuelingIssuer")
+  fleetFuelings             FleetFueling[]           @relation("FleetFuelingCreator")
+  fleetRedemptionsReviewed  FleetFuelingRedemption[] @relation("FleetRedemptionReviewer")
+  fleetTripsRequested       FleetTrip[]              @relation("FleetTripRequester")
+  fleetTripsApproved        FleetTrip[]              @relation("FleetTripApprover")
+  fleetServiceOrdersCreated FleetServiceOrder[]      @relation("FleetServiceOrderCreator")
+  fleetAlertsResolved       FleetQualityAlert[]      @relation("FleetAlertResolver")
+  budgetHistoryEdits        BudgetHistory[]
 
   @@map("profiles")
 }
@@ -330,7 +351,10 @@ model Department {
   budgetLaws        BudgetLaw[]
   qddItems          QddItem[]
   dailyAllowances   DailyAllowance[]
+  fleetVehicles     FleetVehicle[]
+  fleetDrivers      FleetDriver[]
   fleetFuelings     FleetFueling[]
+  fleetTrips        FleetTrip[]
   beneficiaries     Beneficiary[]
   bankAccounts      BankAccount[]
 
@@ -1524,59 +1548,547 @@ model DailyAllowanceReceipt {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Controle de abastecimento de frota (Épico 3, Task 3.2)
+// Simplifica Frotas (TASK 2 da spec técnica — docs/frotas/)
+//
+// Convenções (docs/frotas/decisoes.md):
+//   - D2: dinheiro Decimal(15,2), litros Decimal(10,3), preço unitário Decimal(10,4).
+//   - PKs cuid; Department.id é nanoid (nunca validar departmentId como uuid).
+//   - Soft-delete por deletedAt; unicidade "entre ativos" por índice parcial
+//     criado em SQL na migration (o Prisma não expressa índice parcial).
+//   - Documentos com QR (autorização, OS, diário de bordo) têm publicId separado
+//     da PK e numeração sequencial por organização e ano (padrão das Diárias).
+//   - Sem RLS por ora (D11): o isolamento é o filtro por organizationId.
 // ─────────────────────────────────────────────────────────────────────────────
 
+enum FleetOwnerKind {
+  PREFEITURA
+  FUNDO_SAUDE
+  FUNDO_EDUCACAO
+  FUNDO_ASSISTENCIA
+  CAMARA
+  AUTARQUIA
+  OUTRO
+}
+
+enum FleetOwnership {
+  PROPRIO
+  LOCADO
+  CEDIDO
+  COMODATO
+}
+
+enum FleetVehicleType {
+  AUTOMOVEL
+  CAMINHONETE
+  CAMIONETA
+  UTILITARIO
+  MOTOCICLETA
+  MICROONIBUS
+  ONIBUS
+  CAMINHAO
+  CAMINHAO_TRATOR
+  REBOQUE
+  MAQUINA
+  OUTRO
+}
+
+enum FleetFuelType {
+  GASOLINA
+  ETANOL
+  FLEX
+  DIESEL_S10
+  DIESEL_S500
+  GNV
+  ELETRICO
+  HIBRIDO
+}
+
+enum FleetWorkRegime {
+  PADRAO_8H
+  INTEGRAL_24H
+}
+
+enum FleetVehicleStatus {
+  EM_USO
+  RESERVA
+  MANUTENCAO
+  ACIDENTADO
+  PARALISADO
+  A_DOAR
+  BAIXADO
+}
+
+enum FleetCnhCategory {
+  A
+  B
+  C
+  D
+  E
+  AB
+  AC
+  AD
+  AE
+}
+
+enum FleetCnhStatus {
+  REGULAR
+  SUSPENSA
+  CASSADA
+  DESCONHECIDA
+}
+
+enum FleetEmploymentKind {
+  EFETIVO
+  COMISSIONADO
+  CONTRATADO
+  TERCEIRIZADO
+}
+
+enum FleetDocStatus {
+  PENDING
+  ISSUED
+}
+
+enum FleetAuthLifecycle {
+  OPEN
+  IN_USE
+  AWAITING_REVIEW
+  USED
+  CLOSED
+  EXPIRED
+  BLOCKED
+  CANCELLED
+}
+
+enum FleetRedeemMode {
+  MANUAL
+  PHOTO_ONLY
+}
+
+enum FleetTripServiceType {
+  TRANSPORTE_PACIENTE
+  TRANSPORTE_ESCOLAR
+  ADMINISTRATIVO
+  OBRAS
+  FISCALIZACAO
+  OUTRO
+}
+
+enum FleetTripStatus {
+  SOLICITADA
+  AUTORIZADA
+  EM_CURSO
+  CONCLUIDA
+  CANCELADA
+}
+
+enum FleetServiceOrderKind {
+  PREVENTIVA
+  PREDITIVA
+  CORRETIVA
+  ACIDENTE
+  BANCADA
+  REFORMA
+}
+
+enum FleetServiceOrderStatus {
+  ABERTA
+  ORCADA
+  APROVADA
+  EM_EXECUCAO
+  CONCLUIDA
+  CANCELADA
+}
+
+enum FleetServiceItemType {
+  PECA
+  SERVICO
+  PNEU
+  LUBRIFICANTE
+}
+
+enum FleetAlertSeverity {
+  INFO
+  ALERTA
+  BLOQUEIO
+}
+
+/// Entidade proprietária (CNPJ em que o veículo está registrado — prefeitura,
+/// fundo de saúde, câmara...). Chave das consultas SERPRO na fase 3.
+model FleetOwnerEntity {
+  id             String         @id @default(cuid())
+  organizationId String         @map("organization_id")
+  name           String
+  cnpj           String
+  kind           FleetOwnerKind
+  createdById    String         @map("created_by_id") @db.Uuid
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+  deletedAt      DateTime?      @map("deleted_at")
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User           @relation("FleetOwnerEntityCreator", fields: [createdById], references: [id])
+  vehicles     FleetVehicle[]
+
+  // UNIQUE (organization_id, cnpj) WHERE deleted_at IS NULL — índice parcial na migration.
+  @@index([organizationId])
+  @@map("fleet_owner_entities")
+}
+
+model FleetVehicle {
+  id              String             @id @default(cuid())
+  organizationId  String             @map("organization_id")
+  /// Secretaria responsável (nanoid). Apagar o departamento não apaga o veículo.
+  departmentId    String?            @map("department_id")
+  ownerEntityId   String?            @map("owner_entity_id")
+  /// Placa normalizada: AAA0A00 / AAA0000, maiúsculas, sem hífen.
+  plate           String
+  /// 11 dígitos, DV conferido no servidor.
+  renavam         String?
+  /// VIN de 17 caracteres, sem I, O, Q.
+  chassis         String?
+  makeModel       String?            @map("make_model")
+  manufactureYear Int?               @map("manufacture_year")
+  modelYear       Int?               @map("model_year")
+  ownership       FleetOwnership
+  vehicleType     FleetVehicleType   @map("vehicle_type")
+  fuelType        FleetFuelType      @map("fuel_type")
+  usesArla32      Boolean            @default(false) @map("uses_arla32")
+  tankCapacityL   Decimal            @map("tank_capacity_l") @db.Decimal(10, 3)
+  referenceKmPerL Decimal?           @map("reference_km_per_l") @db.Decimal(5, 2)
+  workRegime      FleetWorkRegime    @default(PADRAO_8H) @map("work_regime")
+  status          FleetVehicleStatus @default(EM_USO)
+  /// Maior hodômetro válido registrado (desnormalizado; só cresce).
+  odometerKm      Int                @default(0) @map("odometer_km")
+  assetTag        String?            @map("asset_tag")
+  marketValue     Decimal?           @map("market_value") @db.Decimal(15, 2)
+  createdById     String             @map("created_by_id") @db.Uuid
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+  deletedAt       DateTime?          @map("deleted_at")
+
+  organization  Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  department    Department?         @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  ownerEntity   FleetOwnerEntity?   @relation(fields: [ownerEntityId], references: [id], onDelete: Restrict)
+  createdBy     User                @relation("FleetVehicleCreator", fields: [createdById], references: [id])
+  fuelings      FleetFueling[]
+  trips         FleetTrip[]
+  serviceOrders FleetServiceOrder[]
+  qualityAlerts FleetQualityAlert[]
+
+  // UNIQUE (organization_id, plate) e (organization_id, renavam) WHERE deleted_at IS NULL — índices parciais na migration.
+  @@index([organizationId, status])
+  @@index([organizationId, departmentId])
+  @@map("fleet_vehicles")
+}
+
+/// Motorista. CPF e nº da CNH só cifrados (AES-256-GCM, chave por organização);
+/// a busca por CPF usa o blind index (HMAC-SHA-256).
+model FleetDriver {
+  id                 String              @id @default(cuid())
+  organizationId     String              @map("organization_id")
+  /// Servidor do SIMP, quando o motorista tem usuário.
+  userId             String?             @map("user_id") @db.Uuid
+  departmentId       String?             @map("department_id")
+  name               String
+  cpfEncrypted       String              @map("cpf_encrypted")
+  cpfBlindIndex      String              @map("cpf_blind_index")
+  cnhNumberEncrypted String              @map("cnh_number_encrypted")
+  cnhCategory        FleetCnhCategory    @map("cnh_category")
+  cnhExpiry          DateTime            @map("cnh_expiry") @db.Date
+  cnhStatus          FleetCnhStatus      @default(DESCONHECIDA) @map("cnh_status")
+  /// Cursos especiais (escolar, emergência, coletivo, produtos perigosos): data e UF.
+  specialCourses     Json?               @map("special_courses")
+  employmentKind     FleetEmploymentKind @map("employment_kind")
+  active             Boolean             @default(true)
+  createdById        String              @map("created_by_id") @db.Uuid
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+  deletedAt          DateTime?           @map("deleted_at")
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User?          @relation("FleetDriverUser", fields: [userId], references: [id], onDelete: SetNull)
+  department   Department?    @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  createdBy    User           @relation("FleetDriverCreator", fields: [createdById], references: [id])
+  fuelings     FleetFueling[]
+  trips        FleetTrip[]
+
+  // UNIQUE (organization_id, cpf_blind_index) WHERE deleted_at IS NULL — índice parcial na migration.
+  @@index([organizationId, active])
+  @@map("fleet_drivers")
+}
+
+/// Contrato ou ata (combustível, peças, serviços). Saldo calculado na leitura.
+model FleetContract {
+  id               String         @id @default(cuid())
+  organizationId   String         @map("organization_id")
+  number           String
+  supplierName     String         @map("supplier_name")
+  supplierCnpj     String         @map("supplier_cnpj")
+  object           String
+  fuelType         FleetFuelType? @map("fuel_type")
+  unitPrice        Decimal?       @map("unit_price") @db.Decimal(10, 4)
+  totalAmount      Decimal        @map("total_amount") @db.Decimal(15, 2)
+  maxVolumeL       Decimal?       @map("max_volume_l") @db.Decimal(10, 3)
+  /// Nº do empenho como texto: o SIMP ainda não tem entidade de empenho.
+  commitmentNumber String?        @map("commitment_number")
+  qddItemId        String?        @map("qdd_item_id")
+  startDate        DateTime       @map("start_date") @db.Date
+  endDate          DateTime       @map("end_date") @db.Date
+  createdById      String         @map("created_by_id") @db.Uuid
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
+  deletedAt        DateTime?      @map("deleted_at")
+
+  organization  Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  qddItem       QddItem?            @relation(fields: [qddItemId], references: [id], onDelete: Restrict)
+  createdBy     User                @relation("FleetContractCreator", fields: [createdById], references: [id])
+  fuelings      FleetFueling[]
+  serviceOrders FleetServiceOrder[]
+
+  @@index([organizationId, endDate])
+  @@map("fleet_contracts")
+}
+
+/// Autorização de abastecimento (TASK 3). Recriada do zero sobre o nome do esboço
+/// antigo. O documento emitido (PDF + sha256Hash) nunca muda; o que avança depois
+/// da emissão é `lifecycle`.
 model FleetFueling {
-  id             String @id @default(uuid())
-  organizationId String @map("organization_id")
+  id                  String             @id @default(cuid())
+  publicId            String             @unique @default(uuid()) @map("public_id")
+  organizationId      String             @map("organization_id")
+  sequenceNumber      Int                @map("sequence_number")
+  year                Int
+  formattedNumber     String             @map("formatted_number")
+  status              FleetDocStatus     @default(PENDING)
+  lifecycle           FleetAuthLifecycle @default(OPEN)
+  departmentId        String             @map("department_id")
+  vehicleId           String             @map("vehicle_id")
+  driverId            String             @map("driver_id")
+  contractId          String?            @map("contract_id")
+  qddItemId           String?            @map("qdd_item_id")
+  qddFichaSnapshot    String?            @map("qdd_ficha_snapshot")
+  qddFonteSnapshot    String?            @map("qdd_fonte_snapshot")
+  qddNaturezaSnapshot String?            @map("qdd_natureza_snapshot")
+  fuelType            FleetFuelType      @map("fuel_type")
+  maxVolumeL          Decimal            @map("max_volume_l") @db.Decimal(10, 3)
+  maxAmount           Decimal            @map("max_amount") @db.Decimal(15, 2)
+  unitPriceCap        Decimal            @map("unit_price_cap") @db.Decimal(10, 4)
+  validUntil          DateTime           @map("valid_until")
+  purpose             String
+  /// SHA-256 (hex) do token do QR operacional; o token nunca é gravado.
+  redeemTokenHash     String?            @unique @map("redeem_token_hash")
+  plateAttempts       Int                @default(0) @map("plate_attempts")
+  /// Fim da sessão de 30 min do frentista.
+  lockedUntil         DateTime?          @map("locked_until")
+  budgetOverrun       Boolean            @default(false) @map("budget_overrun")
+  cancelReason        String?            @map("cancel_reason")
+  pdfFileKey          String?            @map("pdf_file_key")
+  sha256Hash          String?            @map("sha256_hash")
+  issuedAt            DateTime?          @map("issued_at")
+  issuedById          String?            @map("issued_by_id") @db.Uuid
+  createdById         String             @map("created_by_id") @db.Uuid
+  createdAt           DateTime           @default(now()) @map("created_at")
+  updatedAt           DateTime           @updatedAt @map("updated_at")
+  deletedAt           DateTime?          @map("deleted_at")
 
-  // Quem registrou o abastecimento — a prestação de contas precisa do responsável.
-  createdById String @map("created_by_id") @db.Uuid
+  organization Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  department   Department              @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  vehicle      FleetVehicle            @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  driver       FleetDriver             @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  contract     FleetContract?          @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  qddItem      QddItem?                @relation(fields: [qddItemId], references: [id], onDelete: Restrict)
+  issuedBy     User?                   @relation("FleetFuelingIssuer", fields: [issuedById], references: [id])
+  createdBy    User                    @relation("FleetFuelingCreator", fields: [createdById], references: [id])
+  redemption   FleetFuelingRedemption?
 
-  // Identificador público da URL de validação, separado da chave primária pelo
-  // mesmo motivo de DailyAllowance: o PK nunca é exposto na internet.
-  publicId String @unique @default(uuid()) @map("public_id")
-
-  // Placa normalizada (maiúsculas, sem hífen). Sem normalização, "abc-1234" e
-  // "ABC1234" virariam dois veículos distintos e o relatório por placa nasceria
-  // furado.
-  /// Setor ao qual o abastecimento é imputado.
-  /// Opcional: registros anteriores ao Épico 4 não têm setor, e torná-lo
-  /// obrigatório invalidaria o histórico já prestado.
-  departmentId String? @map("department_id")
-
-  licensePlate String @map("license_plate")
-
-  // Odômetro em quilômetros inteiros — o painel do veículo não marca fração.
-  odometer Int
-
-  // Litros com 3 casas: é a precisão que a bomba de combustível imprime.
-  liters Decimal @db.Decimal(10, 3)
-
-  // Decimal, nunca Float: é dinheiro público em prestação de contas.
-  totalValue Decimal @map("total_value") @db.Decimal(15, 2)
-
-  date DateTime
-
-  // Mesma semântica da Task 3.1: enquanto o hash é nulo o registro é rascunho e
-  // pode ser editado; emitido, torna-se imutável, senão o hash publicado
-  // deixaria de corresponder ao documento entregue.
-  sha256Hash String?   @map("sha256_hash")
-  issuedAt   DateTime? @map("issued_at")
-  pdfFileKey String?   @map("pdf_file_key")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  createdBy    User         @relation("FleetFuelingCreator", fields: [createdById], references: [id])
-  department   Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-
-  @@index([organizationId, date])
-  @@index([departmentId])
-  @@index([organizationId, licensePlate])
+  @@unique([organizationId, year, sequenceNumber])
+  @@index([organizationId, lifecycle, validUntil])
+  @@index([organizationId, departmentId])
+  @@index([qddItemId])
   @@map("fleet_fuelings")
+}
+
+/// Uso único da autorização (rota pública do frentista). O @unique em fuelingId é
+/// a garantia de uso único no banco.
+model FleetFuelingRedemption {
+  id             String          @id @default(cuid())
+  organizationId String          @map("organization_id")
+  fuelingId      String          @unique @map("fueling_id")
+  mode           FleetRedeemMode
+  volumeL        Decimal?        @map("volume_l") @db.Decimal(10, 3)
+  unitPrice      Decimal?        @map("unit_price") @db.Decimal(10, 4)
+  totalAmount    Decimal?        @map("total_amount") @db.Decimal(15, 2)
+  odometerKm     Int?            @map("odometer_km")
+  /// Chave de 44 dígitos da NFC-e.
+  nfceKey        String?         @map("nfce_key")
+  submittedAt    DateTime        @default(now()) @map("submitted_at")
+  submittedIp    String          @map("submitted_ip")
+  userAgent      String          @map("user_agent")
+  reviewedById   String?         @map("reviewed_by_id") @db.Uuid
+  reviewedAt     DateTime?       @map("reviewed_at")
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  fueling      FleetFueling        @relation(fields: [fuelingId], references: [id], onDelete: Restrict)
+  reviewedBy   User?               @relation("FleetRedemptionReviewer", fields: [reviewedById], references: [id])
+  images       FleetReceiptImage[]
+
+  /// O mesmo cupom fiscal não comprova dois abastecimentos.
+  @@unique([organizationId, nfceKey])
+  @@map("fleet_fueling_redemptions")
+}
+
+model FleetReceiptImage {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  redemptionId   String   @map("redemption_id")
+  storageKey     String   @map("storage_key")
+  thumbnailKey   String?  @map("thumbnail_key")
+  sha256         String
+  mimeType       String   @map("mime_type")
+  sizeBytes      Int      @map("size_bytes")
+  width          Int?
+  height         Int?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  redemption   FleetFuelingRedemption @relation(fields: [redemptionId], references: [id], onDelete: Restrict)
+
+  @@index([redemptionId])
+  @@map("fleet_receipt_images")
+}
+
+/// Viagem (diário de bordo).
+model FleetTrip {
+  id                    String               @id @default(cuid())
+  publicId              String               @unique @default(uuid()) @map("public_id")
+  organizationId        String               @map("organization_id")
+  sequenceNumber        Int                  @map("sequence_number")
+  year                  Int
+  formattedNumber       String               @map("formatted_number")
+  vehicleId             String               @map("vehicle_id")
+  driverId              String?              @map("driver_id")
+  requesterDepartmentId String               @map("requester_department_id")
+  requesterId           String               @map("requester_id") @db.Uuid
+  purpose               String
+  origin                String
+  destination           String
+  serviceType           FleetTripServiceType @map("service_type")
+  plannedStart          DateTime             @map("planned_start")
+  plannedEnd            DateTime             @map("planned_end")
+  startAt               DateTime?            @map("start_at")
+  endAt                 DateTime?            @map("end_at")
+  startOdometer         Int?                 @map("start_odometer")
+  endOdometer           Int?                 @map("end_odometer")
+  passengers            Json?
+  status                FleetTripStatus      @default(SOLICITADA)
+  approvedById          String?              @map("approved_by_id") @db.Uuid
+  approvedAt            DateTime?            @map("approved_at")
+  cancelReason          String?              @map("cancel_reason")
+  createdAt             DateTime             @default(now()) @map("created_at")
+  updatedAt             DateTime             @updatedAt @map("updated_at")
+  deletedAt             DateTime?            @map("deleted_at")
+
+  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  vehicle             FleetVehicle @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  driver              FleetDriver? @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  requesterDepartment Department   @relation(fields: [requesterDepartmentId], references: [id], onDelete: Restrict)
+  requester           User         @relation("FleetTripRequester", fields: [requesterId], references: [id])
+  approvedBy          User?        @relation("FleetTripApprover", fields: [approvedById], references: [id])
+
+  @@unique([organizationId, year, sequenceNumber])
+  @@index([organizationId, status])
+  @@index([vehicleId, startAt])
+  @@map("fleet_trips")
+}
+
+/// Ordem de serviço de manutenção.
+model FleetServiceOrder {
+  id                  String                  @id @default(cuid())
+  publicId            String                  @unique @default(uuid()) @map("public_id")
+  organizationId      String                  @map("organization_id")
+  sequenceNumber      Int                     @map("sequence_number")
+  year                Int
+  formattedNumber     String                  @map("formatted_number")
+  vehicleId           String                  @map("vehicle_id")
+  kind                FleetServiceOrderKind
+  workshopName        String?                 @map("workshop_name")
+  workshopCnpj        String?                 @map("workshop_cnpj")
+  contractId          String?                 @map("contract_id")
+  qddItemId           String?                 @map("qdd_item_id")
+  qddFichaSnapshot    String?                 @map("qdd_ficha_snapshot")
+  qddFonteSnapshot    String?                 @map("qdd_fonte_snapshot")
+  qddNaturezaSnapshot String?                 @map("qdd_natureza_snapshot")
+  openedAt            DateTime                @map("opened_at") @db.Date
+  closedAt            DateTime?               @map("closed_at") @db.Date
+  odometerKm          Int?                    @map("odometer_km")
+  diagnosis           String
+  invoiceNumber       String?                 @map("invoice_number")
+  /// Chave de 44 dígitos da NF-e.
+  invoiceKey          String?                 @map("invoice_key")
+  totalAmount         Decimal                 @default(0) @map("total_amount") @db.Decimal(15, 2)
+  status              FleetServiceOrderStatus @default(ABERTA)
+  budgetOverrun       Boolean                 @default(false) @map("budget_overrun")
+  createdById         String                  @map("created_by_id") @db.Uuid
+  createdAt           DateTime                @default(now()) @map("created_at")
+  updatedAt           DateTime                @updatedAt @map("updated_at")
+  deletedAt           DateTime?               @map("deleted_at")
+
+  organization Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  vehicle      FleetVehicle            @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  contract     FleetContract?          @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  qddItem      QddItem?                @relation(fields: [qddItemId], references: [id], onDelete: Restrict)
+  createdBy    User                    @relation("FleetServiceOrderCreator", fields: [createdById], references: [id])
+  items        FleetServiceOrderItem[]
+
+  @@unique([organizationId, year, sequenceNumber])
+  @@index([organizationId, status])
+  @@index([qddItemId])
+  @@map("fleet_service_orders")
+}
+
+model FleetServiceOrderItem {
+  id             String               @id @default(cuid())
+  organizationId String               @map("organization_id")
+  serviceOrderId String               @map("service_order_id")
+  itemType       FleetServiceItemType @map("item_type")
+  description    String
+  partCode       String?              @map("part_code")
+  quantity       Decimal              @db.Decimal(10, 3)
+  unitPrice      Decimal              @map("unit_price") @db.Decimal(10, 4)
+  total          Decimal              @db.Decimal(15, 2)
+  warrantyMonths Int?                 @map("warranty_months")
+  warrantyKm     Int?                 @map("warranty_km")
+  createdAt      DateTime             @default(now()) @map("created_at")
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  serviceOrder FleetServiceOrder @relation(fields: [serviceOrderId], references: [id], onDelete: Cascade)
+
+  @@index([serviceOrderId])
+  @@map("fleet_service_order_items")
+}
+
+/// Alerta de qualidade de dados (regras GFI): registra, não bloqueia por si.
+model FleetQualityAlert {
+  id             String             @id @default(cuid())
+  organizationId String             @map("organization_id")
+  vehicleId      String?            @map("vehicle_id")
+  type           String
+  severity       FleetAlertSeverity
+  entityType     String             @map("entity_type")
+  entityId       String             @map("entity_id")
+  message        String
+  details        Json?
+  resolvedAt     DateTime?          @map("resolved_at")
+  resolvedById   String?            @map("resolved_by_id") @db.Uuid
+  createdAt      DateTime           @default(now()) @map("created_at")
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  vehicle      FleetVehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  resolvedBy   User?         @relation("FleetAlertResolver", fields: [resolvedById], references: [id])
+
+  @@index([organizationId, resolvedAt])
+  @@map("fleet_quality_alerts")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1851,14 +2363,17 @@ model QddItem {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  organization     Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  department       Department       @relation(fields: [departmentId], references: [id], onDelete: Cascade)
-  dailyAllowances  DailyAllowance[]
-  virtualProcesses VirtualProcess[]
-  covenants        Covenant[]
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  department         Department          @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  dailyAllowances    DailyAllowance[]
+  virtualProcesses   VirtualProcess[]
+  covenants          Covenant[]
+  fleetContracts     FleetContract[]
+  fleetFuelings      FleetFueling[]
+  fleetServiceOrders FleetServiceOrder[]
   /// Rastro de suplementação/redução de `valorOrcado` — nunca editado nem
   /// apagado, só acrescido (Épico 8, FR-013).
-  history          BudgetHistory[]
+  history            BudgetHistory[]
 
   /// Duas fichas iguais no mesmo setor e exercício tornariam ambíguo a qual
   /// dotação a despesa foi imputada.

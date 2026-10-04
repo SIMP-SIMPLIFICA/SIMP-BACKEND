@@ -18,7 +18,7 @@ Valem para todo arquivo do Frotas em `src/` (camadas: `routes/`, `controllers/`,
 ## Dados sensíveis
 
 5. **CPF e nº da CNH cifrados em repouso:** AES-256-GCM no campo (`cpfEncrypted`), busca por `cpfBlindIndex` (HMAC-SHA-256 com chave separada). Chaves só por variável de ambiente validada em `src/config/config.ts` — nunca no repositório (adicionar o nome em `.env.example`, sem valor). CPF/CNH mascarados em PDF, log e auditoria.
-6. **RLS nas tabelas `fleet_*`:** decisão a tomar na **TASK 2** (hoje nenhuma tabela do SIMP tem RLS). Até lá, o filtro por `organizationId` no service é a única barreira — toda query do Frotas filtra por ele, inclusive `findUnique` (use `findFirst({ where: { id, organizationId } })`).
+6. **RLS nas tabelas `fleet_*`:** adiado (D11) até existir um papel de banco da aplicação sem superusuário. Enquanto isso, o filtro por `organizationId` no service é a única barreira — toda query do Frotas filtra por ele, inclusive `findUnique` (use `findFirst({ where: { id, organizationId } })`).
 
 ## Padrões do Frotas (decisões D2–D4)
 

@@ -133,7 +133,34 @@ O destino do código de assinatura existente nos Conselhos (remover ou corrigir)
 - O banco de dev local foi marcado com `resolve`, então **não** recebeu o índice parcial nem o trigger (nunca os teve). Os bancos criados por `migrate deploy` têm os dois. Ver `docs/frotas/task0-baseline.md` e `docs/issues/audit-trigger-bloqueia-exclusoes.md`.
 - Procedimento local e de deploy futuro: `docs/frotas/task0-baseline.md`.
 
+## D11 — RLS nas tabelas `fleet_*` adiado até existir um papel de banco da aplicação
+
+2026-10-04
+
+**Decisão.** A TASK 2 não cria políticas de Row-Level Security. O isolamento entre organizações no Frotas é o filtro por `organizationId` aplicado em toda query dos services (vindo sempre do token), coberto por e2e com duas organizações em toda rota.
+
+**Motivo.** A aplicação conecta ao PostgreSQL como `postgres`, que é **superusuário**, e superusuário sempre ignora RLS, mesmo com `FORCE ROW LEVEL SECURITY`. Criar as políticas agora não barraria nada e acrescentaria o `SET LOCAL app.organization_id` em toda transação sem efeito real.
+
+**Pré-condição para retomar:** criar um papel de banco da aplicação sem superusuário e sem `BYPASSRLS`, e trocar o `DATABASE_URL` da aplicação para ele. Isso afeta o sistema inteiro, não só o Frotas. Aí sim: políticas `USING (organization_id = current_setting('app.organization_id'))` nas tabelas `fleet_*`, numa migration nova.
+
+**Sobrepõe:** a spec técnica (TASK 2 "políticas RLS", TASK 5 nível 1 "RLS") e o item do checklist de go-live "RLS ativa em todas as tabelas fleet_*".
+
+## D12 — Cifragem de CPF/CNH com chave do ambiente, derivada por organização
+
+2026-10-04
+
+**Decisão.** CPF e nº da CNH do motorista são gravados só cifrados, com AES-256-GCM (`src/services/fleet-pii.service.ts`):
+- chave de dados **por organização**, derivada da chave mestra `FLEET_PII_MASTER_KEY` com HKDF-SHA-256 (info = `organizationId`);
+- `organizationId` como dado autenticado (AAD): um texto cifrado copiado para outra organização não decifra;
+- busca e unicidade de CPF pelo blind index, HMAC-SHA-256 com a chave separada `FLEET_PII_BLIND_INDEX_KEY`;
+- as duas chaves têm 32 bytes em base64, são **obrigatórias em produção** (o boot falha sem elas) e opcionais em dev (sem elas, só o cadastro de motoristas responde 503 com mensagem orientadora);
+- a API e a auditoria só expõem as versões mascaradas.
+
+**Motivo.** A spec pede chave de dados por organização envolvida por chave mestra em KMS, mas o ambiente é local e não há KMS. A derivação por HKDF mantém o isolamento criptográfico por prefeitura. Trocar para KMS depois muda só a origem da chave mestra (`keyFromConfig`), não o formato gravado.
+
+**Atenção:** perder ou trocar `FLEET_PII_MASTER_KEY` torna ilegíveis os CPFs/CNHs já gravados (o formato tem prefixo de versão `v1.` para permitir rotação no futuro). O e2e gera chaves aleatórias a cada execução.
+
 ## Também decidido
 
-- **RLS** não é invariante: é decisão a tomar na TASK 2. Hoje nenhuma tabela do SIMP tem RLS.
+- **RLS:** ver D11.
 - Os achados abaixo ficam **registrados, sem correção agora**: `saveFile` grava em disco local (não há cliente R2); rota pública real é `/api/v1/public/documents/validate/:uuid`; `SequenceControl` (só Protocolos, preso ao enum `OfficialDocumentCategory`) × numeração `max+1` Serializable das Diárias; ausência de RLS; campos padrão da spec (`version`, `deletedAt`, `updatedById`) ausentes; rota atual `/api/v1/fleet-fuelings`; Node 24 local × `.nvmrc` 22.

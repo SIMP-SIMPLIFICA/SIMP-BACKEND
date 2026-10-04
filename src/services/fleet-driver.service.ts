@@ -116,11 +116,10 @@ function auditBase(scope: FleetScope) {
 export const fleetDriverService = {
   async list(scope: FleetScope, query: ListDriversQuery) {
     fleetPiiService.assertConfigured()
+    // Busca da listagem é só por NOME: ela viaja na query string, que aparece
+    // em log de requisição, histórico do navegador e proxies. Busca por CPF é
+    // `lookupByCpf`, com o CPF no corpo de um POST.
     const search = query.search?.trim()
-    const digits = search ? onlyDigits(search) : ''
-    // Busca por CPF só com o CPF completo e válido (via blind index): o CPF não
-    // existe em claro no banco para buscar por pedaço.
-    const cpfSearch = digits.length === 11 && isValidCpf(digits) ? fleetPiiService.blindIndex(scope.organizationId, digits) : null
 
     const where: Prisma.FleetDriverWhereInput = {
       organizationId: scope.organizationId,
@@ -128,11 +127,7 @@ export const fleetDriverService = {
       ...departmentWhere(scope),
       ...(query.active !== undefined ? { active: query.active } : {}),
       ...(query.departmentId ? { departmentId: query.departmentId } : {}),
-      ...(search
-        ? cpfSearch
-          ? { cpfBlindIndex: cpfSearch }
-          : { name: { contains: search, mode: 'insensitive' as const } }
-        : {}),
+      ...(search ? { name: { contains: search, mode: 'insensitive' as const } } : {}),
     }
 
     const [rows, total] = await Promise.all([
@@ -150,6 +145,25 @@ export const fleetDriverService = {
       data: rows.map(row => toPublic(scope, row)),
       meta: { total, page: query.page, limit: query.limit, totalPages: Math.ceil(total / query.limit) },
     }
+  },
+
+  /**
+   * Localiza motorista pelo CPF completo (blind index), respeitando o escopo de
+   * departamento. O CPF chega no CORPO (POST), nunca na URL.
+   */
+  async lookupByCpf(scope: FleetScope, cpfInput: string) {
+    fleetPiiService.assertConfigured()
+    const cpf = parseCpf(cpfInput)
+    const rows = await prisma.fleetDriver.findMany({
+      where: {
+        organizationId: scope.organizationId,
+        deletedAt: null,
+        cpfBlindIndex: fleetPiiService.blindIndex(scope.organizationId, cpf),
+        ...departmentWhere(scope),
+      },
+      select: SELECT,
+    })
+    return { data: rows.map(row => toPublic(scope, row)) }
   },
 
   async getById(scope: FleetScope, id: string) {

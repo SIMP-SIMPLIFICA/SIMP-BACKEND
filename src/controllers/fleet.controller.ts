@@ -6,6 +6,7 @@ import {
   idParams,
   listDriversQuery,
   listVehiclesQuery,
+  lookupDriverBody,
   updateDriverBody,
   updateVehicleBody,
 } from '@/schemas/fleet.schemas.js'
@@ -130,6 +131,15 @@ export const fleetController = {
     try {
       const query = listDriversQuery.parse(request.query)
       return reply.send(await fleetDriverService.list(await scopeOf(request), query))
+    } catch (error) {
+      return handleError(error, request, reply)
+    }
+  },
+
+  async lookupDriver(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { cpf } = lookupDriverBody.parse(request.body)
+      return reply.send(await fleetDriverService.lookupByCpf(await scopeOf(request), cpf))
     } catch (error) {
       return handleError(error, request, reply)
     }

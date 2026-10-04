@@ -179,7 +179,7 @@ describe('Frotas — motoristas', () => {
     expect(JSON.stringify(audit.metadata)).not.toContain('52998224725')
   })
 
-  test('CPF inválido → 400; CPF repetido → 409; busca pelo CPF completo encontra', async () => {
+  test('CPF inválido → 400; CPF repetido → 409; localização pelo CPF só via POST', async () => {
     const { session } = await scenario()
 
     const invalid = await inject('POST', `${BASE}/drivers`, session.headers, driverPayload({ cpf: '529.982.247-24' }))
@@ -191,9 +191,18 @@ describe('Frotas — motoristas', () => {
     expect(duplicate.statusCode).toBe(409)
     expect(duplicate.json().error).toBe('CPF_ALREADY_REGISTERED')
 
-    const found = await inject('GET', `${BASE}/drivers?search=52998224725`, session.headers)
+    // CPF no corpo de um POST, nunca na URL (que vai para o log de requisição).
+    const found = await inject('POST', `${BASE}/drivers/lookup`, session.headers, { cpf: CPF })
+    expect(found.statusCode).toBe(200)
     expect(found.json().data).toHaveLength(1)
     expect(found.json().data[0].name).toBe('João Pereira')
+
+    // A busca da listagem (query string) é só por nome: CPF ali não encontra nada.
+    const viaUrl = await inject('GET', `${BASE}/drivers?search=52998224725`, session.headers)
+    expect(viaUrl.json().data).toEqual([])
+
+    const invalidLookup = await inject('POST', `${BASE}/drivers/lookup`, session.headers, { cpf: '12345678900' })
+    expect(invalidLookup.statusCode).toBe(400)
   })
 
   test('CPF repetido fora do escopo do usuário: 409 sem revelar o nome do motorista', async () => {

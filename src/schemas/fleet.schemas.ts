@@ -102,11 +102,15 @@ const driverBase = {
 }
 
 export const createDriverBody = z.object(driverBase).strict()
+
+/** Busca por CPF no corpo de um POST: CPF nunca vai na URL (log, histórico). */
+export const lookupDriverBody = z.object({ cpf: z.string().trim().min(1).max(20) }).strict()
 export const updateDriverBody = z.object(driverBase).partial().strict()
 
 export const listDriversQuery = z
   .object({
     ...pageQuery,
+    /** Só por nome. CPF é POST /drivers/lookup. */
     search: z.string().trim().max(60).optional(),
     active: z.enum(['true', 'false']).transform(v => v === 'true').optional(),
     departmentId: id.optional(),

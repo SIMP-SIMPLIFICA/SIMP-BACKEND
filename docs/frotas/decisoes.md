@@ -50,8 +50,7 @@ O schema tem 62 models, mas as 3 migrations existentes só criam 35 tabelas. `Fl
 
 1. Para cada banco existente (dev de cada pessoa, staging, produção), confirmar que ele já bate com o schema. A saída precisa ser vazia:
    `npx prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --script`
-2. Gerar a migration de baseline com o que falta entre as migrations e o schema (exige um banco shadow vazio):
-   `npx prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma --shadow-database-url "$SHADOW_DATABASE_URL" --script > prisma/migrations/<timestamp>_baseline_db_push/migration.sql`
+2. ~~Gerar a baseline a partir das migrations existentes.~~ **Substituído pela D10**: o histórico antigo não reexecuta (P3006), então a baseline é única e gerada do schema.
 3. Revisar o SQL gerado à mão (incluir os índices parciais e o SQL de `prisma/sql/` que o `db push` não cria).
 4. Em cada banco existente, marcar a baseline como aplicada, sem executá-la:
    `npx prisma migrate resolve --applied <timestamp>_baseline_db_push`
@@ -115,6 +114,24 @@ Prometer assinatura no Frotas sobre essa base seria vender uma prova que não ex
 - Spec técnica: o uso de "Assinatura gov.br (`SignatureRequest`, landing de retorno)" como componente reutilizável, e o "assinar" de `fleet:reports` ("Gerar e assinar relatórios" passa a ser só "Gerar relatórios" no MVP).
 
 O destino do código de assinatura existente nos Conselhos (remover ou corrigir) é decidido à parte.
+
+## D10 — Histórico de migrations substituído por uma baseline única (`0_baseline`)
+
+2026-10-03 · substitui o passo 2 da D5
+
+**Decisão.** As três migrations antigas (`20260408032157_init`, `20260408032158_add_organization_modules`, `20260426120000_department_is_active_code_unique`) foram apagadas. No lugar entra `prisma/migrations/0_baseline`, gerada com `prisma migrate diff --from-empty --to-schema-datamodel` mais o SQL de `prisma/sql/` (índice único parcial de Atos Normativos e trigger de imutabilidade de `audit_logs`). Bancos que já existem são marcados com `DELETE` dos registros antigos em `_prisma_migrations` + `prisma migrate resolve --applied 0_baseline`. Bancos novos (o `_e2e` e o futuro banco de produção) recebem tudo por `prisma migrate deploy`. O e2e passou a usar `migrate deploy` em vez de `db push`.
+
+**Motivo.**
+- **P3006 em banco novo:** a `init` já criava `organization_modules`, e a migration seguinte tentava criá-la de novo. Nenhum banco novo conseguia reexecutar o histórico, nem o shadow do `migrate dev`, nem o `--from-migrations` previsto na D5.
+- **P3009 com registro de falha:** o banco de dev registrava a segunda migration como falha. Nesse estado o `migrate deploy` se recusa a rodar, e o `migrate dev` exige reset.
+- Corrigir editando as migrations antigas mudaria um histórico já registrado (e a terceira também falharia no dev, porque a coluna `is_active` já existia). Uma baseline única é verificável: banco novo + `migrate deploy` fica idêntico ao schema (`migrate diff` vazio), e o Prisma não acusa o índice parcial nem o trigger como drift.
+
+**Por que o `DELETE` em `_prisma_migrations`:** testado numa cópia do dev. Sem ele, o deploy funciona, mas o `migrate dev` exige reset porque há migrations "aplicadas no banco e ausentes da pasta". O `DELETE` só toca metadados; nenhum dado de negócio muda.
+
+**Consequências.**
+- Daqui em diante, toda mudança de schema é `prisma migrate dev --create-only` + revisão do SQL + `prisma migrate deploy` (ou `migrate dev` em dev). `db push` não é mais usado em nenhum banco.
+- O banco de dev local foi marcado com `resolve`, então **não** recebeu o índice parcial nem o trigger (nunca os teve). Os bancos criados por `migrate deploy` têm os dois. Ver `docs/frotas/task0-baseline.md` e `docs/issues/audit-trigger-bloqueia-exclusoes.md`.
+- Procedimento local e de deploy futuro: `docs/frotas/task0-baseline.md`.
 
 ## Também decidido
 

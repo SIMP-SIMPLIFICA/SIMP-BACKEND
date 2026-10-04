@@ -107,8 +107,8 @@ jobs:
       - name: Enable PostgreSQL extensions
         run: psql postgresql://postgres:password@localhost:5432/simp_test -c "CREATE EXTENSION IF NOT EXISTS unaccent;"
 
-      - name: Push schema to test DB
-        run: npx prisma db push --accept-data-loss
+      - name: Apply migrations to test DB
+        run: npx prisma migrate deploy
 
       - name: Run tests with coverage
         run: npm run test:coverage

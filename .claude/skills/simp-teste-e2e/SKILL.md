@@ -9,7 +9,7 @@ Os e2e sobem o Fastify real (`buildApp()` em `src/app.ts`) e usam `app.inject()`
 
 ## Antes de rodar
 
-- O banco de teste é `<nome do DATABASE_URL>_e2e` (ou `E2E_DATABASE_URL`) e **precisa existir**. O `globalSetup` cria o schema com `prisma db push --accept-data-loss` nesse banco.
+- O banco de teste é `<nome do DATABASE_URL>_e2e` (ou `E2E_DATABASE_URL`) e **precisa existir**. O `globalSetup` aplica as migrations reais com `prisma migrate deploy` (inclusive o índice parcial e o trigger de auditoria imutável da `0_baseline`); um `_e2e` antigo sem histórico é recriado.
 - A trava de 3 camadas (`src/tests/e2e-database.ts`: nome termina em `_e2e`, URL diferente da de dev, `SELECT current_database()` antes de truncar) **nunca** é contornada nem afrouxada.
 - Arquivos rodam em série (`maxWorkers: 1`) e cada arquivo trunca o banco; não dependa de dado criado em outro arquivo.
 

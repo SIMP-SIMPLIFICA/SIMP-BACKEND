@@ -24,17 +24,15 @@ import { PrismaClient } from '@prisma/client'
 
 const prisma = new PrismaClient()
 
-const EPIC3_MODULES = ['dailyAllowances', 'fleetFuelings'] as const
+const EPIC3_MODULES = ['dailyAllowances', 'fleetFuelings', 'fleet'] as const
 
 const EPIC3_PERMISSIONS = [
   'dailyAllowances:read',
   'dailyAllowances:write',
   'dailyAllowances:issue',
   'dailyAllowances:delete',
-  'fleetFuelings:read',
-  'fleetFuelings:write',
-  'fleetFuelings:issue',
-  'fleetFuelings:delete',
+  'fleet:read',
+  'fleet:manage',
 ]
 
 async function patchAdminRole() {

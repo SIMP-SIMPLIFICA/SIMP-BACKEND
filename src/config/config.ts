@@ -150,6 +150,15 @@ const configSchema = z.object({
   // Armazenamento de arquivos: local em disco (pasta `uploads/`), servido em
   // /uploads/ via @fastify/static. Zero credenciais de nuvem — ver
   // src/services/storage.service.ts e a Constituição (Princípio I).
+
+  // ─── Simplifica Frotas: cifragem de CPF/CNH dos motoristas ──────────────────
+  // 32 bytes em base64 cada (`node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`).
+  // MASTER: deriva a chave de dados de cada organização (HKDF). BLIND_INDEX: HMAC
+  // para busca/unicidade de CPF sem guardar o CPF em claro. Chaves diferentes de
+  // propósito. Opcionais fora de produção: sem elas, só o cadastro de motorista
+  // fica indisponível (erro orientador), o resto do sistema sobe.
+  FLEET_PII_MASTER_KEY: z.string().optional(),
+  FLEET_PII_BLIND_INDEX_KEY: z.string().optional(),
 })
 
 const parsedEnv = configSchema.safeParse(process.env)
@@ -291,6 +300,12 @@ export const config = {
     sentryDsn: env.SENTRY_DSN,
     betterstackToken: env.BETTERSTACK_SOURCE_TOKEN
   },
+
+  // Simplifica Frotas — ver src/services/fleet-pii.service.ts
+  fleet: {
+    piiMasterKey: env.FLEET_PII_MASTER_KEY,
+    piiBlindIndexKey: env.FLEET_PII_BLIND_INDEX_KEY,
+  },
 } as const
 
 /**
@@ -305,6 +320,23 @@ if (config.isProduction && config.turnstile.enabled && !config.turnstile.secretK
     'TURNSTILE_ENABLED=true mas TURNSTILE_SECRET_KEY não foi definida. ' +
     'Configure o segredo ou defina TURNSTILE_ENABLED=false explicitamente.'
   )
+}
+
+/**
+ * Fail-fast de produção para as chaves de PII do Frotas.
+ *
+ * Em produção, motorista sem cifragem não é opção: sem as duas chaves (32 bytes
+ * cada, base64), o processo não sobe.
+ */
+if (config.isProduction) {
+  for (const [name, value] of [
+    ['FLEET_PII_MASTER_KEY', config.fleet.piiMasterKey],
+    ['FLEET_PII_BLIND_INDEX_KEY', config.fleet.piiBlindIndexKey],
+  ] as const) {
+    if (!value || Buffer.from(value, 'base64').length !== 32) {
+      throw new Error(`${name} precisa ter 32 bytes em base64 em produção.`)
+    }
+  }
 }
 
 // Type export for use in other files

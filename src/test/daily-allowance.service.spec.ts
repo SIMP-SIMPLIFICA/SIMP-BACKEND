@@ -66,6 +66,14 @@ vi.mock('@/lib/prisma.js', () => {
     aggregate: (...a: unknown[]) => covenantAggregateMock(...a),
     groupBy: (...a: unknown[]) => covenantGroupByMock(...a),
   }
+  // Simplifica Frotas (TASK 1): o saldo da ficha também soma autorizações de
+  // abastecimento e OS. Nenhum teste desta suíte cadastra frota, então as
+  // consultas devolvem vazio.
+  const fleetFueling = {
+    groupBy: vi.fn().mockResolvedValue([]),
+    findMany: vi.fn().mockResolvedValue([]),
+  }
+  const fleetServiceOrder = { groupBy: vi.fn().mockResolvedValue([]) }
 
   return {
     prisma: {
@@ -73,12 +81,14 @@ vi.mock('@/lib/prisma.js', () => {
       qddItem,
       virtualProcess,
       covenant,
+      fleetFueling,
+      fleetServiceOrder,
       beneficiary: { findFirst: vi.fn().mockResolvedValue(null) },
       organization: { findUnique: (...a: unknown[]) => orgFindUniqueMock(...a) },
       // `$transaction` interativo: executa a função recebida na hora. Não
       // simula rollback — o que se testa aqui são as regras, e a atomicidade de
       // verdade é exercida contra o Postgres na suíte E2E.
-      $transaction: (fn: (tx: unknown) => unknown) => fn({ dailyAllowance, qddItem, virtualProcess, covenant }),
+      $transaction: (fn: (tx: unknown) => unknown) => fn({ dailyAllowance, qddItem, virtualProcess, covenant, fleetFueling, fleetServiceOrder }),
     },
   }
 })

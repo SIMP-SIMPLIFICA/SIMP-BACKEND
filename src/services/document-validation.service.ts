@@ -103,14 +103,16 @@ const SOURCES: DocumentSource[] = [
     },
   },
   {
+    // Autorização de abastecimento do Simplifica Frotas (o FleetFueling foi
+    // recriado como autorização; publicId + sha256Hash seguem o mesmo padrão).
     type: 'FLEET_FUELING',
-    typeLabel: 'Relatório de Abastecimento',
+    typeLabel: 'Autorização de Abastecimento',
     async find(publicId) {
       const raw = await prisma.fleetFueling.findFirst({
         where: { publicId, sha256Hash: { not: null } },
         select: SELECT_PUBLIC,
       })
-      return toValidated({ type: 'FLEET_FUELING', typeLabel: 'Relatório de Abastecimento' }, raw)
+      return toValidated({ type: 'FLEET_FUELING', typeLabel: 'Autorização de Abastecimento' }, raw)
     },
   },
   {

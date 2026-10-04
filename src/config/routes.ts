@@ -8,7 +8,7 @@ import { communicationRoutes } from '@/routes/communication.routes.js'
 import { settingsRoutes } from '@/routes/settings.routes.js'
 import { dailyAllowanceRoutes } from '@/routes/daily-allowance.routes.js'
 import { beneficiaryRoutes } from '@/routes/beneficiary.routes.js'
-import { fleetFuelingRoutes } from '@/routes/fleet-fueling.routes.js'
+import { fleetRoutes } from '@/routes/fleet.routes.js'
 import { documentValidationRoutes } from '@/routes/document-validation.routes.js'
 import { auditRoutes } from '@/routes/audit.routes.js'
 import { financeRoutes } from '@/routes/finance.routes.js'
@@ -160,8 +160,9 @@ export async function registerRoutes(server: AppServer) {
       // Cadastro de beneficiários — alimenta o autocomplete das diárias.
       await server.register(beneficiaryRoutes, { prefix: '/beneficiaries', logLevel: 'info' })
 
-      // Abastecimento de Frota (Épico 3)
-      await server.register(fleetFuelingRoutes, { prefix: '/fleet-fuelings', logLevel: 'info' })
+      // Simplifica Frotas — cadastros, viagens, manutenção e autorização de
+      // abastecimento (docs/frotas). Substitui o esboço /fleet-fuelings.
+      await server.register(fleetRoutes, { prefix: '/fleet', logLevel: 'info' })
 
       // Portal de Validação Pública (Épico 3) — SEM autenticação, de propósito.
       await server.register(documentValidationRoutes, { prefix: '/public', logLevel: 'info' })

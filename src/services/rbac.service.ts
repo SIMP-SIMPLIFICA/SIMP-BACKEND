@@ -29,6 +29,18 @@ export async function ensureAdminRole(tx: Prisma.TransactionClient): Promise<{ i
   })
 }
 
+/**
+ * Ressincroniza a role global `admin` com o catálogo atual, para TODAS as
+ * organizações de uma vez (a role é uma linha só).
+ *
+ * Sem isto, `ensureAdminRole` só rodava ao criar uma organização: uma permissão
+ * nova no catálogo (ex.: `fleet:*`) nunca chegava aos admins das prefeituras já
+ * existentes. Chamada no boot do servidor; idempotente.
+ */
+export async function syncAdminRoleWithCatalog(): Promise<{ id: string }> {
+  return prisma.$transaction(tx => ensureAdminRole(tx))
+}
+
 export const PERMISSION_MISSING_MESSAGE =
   'Esse usuário não tem permissão para essa ferramenta. Se for admin, acesse a parte de permissões (Roles), edite o cargo que foi atribuído a ele clicando no ícone do lápis, e marque as permissões necessárias.'
 

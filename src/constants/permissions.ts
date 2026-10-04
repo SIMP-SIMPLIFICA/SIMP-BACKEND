@@ -138,13 +138,23 @@ export const AVAILABLE_PERMISSIONS = {
       { key: 'dailyAllowances:delete', description: 'Excluir diárias ainda não emitidas',                   level: 'delete' },
     ]
   },
-  fleetFuelings: {
-    displayName: 'Abastecimento de Frota',
+  // Simplifica Frotas (TASK 1 da spec técnica). Escopo por departamento: sem
+  // fleet:all_departments, o usuário só vê os departamentos de que é membro ou
+  // gestor.
+  fleet: {
+    displayName: 'Frota (Simplifica Frotas)',
     permissions: [
-      { key: 'fleetFuelings:read',   description: 'Visualizar abastecimentos e baixar relatórios',           level: 'read' },
-      { key: 'fleetFuelings:write',  description: 'Registrar e editar abastecimentos em rascunho',           level: 'write' },
-      { key: 'fleetFuelings:issue',  description: 'Emitir o relatório oficial do abastecimento',             level: 'admin' },
-      { key: 'fleetFuelings:delete', description: 'Excluir abastecimentos ainda não emitidos',               level: 'delete' },
+      { key: 'fleet:read',            description: 'Ver veículos, motoristas e viagens do próprio escopo',            level: 'read' },
+      { key: 'fleet:manage',          description: 'Cadastrar e editar veículos, motoristas e contratos',             level: 'write' },
+      { key: 'fleet:authorize_fuel',  description: 'Emitir e cancelar autorização de abastecimento',                  level: 'write' },
+      { key: 'fleet:review_fuel',     description: 'Conferir cupom, preencher dados a partir da foto e fechar autorização', level: 'write' },
+      { key: 'fleet:trip_request',    description: 'Solicitar viagem',                                               level: 'write' },
+      { key: 'fleet:trip_approve',    description: 'Autorizar viagem',                                               level: 'admin' },
+      { key: 'fleet:trip_drive',      description: 'Registrar saída, retorno e checklist (motorista)',                level: 'write' },
+      { key: 'fleet:maintenance',     description: 'Abrir, aprovar e fechar ordem de serviço',                       level: 'write' },
+      { key: 'fleet:release_block',   description: 'Liberar bloqueios (tanque, intervalo, duplicidade) com justificativa', level: 'admin' },
+      { key: 'fleet:reports',         description: 'Gerar relatórios da frota',                                      level: 'read' },
+      { key: 'fleet:all_departments', description: 'Ver a frota de todos os departamentos',                          level: 'admin' },
     ]
   }
 }

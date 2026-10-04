@@ -75,7 +75,7 @@ describe('Validação pública de documentos (Task 3.3)', () => {
 
       expect(result).toMatchObject({
         type: 'FLEET_FUELING',
-        typeLabel: 'Relatório de Abastecimento',
+        typeLabel: 'Autorização de Abastecimento',
       })
     })
 

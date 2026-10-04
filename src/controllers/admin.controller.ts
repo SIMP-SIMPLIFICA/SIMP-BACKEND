@@ -5,7 +5,7 @@ import { prisma } from '../lib/prisma.js'
 import { authService } from '../services/auth.service.js'
 import { emailService } from '../services/email.service.js'
 import { authLogger } from '../utils/logger.js'
-import { ALL_MODULES, DEFAULT_MODULES, ModuleKey } from '../constants/modules.js'
+import { ALL_MODULES, DEFAULT_MODULES, MODULES, ModuleKey } from '../constants/modules.js'
 import { invalidateModuleCache, invalidateOrgStatusCache } from '../middleware/auth.middleware.js'
 import { calculateRequestFingerprint } from '../services/fingerprint.service.js'
 import { ensureAdminRole } from '../services/rbac.service.js'
@@ -35,6 +35,24 @@ function requireSuperAdmin(request: FastifyRequest, reply: FastifyReply): boolea
 
 const orgIdParamSchema    = z.object({ id: z.string() })
 const moduleParamSchema   = z.object({ id: z.string(), module: z.string() })
+
+/**
+ * Dependência entre módulos (Simplifica Frotas, TASK 1): `fleet` só funciona com
+ * `fleetFuelings` ligado. Recusa ligar `fleet` sem ele e desligar
+ * `fleetFuelings` com `fleet` ligado. Devolve a mensagem de erro ou null.
+ */
+async function checkModuleDependency(orgId: string, module: string, isEnabled: boolean): Promise<string | null> {
+  const isOn = async (key: string) =>
+    (await prisma.organizationModule.count({ where: { organizationId: orgId, module: key, isEnabled: true } })) > 0
+
+  if (module === MODULES.FLEET && isEnabled && !(await isOn(MODULES.FLEET_FUELINGS))) {
+    return 'Ligue antes o módulo "Frota — abastecimento" (fleetFuelings): os cadastros de frota dependem dele.'
+  }
+  if (module === MODULES.FLEET_FUELINGS && !isEnabled && (await isOn(MODULES.FLEET))) {
+    return 'Desligue antes o módulo "Frota" (fleet): ele depende do abastecimento (fleetFuelings).'
+  }
+  return null
+}
 
 const createOrgSchema = z.object({
   orgName:        z.string().min(3, 'Nome deve ter ao menos 3 caracteres'),
@@ -312,6 +330,11 @@ export class AdminController {
 
     const org = await prisma.organization.findUnique({ where: { id: orgId }, select: { id: true } })
     if (!org) return reply.code(404).send({ error: 'Not Found', message: 'Organização não encontrada.' })
+
+    // Simplifica Frotas (TASK 1): o módulo `fleet` (cadastros, viagens, manutenção)
+    // exige `fleetFuelings` (autorização de abastecimento) ligado.
+    const dependencyError = await checkModuleDependency(orgId, module, data.isEnabled)
+    if (dependencyError) return reply.code(409).send({ error: 'MODULE_DEPENDENCY', message: dependencyError })
 
     const updated = await prisma.organizationModule.upsert({
       where: { organizationId_module: { organizationId: orgId, module } },

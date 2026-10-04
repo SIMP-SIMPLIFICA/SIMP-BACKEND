@@ -28,6 +28,68 @@ import { prisma } from '@/lib/prisma.js'
  */
 const COMMITTED_DAILY_ALLOWANCE_STATUSES: DailyAllowanceStatus[] = ['ISSUED', 'ACCOUNTED']
 
+// ─── Simplifica Frotas (TASK 1): consumo da ficha QDD ───────────────────────
+// Autorização de abastecimento EMITIDA e ainda aberta RESERVA o valor máximo;
+// usada ou fechada CONSOME o valor real do cupom (ou o máximo, se o cupom ainda
+// não tem valor); expirada, bloqueada ou cancelada libera a reserva.
+// OS aprovada, em execução ou concluída consome o total da OS.
+const FLEET_RESERVING_LIFECYCLES = ['OPEN', 'IN_USE', 'AWAITING_REVIEW'] as const
+const FLEET_CONSUMED_LIFECYCLES = ['USED', 'CLOSED'] as const
+const FLEET_COMMITTED_SERVICE_ORDER_STATUSES = ['APROVADA', 'EM_EXECUCAO', 'CONCLUIDA'] as const
+
+/**
+ * Soma, por ficha, o que o Frotas compromete. `client` é o prisma global (leitura)
+ * ou o `tx` da transação (detecção de estouro), para que a soma inclua o
+ * registro recém-gravado.
+ */
+async function fleetUsageByItem(
+  client: Prisma.TransactionClient,
+  qddItemIds: string[]
+): Promise<Map<string, Prisma.Decimal>> {
+  const [reserved, consumed, serviceOrders] = await Promise.all([
+    client.fleetFueling.groupBy({
+      by: ['qddItemId'],
+      where: {
+        qddItemId: { in: qddItemIds },
+        status: 'ISSUED',
+        deletedAt: null,
+        lifecycle: { in: [...FLEET_RESERVING_LIFECYCLES] },
+      },
+      orderBy: { qddItemId: 'asc' },
+      _sum: { maxAmount: true },
+    }),
+    client.fleetFueling.findMany({
+      where: {
+        qddItemId: { in: qddItemIds },
+        status: 'ISSUED',
+        deletedAt: null,
+        lifecycle: { in: [...FLEET_CONSUMED_LIFECYCLES] },
+      },
+      select: { qddItemId: true, maxAmount: true, redemption: { select: { totalAmount: true } } },
+    }),
+    client.fleetServiceOrder.groupBy({
+      by: ['qddItemId'],
+      where: {
+        qddItemId: { in: qddItemIds },
+        deletedAt: null,
+        status: { in: [...FLEET_COMMITTED_SERVICE_ORDER_STATUSES] },
+      },
+      orderBy: { qddItemId: 'asc' },
+      _sum: { totalAmount: true },
+    }),
+  ])
+
+  const usage = new Map<string, Prisma.Decimal>()
+  const add = (qddItemId: string | null, amount: Prisma.Decimal | null | undefined) => {
+    if (!qddItemId || !amount) return
+    usage.set(qddItemId, (usage.get(qddItemId) ?? new Prisma.Decimal(0)).plus(amount))
+  }
+  for (const row of reserved) add(row.qddItemId, row._sum.maxAmount)
+  for (const row of consumed) add(row.qddItemId, row.redemption?.totalAmount ?? row.maxAmount)
+  for (const row of serviceOrders) add(row.qddItemId, row._sum.totalAmount)
+  return usage
+}
+
 export class BudgetError extends Error {
   constructor(
     readonly code: 'INVALID_QDD_ITEM',
@@ -62,7 +124,7 @@ export const budgetService = {
   ): Promise<Map<string, QddItemBalance>> {
     if (qddItemIds.length === 0) return new Map()
 
-    const [items, dailyAllowanceSums, virtualProcessSums, covenantSums] = await Promise.all([
+    const [items, dailyAllowanceSums, virtualProcessSums, covenantSums, fleetUsage] = await Promise.all([
       prisma.qddItem.findMany({
         where: { id: { in: qddItemIds }, organizationId },
         select: { id: true, valorOrcado: true },
@@ -95,6 +157,8 @@ export const budgetService = {
         orderBy: { qddItemId: 'asc' },
         _sum: { transferValue: true },
       }),
+      // Simplifica Frotas: autorizações de abastecimento e OS (ver fleetUsageByItem).
+      fleetUsageByItem(prisma, qddItemIds),
     ])
 
     const usedByItem = new Map<string, Prisma.Decimal>()
@@ -105,6 +169,7 @@ export const budgetService = {
     for (const row of dailyAllowanceSums) add(row.qddItemId, row._sum.totalAmount)
     for (const row of virtualProcessSums) add(row.qddItemId, row._sum.totalValue)
     for (const row of covenantSums) add(row.qddItemId, row._sum.transferValue)
+    for (const [qddItemId, amount] of fleetUsage) add(qddItemId, amount)
 
     const result = new Map<string, QddItemBalance>()
     for (const item of items) {
@@ -128,7 +193,7 @@ export const budgetService = {
    * no ponto flutuante decidiria errado se houve estouro.
    */
   async detectOverrun(tx: Prisma.TransactionClient, qddItemId: string): Promise<boolean> {
-    const [qddItem, dailySum, processSum, covenantSum] = await Promise.all([
+    const [qddItem, dailySum, processSum, covenantSum, fleetUsage] = await Promise.all([
       tx.qddItem.findUnique({ where: { id: qddItemId }, select: { valorOrcado: true } }),
       tx.dailyAllowance.aggregate({
         where: { qddItemId, status: { in: COMMITTED_DAILY_ALLOWANCE_STATUSES } },
@@ -143,6 +208,7 @@ export const budgetService = {
         where: { qddItemId },
         _sum: { transferValue: true },
       }),
+      fleetUsageByItem(tx, [qddItemId]),
     ])
 
     if (!qddItem) return false
@@ -150,6 +216,7 @@ export const budgetService = {
     const total = (dailySum._sum.totalAmount ?? ZERO)
       .plus(processSum._sum.totalValue ?? ZERO)
       .plus(covenantSum._sum.transferValue ?? ZERO)
+      .plus(fleetUsage.get(qddItemId) ?? ZERO)
     return total.greaterThan(qddItem.valorOrcado)
   },
 

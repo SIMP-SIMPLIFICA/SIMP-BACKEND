@@ -23,7 +23,7 @@ import { hash } from '@node-rs/argon2';
  *   Gestor Financeiro     → finance:read, finance:write, finance:approve, finance:export
  *   Operador de Protocolo → protocols:read, protocols:write, protocols:normativo, protocols:comunicacao
  *   Auditor Interno       → audit:read, audit:export
- *   Coordenador de Frotas → fleetFuelings:read, fleetFuelings:write, fleetFuelings:issue, fleetFuelings:delete
+ *   Coordenador de Frotas → fleet:read, fleet:manage, fleet:authorize_fuel, fleet:reports
  * Nenhuma das quatro inclui a variante `:admin` do módulo (ex.: `protocols:admin`)
  * nem `system:admin` — são cargos setoriais, não administradores.
  *
@@ -65,7 +65,7 @@ const SECTOR_ROLES: RoleSeed[] = [
   {
     slugPart: 'fleet-coordinator',
     displayName: 'Coordenador de Frotas',
-    permissions: ['fleetFuelings:read', 'fleetFuelings:write', 'fleetFuelings:issue', 'fleetFuelings:delete'],
+    permissions: ['fleet:read', 'fleet:manage', 'fleet:authorize_fuel', 'fleet:reports'],
   },
 ];
 

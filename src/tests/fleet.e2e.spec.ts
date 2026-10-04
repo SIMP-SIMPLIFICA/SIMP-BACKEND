@@ -196,6 +196,18 @@ describe('Frotas — motoristas', () => {
     expect(found.json().data[0].name).toBe('João Pereira')
   })
 
+  test('CPF repetido fora do escopo do usuário: 409 sem revelar o nome do motorista', async () => {
+    const { organization, session, department } = await scenario()
+    const scoped = await createTestUserWithToken({ organizationId: organization.id, permissions: ['fleet:read', 'fleet:manage'] })
+
+    await inject('POST', `${BASE}/drivers`, session.headers, driverPayload({ name: 'Maria Sigilosa', departmentId: department.id }))
+
+    const probe = await inject('POST', `${BASE}/drivers`, scoped.headers, driverPayload({ name: 'Tentativa' }))
+    expect(probe.statusCode).toBe(409)
+    expect(probe.json().error).toBe('CPF_ALREADY_REGISTERED')
+    expect(probe.json().message).not.toContain('Maria Sigilosa')
+  })
+
   test('o mesmo CPF pode existir em duas organizações (blind index por organização)', async () => {
     const a = await scenario()
     const b = await scenario()

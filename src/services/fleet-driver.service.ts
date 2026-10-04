@@ -79,14 +79,21 @@ async function assertCpfFree(tx: Prisma.TransactionClient, scope: FleetScope, cp
       deletedAt: null,
       ...(exceptId ? { id: { not: exceptId } } : {}),
     },
-    select: { name: true },
+    select: { name: true, departmentId: true },
   })
-  if (clash) {
-    throw new FleetError(
-      'CPF_ALREADY_REGISTERED',
-      `Este CPF já está cadastrado para o motorista ${clash.name}. Edite o cadastro existente em vez de criar outro.`
-    )
-  }
+  if (!clash) return
+
+  // O nome só aparece se o cadastro existente estiver no escopo de quem chama.
+  // Sem isso, qualquer usuário com fleet:manage poderia testar CPFs e descobrir
+  // nomes de motoristas de departamentos que ele não enxerga.
+  const visible =
+    scope.allDepartments || clash.departmentId === null || scope.departmentIds.includes(clash.departmentId)
+  throw new FleetError(
+    'CPF_ALREADY_REGISTERED',
+    visible
+      ? `Este CPF já está cadastrado para o motorista ${clash.name}. Edite o cadastro existente em vez de criar outro.`
+      : 'Este CPF já está cadastrado em outro departamento desta organização. Peça ao gestor de frota para localizar o cadastro.'
+  )
 }
 
 function translateUniqueViolation(error: unknown): never {

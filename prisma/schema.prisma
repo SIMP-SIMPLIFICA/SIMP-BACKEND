@@ -187,6 +187,8 @@ model User {
   fleetVehiclesCreated      FleetVehicle[]           @relation("FleetVehicleCreator")
   fleetDriverProfiles       FleetDriver[]            @relation("FleetDriverUser")
   fleetDriversCreated       FleetDriver[]            @relation("FleetDriverCreator")
+  fleetVehiclesUpdated      FleetVehicle[]           @relation("FleetVehicleUpdater")
+  fleetDriversUpdated       FleetDriver[]            @relation("FleetDriverUpdater")
   fleetContractsCreated     FleetContract[]          @relation("FleetContractCreator")
   fleetFuelingsIssued       FleetFueling[]           @relation("FleetFuelingIssuer")
   fleetFuelings             FleetFueling[]           @relation("FleetFuelingCreator")
@@ -1760,9 +1762,11 @@ model FleetVehicle {
   status          FleetVehicleStatus @default(EM_USO)
   /// Maior hodômetro válido registrado (desnormalizado; só cresce).
   odometerKm      Int                @default(0) @map("odometer_km")
+  /// Nº de patrimônio. Obrigatório para PROPRIO (regra no service); único na organização entre ativos.
   assetTag        String?            @map("asset_tag")
   marketValue     Decimal?           @map("market_value") @db.Decimal(15, 2)
   createdById     String             @map("created_by_id") @db.Uuid
+  updatedById     String?            @map("updated_by_id") @db.Uuid
   createdAt       DateTime           @default(now()) @map("created_at")
   updatedAt       DateTime           @updatedAt @map("updated_at")
   deletedAt       DateTime?          @map("deleted_at")
@@ -1771,12 +1775,13 @@ model FleetVehicle {
   department    Department?         @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   ownerEntity   FleetOwnerEntity?   @relation(fields: [ownerEntityId], references: [id], onDelete: Restrict)
   createdBy     User                @relation("FleetVehicleCreator", fields: [createdById], references: [id])
+  updatedBy     User?               @relation("FleetVehicleUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
   fuelings      FleetFueling[]
   trips         FleetTrip[]
   serviceOrders FleetServiceOrder[]
   qualityAlerts FleetQualityAlert[]
 
-  // UNIQUE (organization_id, plate) e (organization_id, renavam) WHERE deleted_at IS NULL — índices parciais na migration.
+  // UNIQUE (organization_id, plate), (organization_id, renavam) e (organization_id, asset_tag) WHERE deleted_at IS NULL — índices parciais na migration.
   @@index([organizationId, status])
   @@index([organizationId, departmentId])
   @@map("fleet_vehicles")
@@ -1791,6 +1796,8 @@ model FleetDriver {
   userId             String?             @map("user_id") @db.Uuid
   departmentId       String?             @map("department_id")
   name               String
+  /// Matrícula funcional. Obrigatória para EFETIVO e COMISSIONADO (regra no service); única na organização entre ativos.
+  registrationNumber String?             @map("registration_number")
   cpfEncrypted       String              @map("cpf_encrypted")
   cpfBlindIndex      String              @map("cpf_blind_index")
   cnhNumberEncrypted String              @map("cnh_number_encrypted")
@@ -1802,6 +1809,7 @@ model FleetDriver {
   employmentKind     FleetEmploymentKind @map("employment_kind")
   active             Boolean             @default(true)
   createdById        String              @map("created_by_id") @db.Uuid
+  updatedById        String?             @map("updated_by_id") @db.Uuid
   createdAt          DateTime            @default(now()) @map("created_at")
   updatedAt          DateTime            @updatedAt @map("updated_at")
   deletedAt          DateTime?           @map("deleted_at")
@@ -1810,10 +1818,11 @@ model FleetDriver {
   user         User?          @relation("FleetDriverUser", fields: [userId], references: [id], onDelete: SetNull)
   department   Department?    @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   createdBy    User           @relation("FleetDriverCreator", fields: [createdById], references: [id])
+  updatedBy    User?          @relation("FleetDriverUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
   fuelings     FleetFueling[]
   trips        FleetTrip[]
 
-  // UNIQUE (organization_id, cpf_blind_index) WHERE deleted_at IS NULL — índice parcial na migration.
+  // UNIQUE (organization_id, cpf_blind_index) e (organization_id, registration_number) WHERE deleted_at IS NULL — índices parciais na migration.
   @@index([organizationId, active])
   @@map("fleet_drivers")
 }

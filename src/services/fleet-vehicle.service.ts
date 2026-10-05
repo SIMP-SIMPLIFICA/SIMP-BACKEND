@@ -3,7 +3,8 @@ import { prisma } from '@/lib/prisma.js'
 import { auditLedgerService } from '@/services/audit-ledger.service.js'
 import { FleetError } from '@/services/fleet-error.js'
 import { type FleetScope, assertCanModify, assertDepartmentAllowed, departmentWhere } from '@/services/fleet-scope.service.js'
-import type { CreateVehicleBody, ListVehiclesQuery, UpdateVehicleBody } from '@/schemas/fleet.schemas.js'
+import type { CreateVehicleBody, ExportVehiclesBody, ListVehiclesQuery, UpdateVehicleBody } from '@/schemas/fleet.schemas.js'
+import { USER_REF_SELECT, toUserRef } from '@/utils/fleet-user-ref.js'
 import { isValidChassis, isValidPlate, isValidRenavam, normalizePlate, onlyDigits } from '@/utils/fleet-validators.js'
 
 /**
@@ -11,7 +12,8 @@ import { isValidChassis, isValidPlate, isValidRenavam, normalizePlate, onlyDigit
  *
  * Regras: placa e Renavam normalizados e validados no servidor; únicos por
  * organização entre ativos (índice parcial no banco — a checagem prévia aqui só
- * existe para devolver mensagem orientadora); exclusão é soft-delete e é recusada
+ * existir para devolver mensagem orientadora); nº de patrimônio obrigatório para
+ * veículo PRÓPRIO e único entre ativos; exclusão é soft-delete e é recusada
  * com autorização aberta ou viagem em curso; toda escrita audita na mesma
  * transação (D3).
  */
@@ -40,7 +42,64 @@ const SELECT = {
   createdAt: true,
   updatedAt: true,
   department: { select: { id: true, name: true } },
+  ownerEntity: { select: { id: true, name: true } },
+  createdBy: { select: USER_REF_SELECT },
+  updatedBy: { select: USER_REF_SELECT },
 } satisfies Prisma.FleetVehicleSelect
+
+type VehicleRow = Prisma.FleetVehicleGetPayload<{ select: typeof SELECT }>
+
+/** Autores reduzidos a id + nome (nada de e-mail ou perfil do usuário). */
+function toPublic(row: VehicleRow) {
+  return { ...row, createdBy: toUserRef(row.createdBy), updatedBy: toUserRef(row.updatedBy) }
+}
+
+export type PublicVehicle = ReturnType<typeof toPublic>
+
+/**
+ * Patrimônio é obrigatório para veículo PRÓPRIO: é o número do tombamento no
+ * patrimônio do município. Locado, cedido e comodato não são bens da
+ * organização e podem não ter.
+ */
+function assertAssetTagRule(ownership: string, assetTag: string | null | undefined) {
+  if (ownership === 'PROPRIO' && !assetTag) {
+    throw new FleetError(
+      'ASSET_TAG_REQUIRED',
+      'Informe o nº de patrimônio: ele é obrigatório para veículo próprio. Confira na plaqueta ou no setor de patrimônio.'
+    )
+  }
+}
+
+/**
+ * Filtros da listagem — os mesmos usados pela relação em PDF, para que o
+ * arquivo exportado traga exatamente o que a tela mostra.
+ */
+export function vehicleListWhere(scope: FleetScope, filters: ExportVehiclesBody): Prisma.FleetVehicleWhereInput {
+  const search = filters.search?.trim()
+  const plateSearch = search ? normalizePlate(search) : ''
+  return {
+    organizationId: scope.organizationId,
+    deletedAt: null,
+    ...departmentWhere(scope),
+    ...(filters.status ? { status: filters.status } : {}),
+    ...(filters.departmentId ? { departmentId: filters.departmentId } : {}),
+    ...(search
+      ? {
+          AND: [
+            {
+              OR: [
+                ...(plateSearch ? [{ plate: { contains: plateSearch } }] : []),
+                { makeModel: { contains: search, mode: 'insensitive' as const } },
+                { assetTag: { contains: search, mode: 'insensitive' as const } },
+              ],
+            },
+          ],
+        }
+      : {}),
+  }
+}
+
+export { SELECT as VEHICLE_SELECT, toPublic as toPublicVehicle }
 
 function normalizeIdentifiers<T extends { plate?: string; renavam?: string | null; chassis?: string | null }>(input: T) {
   const out: { plate?: string; renavam?: string | null; chassis?: string | null } = {}
@@ -90,7 +149,7 @@ async function assertOwnerEntityAllowed(scope: FleetScope, ownerEntityId: string
 async function assertUnique(
   tx: Prisma.TransactionClient,
   scope: FleetScope,
-  values: { plate?: string; renavam?: string | null },
+  values: { plate?: string; renavam?: string | null; assetTag?: string | null },
   exceptId?: string
 ) {
   const base = { organizationId: scope.organizationId, deletedAt: null, ...(exceptId ? { id: { not: exceptId } } : {}) }
@@ -107,12 +166,24 @@ async function assertUnique(
       throw new FleetError('RENAVAM_ALREADY_REGISTERED', 'Já existe um veículo ativo com este Renavam nesta organização.')
     }
   }
+  if (values.assetTag) {
+    const clash = await tx.fleetVehicle.findFirst({ where: { ...base, assetTag: values.assetTag }, select: { id: true } })
+    if (clash) {
+      throw new FleetError(
+        'ASSET_TAG_ALREADY_REGISTERED',
+        `O patrimônio ${values.assetTag} já está em outro veículo ativo desta organização. Confira o número na plaqueta.`
+      )
+    }
+  }
 }
 
 /** Corrida entre duas criações: o índice parcial acusa P2002 — vira o mesmo erro orientador. */
 function translateUniqueViolation(error: unknown): never {
   if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
     const target = String(error.meta?.target ?? '')
+    if (target.includes('asset_tag')) {
+      throw new FleetError('ASSET_TAG_ALREADY_REGISTERED', 'Este nº de patrimônio já está em outro veículo ativo desta organização.')
+    }
     if (target.includes('renavam')) {
       throw new FleetError('RENAVAM_ALREADY_REGISTERED', 'Já existe um veículo ativo com este Renavam nesta organização.')
     }
@@ -133,28 +204,7 @@ function auditBase(scope: FleetScope) {
 
 export const fleetVehicleService = {
   async list(scope: FleetScope, query: ListVehiclesQuery) {
-    const search = query.search?.trim()
-    const plateSearch = search ? normalizePlate(search) : ''
-    const where: Prisma.FleetVehicleWhereInput = {
-      organizationId: scope.organizationId,
-      deletedAt: null,
-      ...departmentWhere(scope),
-      ...(query.status ? { status: query.status } : {}),
-      ...(query.departmentId ? { departmentId: query.departmentId } : {}),
-      ...(search
-        ? {
-            AND: [
-              {
-                OR: [
-                  ...(plateSearch ? [{ plate: { contains: plateSearch } }] : []),
-                  { makeModel: { contains: search, mode: 'insensitive' as const } },
-                  { assetTag: { contains: search, mode: 'insensitive' as const } },
-                ],
-              },
-            ],
-          }
-        : {}),
-    }
+    const where = vehicleListWhere(scope, query)
 
     const [data, total] = await Promise.all([
       prisma.fleetVehicle.findMany({
@@ -167,7 +217,7 @@ export const fleetVehicleService = {
       prisma.fleetVehicle.count({ where }),
     ])
 
-    return { data, meta: { total, page: query.page, limit: query.limit, totalPages: Math.ceil(total / query.limit) } }
+    return { data: data.map(toPublic), meta: { total, page: query.page, limit: query.limit, totalPages: Math.ceil(total / query.limit) } }
   },
 
   async getById(scope: FleetScope, id: string) {
@@ -176,17 +226,18 @@ export const fleetVehicleService = {
       select: SELECT,
     })
     if (!vehicle) throw new FleetError('NOT_FOUND', 'Veículo não encontrado.')
-    return vehicle
+    return toPublic(vehicle)
   },
 
   async create(scope: FleetScope, input: CreateVehicleBody) {
     const ids = normalizeIdentifiers(input)
+    assertAssetTagRule(input.ownership, input.assetTag)
     await assertDepartmentAllowed(scope, input.departmentId)
     await assertOwnerEntityAllowed(scope, input.ownerEntityId)
 
     try {
       return await prisma.$transaction(async tx => {
-        await assertUnique(tx, scope, ids)
+        await assertUnique(tx, scope, { ...ids, assetTag: input.assetTag })
 
         const vehicle = await tx.fleetVehicle.create({
           data: {
@@ -220,11 +271,16 @@ export const fleetVehicleService = {
             ...auditBase(scope),
             action: 'FLEET_VEHICLE_CREATED',
             resourceId: vehicle.id,
-            details: { plate: vehicle.plate, departmentId: vehicle.departmentId, status: vehicle.status },
+            details: {
+              plate: vehicle.plate,
+              assetTag: vehicle.assetTag,
+              departmentId: vehicle.departmentId,
+              status: vehicle.status,
+            },
           },
           tx
         )
-        return vehicle
+        return toPublic(vehicle)
       })
     } catch (error) {
       if (error instanceof FleetError) throw error
@@ -269,10 +325,20 @@ export const fleetVehicleService = {
     if (mergedYears.manufactureYear && mergedYears.modelYear && mergedYears.manufactureYear > mergedYears.modelYear) {
       throw new FleetError('INVALID_VEHICLE_YEARS', 'O ano de fabricação não pode ser maior que o ano do modelo.')
     }
+    // Só quando a alteração mexe em propriedade ou patrimônio: veículo próprio
+    // cadastrado antes da regra continua aceitando, por exemplo, troca de
+    // situação; o formulário de edição (que envia tudo) já exige o número.
+    if (input.ownership !== undefined || input.assetTag !== undefined) {
+      assertAssetTagRule(
+        input.ownership ?? current.ownership,
+        input.assetTag !== undefined ? input.assetTag : current.assetTag
+      )
+    }
+    data.updatedById = scope.userId
 
     try {
       return await prisma.$transaction(async tx => {
-        await assertUnique(tx, scope, ids, id)
+        await assertUnique(tx, scope, { ...ids, assetTag: input.assetTag }, id)
 
         // updateMany com organizationId no filtro: nunca altera registro de outra
         // organização, mesmo que o id venha de lá.
@@ -288,11 +354,11 @@ export const fleetVehicleService = {
             ...auditBase(scope),
             action: 'FLEET_VEHICLE_UPDATED',
             resourceId: id,
-            details: { fields: Object.keys(data), plate: vehicle.plate },
+            details: { fields: Object.keys(data).filter(k => k !== 'updatedById'), plate: vehicle.plate },
           },
           tx
         )
-        return vehicle
+        return toPublic(vehicle)
       })
     } catch (error) {
       if (error instanceof FleetError) throw error
@@ -321,7 +387,7 @@ export const fleetVehicleService = {
 
       const deleted = await tx.fleetVehicle.updateMany({
         where: { id, organizationId: scope.organizationId, deletedAt: null, ...departmentWhere(scope) },
-        data: { deletedAt: new Date() },
+        data: { deletedAt: new Date(), updatedById: scope.userId },
       })
       if (deleted.count === 0) throw new FleetError('NOT_FOUND', 'Veículo não encontrado.')
 

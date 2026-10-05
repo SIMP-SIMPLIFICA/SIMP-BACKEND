@@ -26,6 +26,10 @@ export const EXPORTED_DOCUMENT_TYPES = {
    */
   DAILY_ALLOWANCE_XLS_MANIFEST: 'DAILY_ALLOWANCE_XLS_MANIFEST',
   FLEET_FUELING: 'FLEET_FUELING',
+  FLEET_VEHICLE_LIST: 'FLEET_VEHICLE_LIST',
+  FLEET_DRIVER_LIST: 'FLEET_DRIVER_LIST',
+  FLEET_VEHICLE_SHEET: 'FLEET_VEHICLE_SHEET',
+  FLEET_DRIVER_SHEET: 'FLEET_DRIVER_SHEET',
   /** Dossiê do Setor — retrato dos vínculos de um departamento (Épico 4). */
   DEPARTMENT_DOSSIER: 'DEPARTMENT_DOSSIER',
 } as const
@@ -46,6 +50,10 @@ const LABELS: Record<string, string> = {
   [EXPORTED_DOCUMENT_TYPES.DAILY_ALLOWANCE_XLS_MANIFEST]:
     'Manifesto de Integridade de Planilha (Diárias)',
   [EXPORTED_DOCUMENT_TYPES.FLEET_FUELING]: 'Autorização de Abastecimento',
+  [EXPORTED_DOCUMENT_TYPES.FLEET_VEHICLE_LIST]: 'Relação da Frota',
+  [EXPORTED_DOCUMENT_TYPES.FLEET_DRIVER_LIST]: 'Relação de Motoristas',
+  [EXPORTED_DOCUMENT_TYPES.FLEET_VEHICLE_SHEET]: 'Ficha do Veículo',
+  [EXPORTED_DOCUMENT_TYPES.FLEET_DRIVER_SHEET]: 'Ficha do Motorista',
 }
 
 /** Rótulo em pt-BR do tipo, com fallback para tipo não catalogado. */

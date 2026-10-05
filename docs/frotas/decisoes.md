@@ -172,6 +172,24 @@ O destino do código de assinatura existente nos Conselhos (remover ou corrigir)
 
 **Motivo.** Sem isso: um usuário restrito publicaria para a organização inteira um motorista do seu setor (ou esconderia um da frota geral); um CPF digitado na busca, inteiro ou só o prefixo de 9 dígitos que já o determina, iria para o log de requisição; e a máscara antiga (dígitos 4 a 9) deixava só 1.000 candidatos, recuperáveis pelo lookup em minutos.
 
+## D14 — Matrícula, patrimônio e PDFs autenticados do cadastro
+
+2026-10-04 · decidido com o responsável (matrícula e rodapé) e na revisão de segurança
+
+**Decisão.**
+- **Matrícula** é campo próprio, `FleetDriver.registrationNumber`, e não vínculo com `Beneficiary`. É obrigatória para EFETIVO e COMISSIONADO e única entre ativos na organização. No **cadastro**, se vier em branco, o servidor sugere a matrícula do beneficiário de Diárias com o mesmo CPF. Isso só acontece se o módulo `dailyAllowances` estiver ligado e o usuário tiver alguma permissão `dailyAllowances:*`, porque senão o cadastro revelaria dados de Diárias a quem não os enxerga. A trilha guarda `registrationSource`.
+- **Patrimônio** (`assetTag`) é obrigatório para veículo PRÓPRIO e único entre ativos.
+- **Registros anteriores às regras.** As duas obrigatoriedades só são conferidas na alteração quando ela toca o campo ou o vínculo/posse. Registros antigos continuam aceitando, por exemplo, troca de situação; o formulário de edição envia tudo e já as exige.
+- **Busca por matrícula.** `POST /drivers/search-by-registration` leva o termo no corpo (a tela não distingue matrícula numérica de CPF incompleto) e tem limite de 60/min por IP. Não é auditada: não é oráculo de CPF.
+- **PDFs** saem pelo motor universal (D9): relação da frota, relação de motoristas, ficha do veículo e ficha do motorista. São todos `POST`, com os filtros da tela no corpo, limite de 20/min por IP e permissão de leitura.
+  - Em cada exportação, `ExportedDocument` e a auditoria (`FLEET_*_EXPORTED`) gravam **na mesma transação**, com `exportedDocumentService.registerInTransaction`. Se o registro falhar, o PDF não é entregue.
+  - CPF e CNH aparecem só mascarados. O termo buscado (nome ou matrícula) não é impresso nem auditado.
+  - O rodapé padrão segue em toda página, com o nome ofuscado de quem exportou. Na última página vai o bloco **Responsável**, com nome completo e cargo (`User.jobTitle`).
+- **Relação da frota** em paisagem com 12 colunas legíveis. Chassi, consumo de referência, regime, ARLA, valor de mercado e entidade proprietária ficam só na ficha.
+- **Teto de 2.000 linhas** por relação (`EXPORT_TOO_LARGE`, 422).
+
+**Motivo.** A matrícula de Diárias é cópia em texto e não pertence ao Frotas. Reaproveitá-la como sugestão evita digitação dupla sem acoplar os módulos. A transação única garante que nenhum documento validável saia sem trilha.
+
 ## Também decidido
 
 - **RLS:** ver D11.

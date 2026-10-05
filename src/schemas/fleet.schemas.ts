@@ -32,6 +32,9 @@ export const pageQuery = {
 
 export const idParams = z.object({ id }).strict()
 
+/** Rotas sem corpo útil (ficha em PDF): qualquer campo é recusado (D4). */
+export const emptyBody = z.object({}).strict()
+
 // ─── Veículos ────────────────────────────────────────────────────────────────
 
 const vehicleBase = {
@@ -72,14 +75,16 @@ export const createVehicleBody = z
 
 export const updateVehicleBody = z.object(vehicleBase).partial().strict()
 
-export const listVehiclesQuery = z
-  .object({
-    ...pageQuery,
-    search: z.string().trim().max(60).optional(),
-    status: vehicleBase.status,
-    departmentId: id.optional(),
-  })
-  .strict()
+const vehicleFilters = {
+  search: z.string().trim().max(60).optional(),
+  status: vehicleBase.status,
+  departmentId: id.optional(),
+}
+
+export const listVehiclesQuery = z.object({ ...pageQuery, ...vehicleFilters }).strict()
+
+/** Relação da frota em PDF: os mesmos filtros da tela, no corpo do POST. */
+export const exportVehiclesBody = z.object(vehicleFilters).strict()
 
 // ─── Motoristas ──────────────────────────────────────────────────────────────
 
@@ -96,6 +101,14 @@ const driverBase = {
   cnhExpiry: isoDate,
   cnhStatus: z.enum(['REGULAR', 'SUSPENSA', 'CASSADA', 'DESCONHECIDA']).optional(),
   employmentKind: z.enum(['EFETIVO', 'COMISSIONADO', 'CONTRATADO', 'TERCEIRIZADO']),
+  /** Matrícula funcional. Obrigatória para EFETIVO/COMISSIONADO — regra no service (pode vir de Diárias). */
+  registrationNumber: z
+    .string()
+    .transform(v => v.replace(/\s+/g, ' ').trim())
+    .pipe(z.string().max(30))
+    .transform(v => v || null)
+    .nullable()
+    .optional(),
   departmentId: id.nullable().optional(),
   userId: z.string().uuid().nullable().optional(),
   active: z.boolean().optional(),
@@ -107,17 +120,36 @@ export const createDriverBody = z.object(driverBase).strict()
 export const lookupDriverBody = z.object({ cpf: z.string().trim().min(1).max(20) }).strict()
 export const updateDriverBody = z.object(driverBase).partial().strict()
 
+/** Só por nome. CPF é POST /drivers/lookup — dígitos aqui são recusados (a URL vai para o log). */
+const driverNameSearch = z
+  .string()
+  .trim()
+  .max(60)
+  .refine(v => !/\d/.test(v), 'A busca da lista é só por nome. Para localizar por CPF, digite o CPF completo.')
+  .optional()
+
 export const listDriversQuery = z
   .object({
     ...pageQuery,
-    /** Só por nome. CPF é POST /drivers/lookup — dígitos aqui são recusados (a URL vai para o log). */
-    search: z
-      .string()
-      .trim()
-      .max(60)
-      .refine(v => !/\d/.test(v),'A busca da lista é só por nome. Para localizar por CPF, digite o CPF completo.')
-      .optional(),
+    search: driverNameSearch,
     active: z.enum(['true', 'false']).transform(v => v === 'true').optional(),
+    departmentId: id.optional(),
+  })
+  .strict()
+
+/**
+ * Busca por matrícula no corpo de um POST: matrícula costuma ser só dígitos, e
+ * a tela não distingue "5299822" de um CPF digitado pela metade — por isso
+ * nenhum texto com dígito vai para a URL.
+ */
+export const searchDriversByRegistrationBody = z.object({ registration: z.string().trim().min(1).max(30) }).strict()
+
+/** Relação de motoristas em PDF: os filtros da tela no corpo do POST. */
+export const exportDriversBody = z
+  .object({
+    search: driverNameSearch,
+    registration: z.string().trim().min(1).max(30).optional(),
+    active: z.boolean().optional(),
     departmentId: id.optional(),
   })
   .strict()
@@ -128,3 +160,5 @@ export type ListVehiclesQuery = z.infer<typeof listVehiclesQuery>
 export type CreateDriverBody = z.infer<typeof createDriverBody>
 export type UpdateDriverBody = z.infer<typeof updateDriverBody>
 export type ListDriversQuery = z.infer<typeof listDriversQuery>
+export type ExportVehiclesBody = z.infer<typeof exportVehiclesBody>
+export type ExportDriversBody = z.infer<typeof exportDriversBody>

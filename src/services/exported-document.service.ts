@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma.js'
 import { calculateDocumentHash } from '@/services/document-pdf.service.js'
 import { anonymizeName } from '@/utils/lgpd-anonymizer.util.js'
@@ -74,5 +75,27 @@ export const exportedDocumentService = {
       )
       return null
     }
+  },
+
+  /**
+   * Mesmo registro, dentro da transação de quem chama (D3: no Frotas, a
+   * exportação e a trilha de auditoria gravam juntas ou não gravam).
+   *
+   * Aqui a falha PROPAGA, ao contrário de `register`: engolir um erro dentro de
+   * uma transação do Postgres deixaria a transação abortada, e o chamador
+   * prefere não entregar um PDF que ficaria sem validação e sem auditoria.
+   */
+  async registerInTransaction(input: RegisterExportInput, tx: Prisma.TransactionClient): Promise<string> {
+    const sha256Hash = calculateDocumentHash(input.bytes)
+    await tx.exportedDocument.create({
+      data: {
+        organizationId: input.organizationId,
+        documentType: input.documentType,
+        publicId: input.publicId,
+        sha256Hash,
+        exporterName: anonymizeName(input.exporterFullName),
+      },
+    })
+    return sha256Hash
   },
 }

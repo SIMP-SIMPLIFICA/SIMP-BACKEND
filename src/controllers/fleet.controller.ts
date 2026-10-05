@@ -3,15 +3,20 @@ import { z } from 'zod'
 import {
   createDriverBody,
   createVehicleBody,
+  emptyBody,
+  exportDriversBody,
+  exportVehiclesBody,
   idParams,
   listDriversQuery,
   listVehiclesQuery,
   lookupDriverBody,
+  searchDriversByRegistrationBody,
   updateDriverBody,
   updateVehicleBody,
 } from '@/schemas/fleet.schemas.js'
 import { FleetError, type FleetErrorCode } from '@/services/fleet-error.js'
 import { fleetDriverService } from '@/services/fleet-driver.service.js'
+import { type FleetExportResult, fleetExportService } from '@/services/fleet-export.service.js'
 import { fleetVehicleService } from '@/services/fleet-vehicle.service.js'
 import { resolveFleetScope } from '@/services/fleet-scope.service.js'
 
@@ -37,6 +42,11 @@ const STATUS_BY_CODE: Record<FleetErrorCode, number> = {
   PLATE_ALREADY_REGISTERED: 409,
   RENAVAM_ALREADY_REGISTERED: 409,
   CPF_ALREADY_REGISTERED: 409,
+  ASSET_TAG_REQUIRED: 400,
+  ASSET_TAG_ALREADY_REGISTERED: 409,
+  REGISTRATION_REQUIRED: 400,
+  REGISTRATION_ALREADY_REGISTERED: 409,
+  EXPORT_TOO_LARGE: 422,
   VEHICLE_IN_USE: 409,
   DRIVER_IN_USE: 409,
   PII_KEYS_MISSING: 503,
@@ -75,6 +85,16 @@ function handleError(error: unknown, request: FastifyRequest, reply: FastifyRepl
   })
 }
 
+/** PDF autenticado: download como anexo, sem cache (o conteúdo depende do escopo de quem pediu). */
+function sendPdf(reply: FastifyReply, result: FleetExportResult) {
+  return reply
+    .header('Content-Type', 'application/pdf')
+    .header('Content-Disposition', `attachment; filename="${result.fileName}"`)
+    .header('Cache-Control', 'no-store')
+    .header('X-Document-Public-Id', result.publicId)
+    .send(Buffer.from(result.bytes))
+}
+
 export const fleetController = {
   // ─── Veículos ──────────────────────────────────────────────────────────────
 
@@ -82,6 +102,25 @@ export const fleetController = {
     try {
       const query = listVehiclesQuery.parse(request.query)
       return reply.send(await fleetVehicleService.list(await scopeOf(request), query))
+    } catch (error) {
+      return handleError(error, request, reply)
+    }
+  },
+
+  async exportVehicles(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const body = exportVehiclesBody.parse(request.body ?? {})
+      return sendPdf(reply, await fleetExportService.vehicleList(await scopeOf(request), body))
+    } catch (error) {
+      return handleError(error, request, reply)
+    }
+  },
+
+  async exportVehicleSheet(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { id } = idParams.parse(request.params)
+      emptyBody.parse(request.body ?? {})
+      return sendPdf(reply, await fleetExportService.vehicleSheet(await scopeOf(request), id))
     } catch (error) {
       return handleError(error, request, reply)
     }
@@ -140,6 +179,34 @@ export const fleetController = {
     try {
       const { cpf } = lookupDriverBody.parse(request.body)
       return reply.send(await fleetDriverService.lookupByCpf(await scopeOf(request), cpf))
+    } catch (error) {
+      return handleError(error, request, reply)
+    }
+  },
+
+  async searchDriversByRegistration(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { registration } = searchDriversByRegistrationBody.parse(request.body)
+      return reply.send(await fleetDriverService.searchByRegistration(await scopeOf(request), registration))
+    } catch (error) {
+      return handleError(error, request, reply)
+    }
+  },
+
+  async exportDrivers(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const body = exportDriversBody.parse(request.body ?? {})
+      return sendPdf(reply, await fleetExportService.driverList(await scopeOf(request), body))
+    } catch (error) {
+      return handleError(error, request, reply)
+    }
+  },
+
+  async exportDriverSheet(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { id } = idParams.parse(request.params)
+      emptyBody.parse(request.body ?? {})
+      return sendPdf(reply, await fleetExportService.driverSheet(await scopeOf(request), id))
     } catch (error) {
       return handleError(error, request, reply)
     }

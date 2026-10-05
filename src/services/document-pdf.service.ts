@@ -452,13 +452,30 @@ export interface TabularReportInput {
   logoPng?: Uint8Array | null
   /** Texto exibido quando não há nenhuma linha. */
   emptyMessage?: string
+  /**
+   * Paisagem para tabelas largas (área útil de ~742 pt em vez de 495 pt).
+   * Padrão: retrato — todos os relatórios existentes continuam iguais.
+   */
+  orientation?: 'portrait' | 'landscape'
+  /**
+   * Destaque de fundo por linha (mesmo índice de `rows`): `'alert'` para
+   * vencido/irregular, `'warning'` para atenção. A cor é só reforço — o motivo
+   * precisa estar escrito numa coluna, porque o PDF pode ser impresso em P&B.
+   */
+  rowHighlights?: (ReportRowHighlight | null | undefined)[]
 }
+
+export type ReportRowHighlight = 'alert' | 'warning'
 
 const ROW_HEIGHT = 16
 const TABLE_FONT_SIZE = 8.5
 const HEADER_FONT_SIZE = 8
 const COLOR_TABLE_HEADER_BG = rgb(0.94, 0.95, 0.97)
 const COLOR_ROW_ALT = rgb(0.985, 0.988, 0.992)
+const COLOR_ROW_HIGHLIGHT: Record<ReportRowHighlight, ReturnType<typeof rgb>> = {
+  alert: rgb(0.99, 0.89, 0.89),
+  warning: rgb(1, 0.96, 0.84),
+}
 
 /**
  * Relatório tabular paginado com rodapé universal de validação.
@@ -484,7 +501,10 @@ export async function createTabularReportPdf(
 
   const logo = await embedLogoSafely(pdf, input.logoPng)
 
-  let page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
+  const pageSize: [number, number] =
+    input.orientation === 'landscape' ? [PAGE_HEIGHT, PAGE_WIDTH] : [PAGE_WIDTH, PAGE_HEIGHT]
+
+  let page = pdf.addPage(pageSize)
   let cursor = await drawReportHeader(page, { input, font, bold, logo, isFirstPage: true })
 
   cursor = drawTableHeader(page, input.columns, cursor, bold)
@@ -503,19 +523,21 @@ export async function createTabularReportPdf(
   for (const [index, row] of input.rows.entries()) {
     // Quebra de página quando a próxima linha invadiria a faixa do rodapé.
     if (cursor - ROW_HEIGHT < FOOTER_TOP + 12) {
-      page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
+      page = pdf.addPage(pageSize)
       cursor = await drawReportHeader(page, { input, font, bold, logo, isFirstPage: false })
       cursor = drawTableHeader(page, input.columns, cursor, bold)
     }
 
     // Zebra discreta: numa tabela larga, ela evita que o olho troque de linha.
-    if (index % 2 === 1) {
+    // O destaque, quando houver, substitui a zebra naquela linha.
+    const highlight = input.rowHighlights?.[index]
+    if (highlight || index % 2 === 1) {
       page.drawRectangle({
         x: MARGIN,
         y: cursor - ROW_HEIGHT + 4,
-        width: PAGE_WIDTH - MARGIN * 2,
+        width: page.getWidth() - MARGIN * 2,
         height: ROW_HEIGHT,
-        color: COLOR_ROW_ALT,
+        color: highlight ? COLOR_ROW_HIGHLIGHT[highlight] : COLOR_ROW_ALT,
       })
     }
 
@@ -526,14 +548,14 @@ export async function createTabularReportPdf(
   // ── Resumo ──
   if (input.summary?.length) {
     if (cursor - 60 < FOOTER_TOP + 12) {
-      page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
+      page = pdf.addPage(pageSize)
       cursor = await drawReportHeader(page, { input, font, bold, logo, isFirstPage: false })
     }
 
     cursor -= 14
     page.drawLine({
       start: { x: MARGIN, y: cursor },
-      end: { x: PAGE_WIDTH - MARGIN, y: cursor },
+      end: { x: page.getWidth() - MARGIN, y: cursor },
       thickness: 0.5,
       color: COLOR_RULE,
     })
@@ -548,62 +570,33 @@ export async function createTabularReportPdf(
         color: COLOR_TEXT,
       })
       const labelWidth = bold.widthOfTextAtSize(sanitizeForPdf(`${field.label}: `), 9.5)
-      page.drawText(sanitizeForPdf(field.value), {
-        x: MARGIN + labelWidth,
-        y: cursor,
-        size: 9.5,
-        font,
-        color: COLOR_TEXT,
-      })
-      cursor -= 14
+      // Valor longo (ex.: totais por departamento) quebra em linhas alinhadas
+      // após o rótulo, em vez de sair pela borda da página.
+      const lines = wrapText(field.value, font, 9.5, page.getWidth() - MARGIN * 2 - labelWidth)
+      for (const line of lines.length ? lines : ['']) {
+        if (cursor - 14 < FOOTER_TOP + 12) {
+          page = pdf.addPage(pageSize)
+          cursor = await drawReportHeader(page, { input, font, bold, logo, isFirstPage: false })
+        }
+        page.drawText(sanitizeForPdf(line), {
+          x: MARGIN + labelWidth,
+          y: cursor,
+          size: 9.5,
+          font,
+          color: COLOR_TEXT,
+        })
+        cursor -= 14
+      }
     }
   }
 
-  // ── Assinaturas ──
+  // ── Assinaturas / responsáveis ──
   if (input.signatures?.length) {
-    const SIGNATURE_BLOCK_HEIGHT = 52
-    cursor -= 24
-
-    for (const signature of input.signatures) {
-      // Quebra de página quando o bloco inteiro não couber: uma linha de
-      // assinatura separada do nome que a identifica não serve para nada.
-      if (cursor - SIGNATURE_BLOCK_HEIGHT < FOOTER_TOP + 12) {
-        page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
-        cursor = await drawReportHeader(page, { input, font, bold, logo, isFirstPage: false })
-        cursor -= 12
-      }
-
-      const centerX = PAGE_WIDTH / 2
-      const lineHalfWidth = 130
-
-      page.drawLine({
-        start: { x: centerX - lineHalfWidth, y: cursor },
-        end: { x: centerX + lineHalfWidth, y: cursor },
-        thickness: 0.7,
-        color: COLOR_TEXT,
-      })
-      cursor -= 13
-
-      const name = sanitizeForPdf(signature.name)
-      page.drawText(name, {
-        x: centerX - bold.widthOfTextAtSize(name, 10) / 2,
-        y: cursor,
-        size: 10,
-        font: bold,
-        color: COLOR_TEXT,
-      })
-      cursor -= 12
-
-      const role = sanitizeForPdf(signature.role)
-      page.drawText(role, {
-        x: centerX - font.widthOfTextAtSize(role, 9) / 2,
-        y: cursor,
-        size: 9,
-        font,
-        color: COLOR_MUTED,
-      })
-      cursor -= 27
-    }
+    const state = { page, cursor }
+    await drawSignatureBlock(input.signatures, state, { font, bold }, async () => {
+      state.page = pdf.addPage(pageSize)
+      state.cursor = await drawReportHeader(state.page, { input, font, bold, logo, isFirstPage: false })
+    })
   }
 
   const validationUrl = await applyUniversalValidationFooter(pdf, {
@@ -645,6 +638,8 @@ export interface SectionedReportInput {
   sections: ReportTableSection[]
   logoPng?: Uint8Array | null
   footNote?: string
+  /** Responsáveis impressos ao final (nome + cargo), como em `TabularReportInput`. */
+  signatures?: ReportSignature[]
 }
 
 const SECTION_HEADING_SIZE = 11
@@ -808,6 +803,16 @@ export async function createSectionedReportPdf(
     }
   }
 
+  if (input.signatures?.length) {
+    const state = { page, cursor }
+    await drawSignatureBlock(input.signatures, state, { font, bold }, async () => {
+      state.page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
+      state.cursor = await drawReportHeader(state.page, { input: headerInput, font, bold, logo, isFirstPage: false })
+    })
+    page = state.page
+    cursor = state.cursor
+  }
+
   const validationUrl = await applyUniversalValidationFooter(pdf, {
     publicId: input.publicId,
     exporterName: input.exporterName,
@@ -817,6 +822,63 @@ export async function createSectionedReportPdf(
   const bytes = await pdf.save()
 
   return { bytes, sha256Hash: calculateDocumentHash(bytes), validationUrl }
+}
+
+/**
+ * Bloco de responsáveis/assinaturas (linha + nome + cargo, centralizados),
+ * compartilhado pelos relatórios tabular e por seções. `state` é mutado:
+ * `newPage` troca a página e reposiciona o cursor quando o bloco não cabe.
+ */
+async function drawSignatureBlock(
+  signatures: ReportSignature[],
+  state: { page: PDFPage; cursor: number },
+  fonts: { font: PDFFont; bold: PDFFont },
+  newPage: () => Promise<void>
+): Promise<void> {
+  const SIGNATURE_BLOCK_HEIGHT = 52
+  const { font, bold } = fonts
+  state.cursor -= 24
+
+  for (const signature of signatures) {
+    // Quebra de página quando o bloco inteiro não couber: uma linha de
+    // assinatura separada do nome que a identifica não serve para nada.
+    if (state.cursor - SIGNATURE_BLOCK_HEIGHT < FOOTER_TOP + 12) {
+      await newPage()
+      state.cursor -= 12
+    }
+
+    const { page } = state
+    const centerX = page.getWidth() / 2
+    const lineHalfWidth = 130
+
+    page.drawLine({
+      start: { x: centerX - lineHalfWidth, y: state.cursor },
+      end: { x: centerX + lineHalfWidth, y: state.cursor },
+      thickness: 0.7,
+      color: COLOR_TEXT,
+    })
+    state.cursor -= 13
+
+    const name = sanitizeForPdf(signature.name)
+    page.drawText(name, {
+      x: centerX - bold.widthOfTextAtSize(name, 10) / 2,
+      y: state.cursor,
+      size: 10,
+      font: bold,
+      color: COLOR_TEXT,
+    })
+    state.cursor -= 12
+
+    const role = sanitizeForPdf(signature.role)
+    page.drawText(role, {
+      x: centerX - font.widthOfTextAtSize(role, 9) / 2,
+      y: state.cursor,
+      size: 9,
+      font,
+      color: COLOR_MUTED,
+    })
+    state.cursor -= 27
+  }
 }
 
 /** Embute a logo tolerando arquivo inválido — nunca impede a emissão. */
@@ -854,7 +916,7 @@ async function drawReportHeader(
   page: PDFPage,
   { input, font, bold, logo, isFirstPage }: HeaderContext
 ): Promise<number> {
-  let y = PAGE_HEIGHT - MARGIN
+  let y = page.getHeight() - MARGIN
 
   if (logo) {
     const scaled = logo.scaleToFit(110, 40)
@@ -914,7 +976,7 @@ function drawTableHeader(
   page.drawRectangle({
     x: MARGIN,
     y: y - ROW_HEIGHT + 4,
-    width: PAGE_WIDTH - MARGIN * 2,
+    width: page.getWidth() - MARGIN * 2,
     height: ROW_HEIGHT,
     color: COLOR_TABLE_HEADER_BG,
   })

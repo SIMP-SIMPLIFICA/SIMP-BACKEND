@@ -30,8 +30,12 @@ async function scenario(permissions: string[] = ALL, modules: string[] = MODULES
   return { organization, session, department }
 }
 
+/** Patrimônio e matrícula únicos por chamada: são obrigatórios (PROPRIO / EFETIVO) e únicos entre ativos. */
+let sequence = 0
+
 function vehiclePayload(overrides: Record<string, unknown> = {}) {
   return {
+    assetTag: `PAT-${++sequence}`,
     plate: 'abc-1d23',
     renavam: RENAVAM,
     ownership: 'PROPRIO',
@@ -51,6 +55,7 @@ function driverPayload(overrides: Record<string, unknown> = {}) {
     cnhCategory: 'B',
     cnhExpiry: '2028-03-15',
     employmentKind: 'EFETIVO',
+    registrationNumber: `MAT-${++sequence}`,
     ...overrides,
   }
 }

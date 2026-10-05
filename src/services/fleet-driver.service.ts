@@ -3,8 +3,10 @@ import { prisma } from '@/lib/prisma.js'
 import { auditLedgerService } from '@/services/audit-ledger.service.js'
 import { FleetError } from '@/services/fleet-error.js'
 import { fleetPiiService } from '@/services/fleet-pii.service.js'
+import { userHasPermission } from '@/services/rbac.service.js'
 import { type FleetScope, assertCanModify, assertDepartmentAllowed, departmentWhere } from '@/services/fleet-scope.service.js'
-import type { CreateDriverBody, ListDriversQuery, UpdateDriverBody } from '@/schemas/fleet.schemas.js'
+import type { CreateDriverBody, ExportDriversBody, ListDriversQuery, UpdateDriverBody } from '@/schemas/fleet.schemas.js'
+import { USER_REF_SELECT, toUserRef } from '@/utils/fleet-user-ref.js'
 import { isValidCnhNumber, isValidCpf, maskCnhNumber, maskCpf, onlyDigits } from '@/utils/fleet-validators.js'
 
 /**
@@ -14,11 +16,19 @@ import { isValidCnhNumber, isValidCpf, maskCnhNumber, maskCpf, onlyDigits } from
  * API e auditoria levam apenas as versões mascaradas; nenhuma rota devolve o CPF
  * inteiro. Unicidade de CPF por organização entre ativos pelo blind index (índice
  * parcial no banco).
+ *
+ * Matrícula: obrigatória para EFETIVO e COMISSIONADO, única entre ativos. No
+ * cadastro, se vier em branco, é sugerida pelo beneficiário de Diárias com o
+ * mesmo CPF na organização.
  */
+
+/** Vínculos em que a matrícula funcional é obrigatória. */
+const REGISTRATION_REQUIRED_KINDS = new Set(['EFETIVO', 'COMISSIONADO'])
 
 const SELECT = {
   id: true,
   name: true,
+  registrationNumber: true,
   cpfEncrypted: true,
   cnhNumberEncrypted: true,
   cnhCategory: true,
@@ -31,6 +41,9 @@ const SELECT = {
   createdAt: true,
   updatedAt: true,
   department: { select: { id: true, name: true } },
+  user: { select: USER_REF_SELECT },
+  createdBy: { select: USER_REF_SELECT },
+  updatedBy: { select: USER_REF_SELECT },
 } satisfies Prisma.FleetDriverSelect
 
 type DriverRow = Prisma.FleetDriverGetPayload<{ select: typeof SELECT }>
@@ -40,6 +53,9 @@ function toPublic(scope: FleetScope, row: DriverRow) {
   const { cpfEncrypted, cnhNumberEncrypted, ...rest } = row
   return {
     ...rest,
+    user: toUserRef(row.user),
+    createdBy: toUserRef(row.createdBy),
+    updatedBy: toUserRef(row.updatedBy),
     cnhExpiry: row.cnhExpiry.toISOString().slice(0, 10),
     cpfMasked: maskCpf(fleetPiiService.decrypt(scope.organizationId, cpfEncrypted)),
     cnhMasked: maskCnhNumber(fleetPiiService.decrypt(scope.organizationId, cnhNumberEncrypted)),
@@ -96,8 +112,98 @@ async function assertCpfFree(tx: Prisma.TransactionClient, scope: FleetScope, cp
   )
 }
 
+function assertRegistrationRule(employmentKind: string, registrationNumber: string | null | undefined) {
+  if (REGISTRATION_REQUIRED_KINDS.has(employmentKind) && !registrationNumber) {
+    throw new FleetError(
+      'REGISTRATION_REQUIRED',
+      'Informe a matrícula: ela é obrigatória para servidor efetivo e comissionado. Confira no contracheque ou no RH.'
+    )
+  }
+}
+
+/**
+ * Mensagem genérica de propósito: dizer QUEM tem a matrícula revelaria nome de
+ * motorista de departamento fora do escopo de quem cadastra.
+ */
+async function assertRegistrationFree(
+  tx: Prisma.TransactionClient,
+  scope: FleetScope,
+  registrationNumber: string | null | undefined,
+  exceptId?: string
+) {
+  if (!registrationNumber) return
+  const clash = await tx.fleetDriver.findFirst({
+    where: {
+      organizationId: scope.organizationId,
+      registrationNumber,
+      deletedAt: null,
+      ...(exceptId ? { id: { not: exceptId } } : {}),
+    },
+    select: { id: true },
+  })
+  if (clash) {
+    throw new FleetError(
+      'REGISTRATION_ALREADY_REGISTERED',
+      'Esta matrícula já está cadastrada para outro motorista ativo desta organização. Confira o número.'
+    )
+  }
+}
+
+/** Permissões de Diárias que já dão acesso ao cadastro de beneficiários. */
+const DAILY_ALLOWANCE_PERMISSIONS = ['dailyAllowances:read', 'dailyAllowances:write', 'dailyAllowances:issue', 'dailyAllowances:delete']
+
+/**
+ * A sugestão só roda para quem JÁ enxerga Diárias (módulo ligado + permissão):
+ * sem isso, quem só tem fleet:manage confirmaria, cadastrando um CPF, que a
+ * pessoa é beneficiária de diárias e obteria a matrícula dela.
+ */
+async function canReadBeneficiaries(scope: FleetScope): Promise<boolean> {
+  const enabled = await prisma.organizationModule.findFirst({
+    where: { organizationId: scope.organizationId, module: 'dailyAllowances', isEnabled: true },
+    select: { module: true },
+  })
+  if (!enabled) return false
+  const checks = await Promise.all(DAILY_ALLOWANCE_PERMISSIONS.map(p => userHasPermission(scope.userId, p)))
+  return checks.some(Boolean)
+}
+
+/**
+ * Matrícula do beneficiário de Diárias com o mesmo CPF, na MESMA organização.
+ * Diárias guarda o CPF em dígitos (não cifrado), por isso a busca é direta.
+ */
+async function registrationFromBeneficiary(tx: Prisma.TransactionClient, scope: FleetScope, cpf: string) {
+  const beneficiary = await tx.beneficiary.findUnique({
+    where: { cpf_organizationId: { cpf, organizationId: scope.organizationId } },
+    select: { registrationNumber: true },
+  })
+  return beneficiary?.registrationNumber?.trim() || null
+}
+
+/** Filtros da listagem/relação. Nome por `search`; matrícula só chega por corpo de POST. */
+export function driverListWhere(scope: FleetScope, filters: ExportDriversBody): Prisma.FleetDriverWhereInput {
+  const search = filters.search?.trim()
+  const registration = filters.registration?.trim()
+  return {
+    organizationId: scope.organizationId,
+    deletedAt: null,
+    ...departmentWhere(scope),
+    ...(filters.active !== undefined ? { active: filters.active } : {}),
+    ...(filters.departmentId ? { departmentId: filters.departmentId } : {}),
+    ...(search ? { name: { contains: search, mode: 'insensitive' as const } } : {}),
+    ...(registration ? { registrationNumber: { contains: registration, mode: 'insensitive' as const } } : {}),
+  }
+}
+
+export { SELECT as DRIVER_SELECT, toPublic as toPublicDriver }
+
 function translateUniqueViolation(error: unknown): never {
   if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+    if (String(error.meta?.target ?? '').includes('registration_number')) {
+      throw new FleetError(
+        'REGISTRATION_ALREADY_REGISTERED',
+        'Esta matrícula já está cadastrada para outro motorista ativo desta organização.'
+      )
+    }
     throw new FleetError('CPF_ALREADY_REGISTERED', 'Este CPF já está cadastrado para outro motorista ativo desta organização.')
   }
   throw error
@@ -119,16 +225,7 @@ export const fleetDriverService = {
     // Busca da listagem é só por NOME: ela viaja na query string, que aparece
     // em log de requisição, histórico do navegador e proxies. Busca por CPF é
     // `lookupByCpf`, com o CPF no corpo de um POST.
-    const search = query.search?.trim()
-
-    const where: Prisma.FleetDriverWhereInput = {
-      organizationId: scope.organizationId,
-      deletedAt: null,
-      ...departmentWhere(scope),
-      ...(query.active !== undefined ? { active: query.active } : {}),
-      ...(query.departmentId ? { departmentId: query.departmentId } : {}),
-      ...(search ? { name: { contains: search, mode: 'insensitive' as const } } : {}),
-    }
+    const where = driverListWhere(scope, { search: query.search, active: query.active, departmentId: query.departmentId })
 
     const [rows, total] = await Promise.all([
       prisma.fleetDriver.findMany({
@@ -174,6 +271,22 @@ export const fleetDriverService = {
     })
   },
 
+  /**
+   * Busca por matrícula (parcial), com o termo no CORPO de um POST: a tela não
+   * distingue matrícula numérica de CPF incompleto, então nada com dígito vai
+   * para a URL. Respeita o escopo de departamento.
+   */
+  async searchByRegistration(scope: FleetScope, registration: string) {
+    fleetPiiService.assertConfigured()
+    const rows = await prisma.fleetDriver.findMany({
+      where: driverListWhere(scope, { registration }),
+      select: SELECT,
+      orderBy: { name: 'asc' },
+      take: 50,
+    })
+    return { data: rows.map(row => toPublic(scope, row)) }
+  },
+
   async getById(scope: FleetScope, id: string) {
     fleetPiiService.assertConfigured()
     const row = await prisma.fleetDriver.findFirst({
@@ -191,16 +304,28 @@ export const fleetDriverService = {
     await assertDepartmentAllowed(scope, input.departmentId)
     await assertUserAllowed(scope, input.userId)
     const cpfBlindIndex = fleetPiiService.blindIndex(scope.organizationId, cpf)
+    const mayUseBeneficiary = !input.registrationNumber && (await canReadBeneficiaries(scope))
 
     try {
       return await prisma.$transaction(async tx => {
         await assertCpfFree(tx, scope, cpfBlindIndex)
+
+        // Campo próprio + sugestão: em branco, tenta a matrícula de Diárias.
+        let registrationNumber = input.registrationNumber ?? null
+        let registrationSource: 'INFORMED' | 'BENEFICIARY' | null = registrationNumber ? 'INFORMED' : null
+        if (!registrationNumber && mayUseBeneficiary) {
+          registrationNumber = await registrationFromBeneficiary(tx, scope, cpf)
+          if (registrationNumber) registrationSource = 'BENEFICIARY'
+        }
+        assertRegistrationRule(input.employmentKind, registrationNumber)
+        await assertRegistrationFree(tx, scope, registrationNumber)
 
         const row = await tx.fleetDriver.create({
           data: {
             organizationId: scope.organizationId,
             createdById: scope.userId,
             name: input.name,
+            registrationNumber,
             cpfEncrypted: fleetPiiService.encrypt(scope.organizationId, cpf),
             cpfBlindIndex,
             cnhNumberEncrypted: fleetPiiService.encrypt(scope.organizationId, cnh),
@@ -221,7 +346,7 @@ export const fleetDriverService = {
             action: 'FLEET_DRIVER_CREATED',
             resourceId: row.id,
             // CPF e CNH só mascarados na trilha (rules/fleet.md, item 5).
-            details: { name: row.name, cpf: maskCpf(cpf), cnhCategory: row.cnhCategory },
+            details: { name: row.name, cpf: maskCpf(cpf), cnhCategory: row.cnhCategory, registrationSource },
           },
           tx
         )
@@ -243,8 +368,19 @@ export const fleetDriverService = {
     const cnh = input.cnhNumber !== undefined ? parseCnh(input.cnhNumber) : undefined
     const cpfBlindIndex = cpf ? fleetPiiService.blindIndex(scope.organizationId, cpf) : undefined
 
+    // Só quando a alteração mexe em vínculo ou matrícula (mesmo critério do
+    // patrimônio no veículo): cadastros anteriores à regra seguem editáveis.
+    if (input.employmentKind !== undefined || input.registrationNumber !== undefined) {
+      assertRegistrationRule(
+        input.employmentKind ?? current.employmentKind,
+        input.registrationNumber !== undefined ? input.registrationNumber : current.registrationNumber
+      )
+    }
+
     const data: Prisma.FleetDriverUncheckedUpdateInput = {
+      updatedById: scope.userId,
       ...(input.name !== undefined ? { name: input.name } : {}),
+      ...(input.registrationNumber !== undefined ? { registrationNumber: input.registrationNumber } : {}),
       ...(cpf ? { cpfEncrypted: fleetPiiService.encrypt(scope.organizationId, cpf), cpfBlindIndex } : {}),
       ...(cnh ? { cnhNumberEncrypted: fleetPiiService.encrypt(scope.organizationId, cnh) } : {}),
       ...(input.cnhCategory ? { cnhCategory: input.cnhCategory } : {}),
@@ -259,6 +395,7 @@ export const fleetDriverService = {
     try {
       return await prisma.$transaction(async tx => {
         if (cpfBlindIndex) await assertCpfFree(tx, scope, cpfBlindIndex, id)
+        await assertRegistrationFree(tx, scope, input.registrationNumber, id)
 
         const updated = await tx.fleetDriver.updateMany({
           where: { id, organizationId: scope.organizationId, deletedAt: null, ...departmentWhere(scope) },
@@ -273,7 +410,10 @@ export const fleetDriverService = {
             action: 'FLEET_DRIVER_UPDATED',
             resourceId: id,
             // Só os NOMES dos campos alterados — nunca os valores de CPF/CNH.
-            details: { fields: Object.keys(data).filter(k => k !== 'cpfBlindIndex'), name: row.name },
+            details: {
+              fields: Object.keys(data).filter(k => k !== 'cpfBlindIndex' && k !== 'updatedById'),
+              name: row.name,
+            },
           },
           tx
         )
@@ -306,7 +446,7 @@ export const fleetDriverService = {
 
       const deleted = await tx.fleetDriver.updateMany({
         where: { id, organizationId: scope.organizationId, deletedAt: null, ...departmentWhere(scope) },
-        data: { deletedAt: new Date(), active: false },
+        data: { deletedAt: new Date(), active: false, updatedById: scope.userId },
       })
       if (deleted.count === 0) throw new FleetError('NOT_FOUND', 'Motorista não encontrado.')
 

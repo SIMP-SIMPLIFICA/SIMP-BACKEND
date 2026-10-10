@@ -191,6 +191,7 @@ model User {
   fleetDriversUpdated       FleetDriver[]            @relation("FleetDriverUpdater")
   fleetContractsCreated     FleetContract[]          @relation("FleetContractCreator")
   fleetFuelingsIssued       FleetFueling[]           @relation("FleetFuelingIssuer")
+  fleetFuelingsCancelled    FleetFueling[]           @relation("FleetFuelingCanceller")
   fleetFuelings             FleetFueling[]           @relation("FleetFuelingCreator")
   fleetRedemptionsReviewed  FleetFuelingRedemption[] @relation("FleetRedemptionReviewer")
   fleetTripsRequested       FleetTrip[]              @relation("FleetTripRequester")
@@ -1855,6 +1856,7 @@ model FleetContract {
   fuelings      FleetFueling[]
   serviceOrders FleetServiceOrder[]
 
+  // UNIQUE (organization_id, number) WHERE deleted_at IS NULL — índice parcial na migration.
   @@index([organizationId, endDate])
   @@map("fleet_contracts")
 }
@@ -1866,9 +1868,11 @@ model FleetFueling {
   id                  String             @id @default(cuid())
   publicId            String             @unique @default(uuid()) @map("public_id")
   organizationId      String             @map("organization_id")
-  sequenceNumber      Int                @map("sequence_number")
-  year                Int
-  formattedNumber     String             @map("formatted_number")
+  /// Numeração (padrão das Diárias: por organização e ano, max+1 Serializable)
+  /// atribuída só na emissão — rascunho excluído não abre buraco na sequência.
+  sequenceNumber      Int?               @map("sequence_number")
+  year                Int?
+  formattedNumber     String?            @map("formatted_number")
   status              FleetDocStatus     @default(PENDING)
   lifecycle           FleetAuthLifecycle @default(OPEN)
   departmentId        String             @map("department_id")
@@ -1892,6 +1896,8 @@ model FleetFueling {
   lockedUntil         DateTime?          @map("locked_until")
   budgetOverrun       Boolean            @default(false) @map("budget_overrun")
   cancelReason        String?            @map("cancel_reason")
+  cancelledAt         DateTime?          @map("cancelled_at")
+  cancelledById       String?            @map("cancelled_by_id") @db.Uuid
   pdfFileKey          String?            @map("pdf_file_key")
   sha256Hash          String?            @map("sha256_hash")
   issuedAt            DateTime?          @map("issued_at")
@@ -1908,6 +1914,7 @@ model FleetFueling {
   contract     FleetContract?          @relation(fields: [contractId], references: [id], onDelete: Restrict)
   qddItem      QddItem?                @relation(fields: [qddItemId], references: [id], onDelete: Restrict)
   issuedBy     User?                   @relation("FleetFuelingIssuer", fields: [issuedById], references: [id])
+  cancelledBy  User?                   @relation("FleetFuelingCanceller", fields: [cancelledById], references: [id])
   createdBy    User                    @relation("FleetFuelingCreator", fields: [createdById], references: [id])
   redemption   FleetFuelingRedemption?
 

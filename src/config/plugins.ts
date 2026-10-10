@@ -17,6 +17,7 @@ import { Sentry } from './sentry.js'
 import { AppServer } from '@/types/server.js'
 import { db } from '@/utils/database.js'
 import { UPLOADS_ROOT, ensureUploadsRoot } from '@/services/storage.service.js'
+import { isPrivateUploadPath } from '@/utils/private-upload-path.js'
 
 export async function registerPlugins(server: AppServer) {
   // Set global validator and serializer compilers for Zod
@@ -151,11 +152,9 @@ export async function registerPlugins(server: AppServer) {
   await server.register(fastifyStatic, {
     root: UPLOADS_ROOT,
     prefix: '/uploads/',
-    // Simplifica Frotas: o PDF da autorização carrega o QR de uso único (vale
-    // ao portador) e a foto do cupom é dado fiscal. Esses escopos NUNCA saem
-    // por aqui — só pelas rotas autenticadas e auditadas do Frotas, que leem
-    // com `readFile`. Qualquer escopo `fleet-*` fica de fora.
-    allowedPath: pathName => !/(^|\/)fleet-[^/]*\//i.test(decodeURIComponent(pathName)),
+    // Simplifica Frotas: escopos `fleet-*` (PDF com QR de uso único, foto do
+    // cupom) NUNCA saem por aqui — só pelas rotas autenticadas e auditadas.
+    allowedPath: pathName => !isPrivateUploadPath(pathName),
   })
 
   if (config.features.swagger && config.isDevelopment) {

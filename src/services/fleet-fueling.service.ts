@@ -397,10 +397,18 @@ async function openAuthorizationWarning(scope: FleetScope, vehicleId: string, ex
       validUntil: { gte: new Date() },
       ...(exceptId ? { id: { not: exceptId } } : {}),
     },
-    select: { formattedNumber: true, validUntil: true },
+    select: { formattedNumber: true, validUntil: true, departmentId: true },
     orderBy: { validUntil: 'desc' },
   })
   if (!open) return null
+  // Veículo da frota geral: a autorização aberta pode ser de outro departamento.
+  // O aviso vale (evita abastecer duas vezes), mas nº e validade ficam no escopo.
+  if (!scope.allDepartments && !scope.departmentIds.includes(open.departmentId)) {
+    return {
+      code: 'OPEN_AUTHORIZATION_EXISTS',
+      message: 'Este veículo já tem uma autorização aberta, emitida por outro departamento.',
+    }
+  }
   return {
     code: 'OPEN_AUTHORIZATION_EXISTS',
     message: `Este veículo já tem a autorização nº ${open.formattedNumber} aberta, válida até ${formatDateBr(localIsoDate(open.validUntil))}.`,

@@ -410,6 +410,50 @@ describe('Frotas — emissão', () => {
     expect(second.warnings.map(w => w.code)).toContain('OPEN_AUTHORIZATION_EXISTS')
   })
 
+  test('aviso de autorização aberta de outro departamento não revela nº nem validade', async () => {
+    const s = await scenario()
+    await prisma.fleetVehicle.update({ where: { id: s.vehicle.id }, data: { departmentId: null } })
+    await prisma.fleetDriver.update({ where: { id: s.driver.id }, data: { departmentId: null } })
+    const contract = await createContract(s)
+    const first = await createDraft(s, contract.id)
+    expect((await issue(s, first.id)).statusCode).toBe(200)
+    const issued = await prisma.fleetFueling.findUniqueOrThrow({ where: { id: first.id } })
+
+    const otherDept = await prisma.department.create({ data: { organizationId: s.organization.id, name: 'Obras', code: `OB${++seq}` } })
+    const secretary = await createTestUserWithToken({ organizationId: s.organization.id, permissions: ['fleet:authorize_fuel'] })
+    await prisma.department.update({ where: { id: otherDept.id }, data: { members: { connect: { id: secretary.user.id } } } })
+    const qdd = await prisma.qddItem.create({
+      data: {
+        organizationId: s.organization.id,
+        departmentId: otherDept.id,
+        year: s.qddItem.year,
+        ficha: '9999',
+        fonte: '1500',
+        projetoAtividade: '2.010',
+        naturezaDespesa: '3.3.90.30',
+        valorOrcado: '5000.00',
+      },
+    })
+
+    const response = await inject(
+      'POST',
+      `${BASE}/fuelings`,
+      secretary.headers,
+      fuelingPayload(s, contract.id, { departmentId: otherDept.id, qddItemId: qdd.id })
+    )
+    expect(response.statusCode).toBe(201)
+    const warning = response.json().warnings.find((w: { code: string }) => w.code === 'OPEN_AUTHORIZATION_EXISTS')
+    expect(warning.message).toContain('outro departamento')
+    expect(warning.message).not.toContain(issued.formattedNumber!)
+
+    const suggestions = await inject(
+      'GET',
+      `${BASE}/fuelings/suggestions?departmentId=${otherDept.id}&vehicleId=${s.vehicle.id}`,
+      secretary.headers
+    )
+    expect(JSON.stringify(suggestions.json())).not.toContain(issued.formattedNumber!)
+  })
+
   test('download do PDF é o original e fica na trilha', async () => {
     const s = await scenario()
     const contract = await createContract(s)
@@ -426,6 +470,9 @@ describe('Frotas — emissão', () => {
     // O arquivo existe em disco, mas o estático de /uploads responde como inexistente (nem com o caminho codificado).
     expect((await inject('GET', `/uploads/${row.pdfFileKey}`, {})).statusCode).toBe(404)
     expect((await inject('GET', `/uploads/${row.pdfFileKey!.replace('fleet-fuelings', 'fleet%2Dfuelings')}`, {})).statusCode).toBe(404)
+    // Barra invertida: no Windows o `send` a trata como separador.
+    expect((await inject('GET', `/uploads/${row.pdfFileKey!.replace('fleet-fuelings/', 'fleet-fuelings%5C')}`, {})).statusCode).toBe(404)
+    expect((await inject('GET', `/uploads/${row.pdfFileKey!.replace('/fleet-fuelings', '%5Cfleet-fuelings')}`, {})).statusCode).toBe(404)
   })
 
   test('enquanto aberta, o PDF (vale ao portador) só sai para quem emite; leitor recebe 403', async () => {

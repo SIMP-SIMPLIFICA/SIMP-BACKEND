@@ -1093,7 +1093,23 @@ export interface FormGridBlock {
   rows: FormGridRow[]
 }
 
-export type FormBlock = FormGridBlock | FormTextBlock | FormSignatureBlock
+/**
+ * QR grande e centralizado, com título e instruções — o QR OPERACIONAL da
+ * autorização de abastecimento (5 cm), diferente do QR pequeno de validação do
+ * rodapé. O conteúdo do QR pode ser segredo (token de uso único): este motor
+ * só o desenha, nunca o grava em lugar nenhum.
+ */
+export interface FormQrBlock {
+  type: 'qr'
+  url: string
+  /** Lado do QR em pontos (1 cm ≈ 28,35 pt). */
+  sizePt: number
+  heading?: string
+  /** Linhas abaixo do QR (instruções ao frentista). */
+  lines?: string[]
+}
+
+export type FormBlock = FormGridBlock | FormTextBlock | FormSignatureBlock | FormQrBlock
 
 export interface FormDocumentInput {
   title: string
@@ -1260,6 +1276,48 @@ export async function createFormDocumentPdf(input: FormDocumentInput): Promise<O
         }
       }
       cursor -= 8
+      continue
+    }
+
+    if (block.type === 'qr') {
+      const lines = (block.lines ?? []).flatMap(line => wrapText(line, font, 9.5, contentWidth - 40))
+      await ensureSpace((block.heading ? 22 : 0) + block.sizePt + 10 + lines.length * 12 + 10)
+
+      if (block.heading) {
+        const heading = sanitizeForPdf(block.heading)
+        page.drawText(heading, {
+          x: PAGE_WIDTH / 2 - bold.widthOfTextAtSize(heading, 11) / 2,
+          y: cursor - 11,
+          size: 11,
+          font: bold,
+          color: COLOR_TEXT,
+        })
+        cursor -= 22
+      }
+
+      const qrImage = await pdf.embedPng(
+        await QRCode.toBuffer(block.url, { type: 'png', errorCorrectionLevel: 'M', margin: 1, width: 600 })
+      )
+      page.drawImage(qrImage, {
+        x: PAGE_WIDTH / 2 - block.sizePt / 2,
+        y: cursor - block.sizePt,
+        width: block.sizePt,
+        height: block.sizePt,
+      })
+      cursor -= block.sizePt + 12
+
+      for (const line of lines) {
+        const text = sanitizeForPdf(line)
+        page.drawText(text, {
+          x: PAGE_WIDTH / 2 - font.widthOfTextAtSize(text, 9.5) / 2,
+          y: cursor,
+          size: 9.5,
+          font,
+          color: COLOR_TEXT,
+        })
+        cursor -= 12
+      }
+      cursor -= 10
       continue
     }
 

@@ -151,6 +151,11 @@ export async function registerPlugins(server: AppServer) {
   await server.register(fastifyStatic, {
     root: UPLOADS_ROOT,
     prefix: '/uploads/',
+    // Simplifica Frotas: o PDF da autorização carrega o QR de uso único (vale
+    // ao portador) e a foto do cupom é dado fiscal. Esses escopos NUNCA saem
+    // por aqui — só pelas rotas autenticadas e auditadas do Frotas, que leem
+    // com `readFile`. Qualquer escopo `fleet-*` fica de fora.
+    allowedPath: pathName => !/(^|\/)fleet-[^/]*\//i.test(decodeURIComponent(pathName)),
   })
 
   if (config.features.swagger && config.isDevelopment) {

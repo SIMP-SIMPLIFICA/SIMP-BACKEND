@@ -9,17 +9,17 @@ import { z } from 'zod'
  * (exceto `userId`, que é o uuid do usuário do SIMP).
  */
 
-const id = z.string().trim().min(1).max(64)
+export const id = z.string().trim().min(1).max(64)
 
 /** Decimal como string ("40.5"), nunca float. Número também é aceito e vira string. */
-const decimal = (scale: number, max = 999_999_999) =>
+export const decimal = (scale: number, max = 999_999_999) =>
   z
     .union([z.string(), z.number()])
     .transform(v => String(v).trim().replace(',', '.'))
     .refine(v => new RegExp(`^\\d+(\\.\\d{1,${scale}})?$`).test(v), `Use até ${scale} casas decimais.`)
     .refine(v => Number(v) > 0 && Number(v) <= max, 'Valor fora do intervalo permitido.')
 
-const text = (min: number, max: number) =>
+export const text = (min: number, max: number) =>
   z.string().transform(v => v.replace(/\s+/g, ' ').trim()).pipe(z.string().min(min).max(max))
 
 const currentYear = new Date().getUTCFullYear()
@@ -88,7 +88,7 @@ export const exportVehiclesBody = z.object(vehicleFilters).strict()
 
 // ─── Motoristas ──────────────────────────────────────────────────────────────
 
-const isoDate = z
+export const isoDate = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a data no formato AAAA-MM-DD.')
   .refine(v => !Number.isNaN(Date.parse(`${v}T00:00:00Z`)), 'Data inválida.')

@@ -400,6 +400,11 @@ describe('Frotas — saldo da ficha QDD (TASK 1)', () => {
           unitPriceCap: new Prisma.Decimal('6.1900'),
           validUntil: new Date('2026-12-31T00:00:00Z'),
           purpose: 'Transporte de pacientes',
+          // Emitida tem sempre hash e PDF (CHECK fleet_fuelings_issued_complete_check, TASK 3A).
+          sha256Hash: `${'0'.repeat(63)}${sequence}`,
+          pdfFileKey: `organizations/${organization.id}/fleet-fuelings/fixture-${sequence}.pdf`,
+          // Cancelada tem sempre motivo (CHECK fleet_fuelings_cancel_reason_check).
+          cancelReason: lifecycle === 'CANCELLED' ? 'Cancelada no cenário de teste' : null,
           createdById: session.user.id,
         },
       })

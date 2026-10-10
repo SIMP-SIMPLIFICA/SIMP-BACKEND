@@ -190,6 +190,45 @@ O destino do código de assinatura existente nos Conselhos (remover ou corrigir)
 
 **Motivo.** A matrícula de Diárias é cópia em texto e não pertence ao Frotas. Reaproveitá-la como sugestão evita digitação dupla sem acoplar os módulos. A transação única garante que nenhum documento validável saia sem trilha.
 
+## D15 — Redis só para dados temporários com expiração
+
+2026-10-05 · decisão do responsável
+
+**Decisão.** O Redis guarda só o que pode expirar e sumir sem prejuízo, sempre com TTL definido. O que precisa valer para sempre ou servir de prova fica no Postgres.
+
+Na TASK 3:
+
+| Onde | O quê |
+| --- | --- |
+| **Redis** (com TTL) | a sessão de 30 min do frentista (trava por aparelho); o rate limit da rota pública; travas curtas contra envio simultâneo |
+| **Postgres** (não muda) | o token da autorização (só o hash); o contador de placas erradas e o `BLOCKED`; a chave NFC-e usada (constraint única); a auditoria |
+
+**Redis fora do ar:** a rota do frentista responde com mensagem clara ("Sistema temporariamente indisponível, tente em instantes") e **não abre sessão sem trava**. Nunca libera uso sem controle: na falta do Redis, a operação para; ela não segue sem a trava.
+
+**Motivo.** A sessão e o rate limit são estado efêmero por natureza: perdê-los num reinício só obriga o frentista a digitar a placa de novo. Prova (bloqueio, uso único, cupom, trilha) não pode depender de um armazenamento que, no plano atual do Render, nem persiste em disco. Ver `docs/issues/redis-deploy.md`.
+
+## D16 — Regras da emissão da autorização de abastecimento (TASK 3A)
+
+2026-10-05 · decididas com o responsável (placa, contrato) e na implementação
+
+**Decisão.**
+- **Placa fora do PDF.** O papel identifica o veículo por modelo, tipo e nº de patrimônio. O frentista digita a placa do veículo à frente dele; se ela estivesse impressa, ele poderia copiá-la do papel.
+- **Contrato mínimo já na TASK 3A.** Cadastro enxuto de contratos de combustível (`/api/v1/fleet/contracts`: nº, fornecedor, CNPJ, combustível, preço unitário, vigência, valor total, volume opcional, empenho e ficha), da organização inteira, mantido por quem tem `fleet:manage`. A emissão exige contrato vigente do mesmo combustível. Dele vêm o preço máximo e o CNPJ do posto que a TASK 3B confere contra o cupom. O **saldo do contrato bloqueia** a emissão (limite legal), calculado na leitura e conferido com a linha do contrato travada (`FOR UPDATE`). O saldo da ficha QDD só avisa (`budgetOverrun`).
+- **Numeração na emissão.** Padrão das Diárias (`0001/2026`, max+1 em transação Serializable com retry, por organização e ano local), atribuída só ao emitir: rascunho excluído não abre buraco na sequência. `sequenceNumber`, `year` e `formattedNumber` passaram a ser opcionais, com `CHECK` no banco (emitida sempre tem número, hash e PDF).
+- **Departamento que ordena.** Quem emite tem `fleet:authorize_fuel` e o departamento no seu escopo. Veículo e motorista são desse departamento ou da frota geral. A ficha QDD é do próprio departamento.
+- **Motorista.** Bloqueia CNH vencida, suspensa ou cassada e categoria insuficiente: moto exige A; automóvel, caminhonete, camioneta e utilitário exigem B; caminhão, C; micro-ônibus e ônibus, D; caminhão-trator, E. As categorias de quatro rodas são cumulativas. Para máquina, reboque e outro, a categoria depende de peso e uso, então o sistema só avisa. Também avisa se a CNH vence antes da validade.
+- **Combustível compatível.** Flex e híbrido aceitam gasolina ou etanol; motor S500 aceita S500 ou S10, e motor S10 só S10; GNV aceita GNV ou gasolina; elétrico não tem o que abastecer. A autorização e o contrato só usam combustível de bomba (gasolina, etanol, S10, S500, GNV).
+- **Limites.** Preço unitário obrigatório (até o do contrato) e litros e/ou valor. O servidor calcula o que faltar em `Decimal`: valor = litros × preço, arredondado ao centavo; litros = valor ÷ preço, para baixo. Com os dois informados, o valor não pode passar de litros × preço.
+- **Validade.** Padrão de 3 dias úteis depois de hoje, pulando sábado, domingo e os feriados da organização, até 23:59 de Brasília. Máximo de 30 dias. Na emissão, a validade não pode passar do fim do contrato.
+- **Veículo** em manutenção, acidentado, paralisado, a doar ou baixado não recebe autorização.
+- **Cancelamento** só de autorização `OPEN` (ou `IN_USE` com a sessão do frentista vencida), com motivo de 10 a 500 caracteres. Libera a reserva no contrato e na ficha.
+- **PDF é vale ao portador enquanto aberto.** O download é auditado (`FLEET_AUTHORIZATION_PDF_DOWNLOADED`). Enquanto a autorização está `OPEN` ou `IN_USE`, só quem tem `fleet:authorize_fuel` baixa o PDF; depois, qualquer perfil de leitura o vê. Os escopos `fleet-*` do disco (PDFs e, na TASK 3C, fotos de cupom) **não** são servidos pelo estático `/uploads`: só saem pelas rotas autenticadas.
+- **Emissão contra edição concorrente.** A emissão trava a linha da autorização e confere que o rascunho não mudou desde que o PDF foi gerado (`DRAFT_CHANGED`, 409). Sob a trava do contrato, as regras do contrato (excluído, combustível, preço, vigência) são conferidas de novo.
+- **Contrato com autorização aberta** não troca CNPJ do posto nem combustível, e não é excluído. A trilha da alteração guarda antes e depois dos campos de preço, saldo e vigência.
+- **Portal de validação** mostra a situação da autorização (aberta, em uso, usada, vencida, bloqueada, cancelada), sem placa, nome ou valores.
+
+**Motivo.** Cada regra fecha um caminho de erro ou de fraude que a spec deixava aberto. As de contrato e de placa foram pedidas pelo responsável.
+
 ## Também decidido
 
 - **RLS:** ver D11.

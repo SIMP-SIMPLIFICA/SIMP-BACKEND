@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { fleetController } from '@/controllers/fleet.controller.js'
+import { fleetFuelingController } from '@/controllers/fleet-fueling.controller.js'
 import { authMiddleware, requireAnyPermission, requireModule } from '@/middleware/auth.middleware.js'
 
 /**
@@ -11,6 +12,9 @@ import { authMiddleware, requireAnyPermission, requireModule } from '@/middlewar
  */
 const READ = ['fleet:read', 'fleet:manage']
 const MANAGE = ['fleet:manage']
+const AUTHORIZE = ['fleet:authorize_fuel']
+const CONTRACT_READ = ['fleet:read', 'fleet:manage', 'fleet:authorize_fuel']
+const FUELING_READ = ['fleet:read', 'fleet:authorize_fuel', 'fleet:review_fuel']
 // PDF: geração pesada (motor + QR + hash) — limite próprio. A chave é o IP
 // (keyGenerator global): o limite roda antes da autenticação, sem usuário.
 const EXPORT_LIMIT = { rateLimit: { max: 20, timeWindow: '1 minute' } }
@@ -59,4 +63,34 @@ export async function fleetRoutes(app: FastifyInstance) {
   app.post('/drivers', { preHandler: [requireAnyPermission(MANAGE)] }, fleetController.createDriver)
   app.patch('/drivers/:id', { preHandler: [requireAnyPermission(MANAGE)] }, fleetController.updateDriver)
   app.delete('/drivers/:id', { preHandler: [requireAnyPermission(MANAGE)] }, fleetController.deleteDriver)
+
+  // ─── Contratos de combustível (TASK 3A, D16) ───────────────────────────────
+  // Quem emite autorização precisa ver os contratos para escolher; só fleet:manage cadastra.
+  app.get('/contracts', { preHandler: [requireAnyPermission(CONTRACT_READ)] }, fleetFuelingController.listContracts)
+  app.get('/contracts/:id', { preHandler: [requireAnyPermission(CONTRACT_READ)] }, fleetFuelingController.getContract)
+  app.post('/contracts', { preHandler: [requireAnyPermission(MANAGE)] }, fleetFuelingController.createContract)
+  app.patch('/contracts/:id', { preHandler: [requireAnyPermission(MANAGE)] }, fleetFuelingController.updateContract)
+  app.delete('/contracts/:id', { preHandler: [requireAnyPermission(MANAGE)] }, fleetFuelingController.deleteContract)
+
+  // ─── Autorização de abastecimento (TASK 3A) ────────────────────────────────
+  app.get('/fuelings', { preHandler: [requireAnyPermission(FUELING_READ)] }, fleetFuelingController.listFuelings)
+  app.get('/fuelings/departments', { preHandler: [requireAnyPermission(FUELING_READ)] }, fleetFuelingController.fuelingDepartments)
+  app.get('/fuelings/options',{ preHandler: [requireAnyPermission(AUTHORIZE)] }, fleetFuelingController.fuelingOptions)
+  app.get('/fuelings/suggestions', { preHandler: [requireAnyPermission(AUTHORIZE)] }, fleetFuelingController.fuelingSuggestions)
+  app.get('/fuelings/:id', { preHandler: [requireAnyPermission(FUELING_READ)] }, fleetFuelingController.getFueling)
+  // O PDF carrega o QR operacional (token de uso único): download auditado e com limite próprio.
+  app.get(
+    '/fuelings/:id/pdf',
+    { config: EXPORT_LIMIT, preHandler: [requireAnyPermission(FUELING_READ)] },
+    fleetFuelingController.downloadFuelingPdf
+  )
+  app.post('/fuelings', { preHandler: [requireAnyPermission(AUTHORIZE)] }, fleetFuelingController.createFueling)
+  app.patch('/fuelings/:id', { preHandler: [requireAnyPermission(AUTHORIZE)] }, fleetFuelingController.updateFueling)
+  app.delete('/fuelings/:id', { preHandler: [requireAnyPermission(AUTHORIZE)] }, fleetFuelingController.deleteFueling)
+  app.post(
+    '/fuelings/:id/issue',
+    { config: EXPORT_LIMIT, preHandler: [requireAnyPermission(AUTHORIZE)] },
+    fleetFuelingController.issueFueling
+  )
+  app.post('/fuelings/:id/cancel', { preHandler: [requireAnyPermission(AUTHORIZE)] }, fleetFuelingController.cancelFueling)
 }

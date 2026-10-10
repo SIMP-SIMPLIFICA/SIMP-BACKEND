@@ -47,6 +47,11 @@ export interface ValidatedDocument {
    * nos documentos exportados, que registram o emissor.
    */
   exporterName?: string
+  /**
+   * Situação operacional, só para a autorização de abastecimento (aberta,
+   * usada, vencida...). Rótulo genérico: nada de placa, nome ou valores.
+   */
+  situation?: string
 }
 
 interface DocumentSource {
@@ -90,6 +95,18 @@ const SELECT_PUBLIC = {
   organization: { select: { name: true } },
 } as const
 
+/** Situação da autorização de abastecimento exibida no portal (TASK 3). */
+const FLEET_SITUATION_LABELS: Record<string, string> = {
+  OPEN: 'Aberta',
+  IN_USE: 'Em uso no posto',
+  AWAITING_REVIEW: 'Usada, em conferência',
+  USED: 'Usada',
+  CLOSED: 'Usada e conferida',
+  EXPIRED: 'Vencida',
+  BLOCKED: 'Bloqueada',
+  CANCELLED: 'Cancelada',
+}
+
 const SOURCES: DocumentSource[] = [
   {
     type: 'DAILY_ALLOWANCE',
@@ -110,9 +127,12 @@ const SOURCES: DocumentSource[] = [
     async find(publicId) {
       const raw = await prisma.fleetFueling.findFirst({
         where: { publicId, sha256Hash: { not: null } },
-        select: SELECT_PUBLIC,
+        select: { ...SELECT_PUBLIC, lifecycle: true, validUntil: true },
       })
-      return toValidated({ type: 'FLEET_FUELING', typeLabel: 'Autorização de Abastecimento' }, raw)
+      const validated = toValidated({ type: 'FLEET_FUELING', typeLabel: 'Autorização de Abastecimento' }, raw)
+      if (!validated || !raw) return validated
+      const expired = raw.lifecycle === 'OPEN' && raw.validUntil < new Date()
+      return { ...validated, situation: expired ? 'Vencida' : FLEET_SITUATION_LABELS[raw.lifecycle] }
     },
   },
   {
